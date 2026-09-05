@@ -1,3 +1,5 @@
+import { request as apiRequest } from '../api'
+
 export interface Library {
   id: string
   name: string
@@ -19,28 +21,7 @@ const errorMessages: Record<string, string> = {
 }
 
 async function request<T>(path = '', init: RequestInit = {}): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`/api/libraries${path}`, {
-      ...init,
-      headers: { Accept: 'application/json', ...init.headers },
-    })
-  } catch (error) {
-    if (init.signal?.aborted) throw error
-    throw new Error('Could not reach Tana. Check the connection and try again.')
-  }
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => null)
-    throw new Error(errorMessages[body?.error] ?? `Tana could not complete the request (${response.status}). Try again.`)
-  }
-
-  if (response.status === 204) return undefined as T
-  try {
-    return await response.json() as T
-  } catch {
-    throw new Error('Tana returned an unexpected response. Check that the API is reachable.')
-  }
+  return apiRequest<T>(`/api/libraries${path}`, init, errorMessages)
 }
 
 const libraryPath = (id: string) => `/${encodeURIComponent(id)}`

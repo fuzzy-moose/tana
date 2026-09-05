@@ -75,10 +75,9 @@
   align-items: center;
   gap: 12px;
   padding: 11px 12px;
-  border: 1px solid var(--accent-border);
+  border: 1px solid transparent;
   border-radius: 6px;
-  color: var(--accent);
-  background: var(--accent-background);
+  color: var(--muted);
   font-size: 13px;
   font-weight: 500;
 }
@@ -86,6 +85,14 @@
 .nav-link:hover {
   background: var(--accent-hover);
 }
+
+.nav-link[aria-current="page"] {
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-background);
+}
+
+.nav-link + .nav-link { margin-top: 8px; }
 
 .nav-link svg {
   width: 17px;

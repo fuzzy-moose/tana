@@ -30,3 +30,6 @@ A titled, ordered collection of pages drawn from supported image files, independ
 
 **Gallery page**:
 A supported image source file's occurrence in a gallery, numbered consecutively from 1. A file can occur more than once in a gallery and have different page numbers in different galleries.
+
+**Reading spread**:
+One or two consecutive gallery pages presented together as a reading unit.

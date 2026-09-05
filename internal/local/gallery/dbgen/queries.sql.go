@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countGallerySummaries = `-- name: CountGallerySummaries :one
+SELECT count(*) FROM galleries WHERE instr(lower(title), lower(?1)) > 0
+`
+
+func (q *Queries) CountGallerySummaries(ctx context.Context, search string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countGallerySummaries, search)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createGallery = `-- name: CreateGallery :one
 INSERT INTO galleries (id, title) VALUES (?, ?) RETURNING id, title
 `
@@ -66,6 +77,58 @@ func (q *Queries) GetGallery(ctx context.Context, id string) (Gallery, error) {
 	row := q.db.QueryRowContext(ctx, getGallery, id)
 	var i Gallery
 	err := row.Scan(&i.ID, &i.Title)
+	return i, err
+}
+
+const getGalleryImageLocation = `-- name: GetGalleryImageLocation :one
+SELECT l.path AS library_path, s.path AS source_path, s.kind, f.path AS file_path
+FROM gallery_pages p
+JOIN source_files f ON f.id = p.source_file_id
+JOIN sources s ON s.id = f.source_id
+JOIN libraries l ON l.id = s.library_id
+WHERE p.gallery_id = ? ORDER BY p.position LIMIT 1 OFFSET ?
+`
+
+type GetGalleryImageLocationParams struct {
+	GalleryID string
+	Offset    int64
+}
+
+type GetGalleryImageLocationRow struct {
+	LibraryPath string
+	SourcePath  string
+	Kind        string
+	FilePath    string
+}
+
+func (q *Queries) GetGalleryImageLocation(ctx context.Context, arg GetGalleryImageLocationParams) (GetGalleryImageLocationRow, error) {
+	row := q.db.QueryRowContext(ctx, getGalleryImageLocation, arg.GalleryID, arg.Offset)
+	var i GetGalleryImageLocationRow
+	err := row.Scan(
+		&i.LibraryPath,
+		&i.SourcePath,
+		&i.Kind,
+		&i.FilePath,
+	)
+	return i, err
+}
+
+const getGallerySummary = `-- name: GetGallerySummary :one
+SELECT g.id, g.title, count(p.position) AS page_count
+FROM galleries g LEFT JOIN gallery_pages p ON p.gallery_id = g.id
+WHERE g.id = ? GROUP BY g.id
+`
+
+type GetGallerySummaryRow struct {
+	ID        string
+	Title     string
+	PageCount int64
+}
+
+func (q *Queries) GetGallerySummary(ctx context.Context, id string) (GetGallerySummaryRow, error) {
+	row := q.db.QueryRowContext(ctx, getGallerySummary, id)
+	var i GetGallerySummaryRow
+	err := row.Scan(&i.ID, &i.Title, &i.PageCount)
 	return i, err
 }
 
@@ -148,6 +211,50 @@ func (q *Queries) ListGalleryPages(ctx context.Context, galleryID string) ([]Lis
 	for rows.Next() {
 		var i ListGalleryPagesRow
 		if err := rows.Scan(&i.GalleryID, &i.SourceFileID, &i.PageNumber); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGallerySummaries = `-- name: ListGallerySummaries :many
+SELECT g.id, g.title, count(p.position) AS page_count
+FROM galleries g LEFT JOIN gallery_pages p ON p.gallery_id = g.id
+WHERE instr(lower(g.title), lower(?1)) > 0
+GROUP BY g.id
+ORDER BY g.title COLLATE NOCASE, g.id
+LIMIT ?3 OFFSET ?2
+`
+
+type ListGallerySummariesParams struct {
+	Search     string
+	PageOffset int64
+	PageSize   int64
+}
+
+type ListGallerySummariesRow struct {
+	ID        string
+	Title     string
+	PageCount int64
+}
+
+func (q *Queries) ListGallerySummaries(ctx context.Context, arg ListGallerySummariesParams) ([]ListGallerySummariesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listGallerySummaries, arg.Search, arg.PageOffset, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGallerySummariesRow{}
+	for rows.Next() {
+		var i ListGallerySummariesRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.PageCount); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

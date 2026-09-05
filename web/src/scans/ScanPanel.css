@@ -1,0 +1,55 @@
+.scan-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.scan-heading p, .scan-finished {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.scan-phase {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.scan-phase span {
+  color: var(--muted);
+}
+
+.scan-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 32px;
+  margin: 20px 0 12px;
+}
+
+.scan-counts div {
+  display: grid;
+  gap: 4px;
+}
+
+.scan-counts dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.scan-counts dd {
+  order: -1;
+  margin: 0;
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-panel progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+  margin-bottom: 12px;
+}

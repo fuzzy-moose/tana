@@ -34,3 +34,27 @@ WHERE sources.id = ?;
 
 -- name: ListSourceFilesForGallery :many
 SELECT id, path FROM source_files WHERE source_id = ?;
+
+-- name: CountGallerySummaries :one
+SELECT count(*) FROM galleries WHERE instr(lower(title), lower(sqlc.arg(search))) > 0;
+
+-- name: ListGallerySummaries :many
+SELECT g.id, g.title, count(p.position) AS page_count
+FROM galleries g LEFT JOIN gallery_pages p ON p.gallery_id = g.id
+WHERE instr(lower(g.title), lower(sqlc.arg(search))) > 0
+GROUP BY g.id
+ORDER BY g.title COLLATE NOCASE, g.id
+LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
+
+-- name: GetGallerySummary :one
+SELECT g.id, g.title, count(p.position) AS page_count
+FROM galleries g LEFT JOIN gallery_pages p ON p.gallery_id = g.id
+WHERE g.id = ? GROUP BY g.id;
+
+-- name: GetGalleryImageLocation :one
+SELECT l.path AS library_path, s.path AS source_path, s.kind, f.path AS file_path
+FROM gallery_pages p
+JOIN source_files f ON f.id = p.source_file_id
+JOIN sources s ON s.id = f.source_id
+JOIN libraries l ON l.id = s.library_id
+WHERE p.gallery_id = ? ORDER BY p.position LIMIT 1 OFFSET ?;

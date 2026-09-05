@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { checkLibraryAvailability, createLibrary, listLibraries, removeLibrary, renameLibrary } from './api'
 import type { Library } from './api'
 import LibraryForm from './LibraryForm'
+import { useScan } from '../scans/useScan'
+import ScanPanel from '../scans/ScanPanel'
 import './Libraries.css'
 
 type Editor = { type: 'add' } | { type: 'rename' | 'remove', library: Library }
@@ -13,6 +15,7 @@ const availabilityLabels = {
 }
 
 export default function Libraries() {
+  const scan = useScan()
   const [libraries, setLibraries] = useState<Library[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -131,11 +134,13 @@ export default function Libraries() {
           <p>Manage the folders that hold your comics and manga.</p>
         </div>
         <div className="button-group">
+          <button className="button" type="button" disabled={locked || scan.disabled || libraries.length === 0} onClick={() => void scan.start()}>Scan all</button>
           <button className="button" type="button" disabled={locked} onClick={refreshLibraries}>Refresh</button>
           <button ref={addButton} className="button button-primary" type="button" disabled={locked} onClick={(event) => openEditor({ type: 'add' }, event.currentTarget)}>Add library</button>
         </div>
       </div>
 
+      <ScanPanel scan={scan} libraries={libraries} />
       <p className="library-notice" role="status">{loading ? 'Loading libraries…' : notice}</p>
       {error && (
         <div className="error-banner" role="alert">
@@ -169,6 +174,7 @@ export default function Libraries() {
                 </div>
               </div>
               <div className="button-group" aria-label={`Actions for ${library.name}`}>
+                <button className="button" type="button" disabled={locked || scan.disabled} onClick={() => void scan.start(library.id)}>Scan</button>
                 <button className="button" type="button" disabled={locked} onClick={() => void check(library)}>{busy === library.id && !editor ? 'Checking…' : 'Check availability'}</button>
                 <button className="button" type="button" disabled={locked} onClick={(event) => openEditor({ type: 'rename', library }, event.currentTarget)}>Rename</button>
                 <button className="button" type="button" disabled={locked} onClick={(event) => openEditor({ type: 'remove', library }, event.currentTarget)}>Remove</button>

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
@@ -38,7 +39,7 @@ func testHandlerWithScanFS(t *testing.T, dirFS func(string) fs.FS) http.Handler 
 	t.Cleanup(libraries.Close)
 	scans := scan.New(t.Context(), db, libraries, dirFS, logger)
 	t.Cleanup(scans.Close)
-	return NewHandler(logger, libraries, scans)
+	return NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db))
 }
 
 func request(t *testing.T, handler http.Handler, method, path, body string, wantStatus int) *httptest.ResponseRecorder {

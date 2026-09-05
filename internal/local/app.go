@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
@@ -42,7 +43,7 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		db:        db,
 		libraries: libraries,
 		scans:     scans,
-		handler:   httpapi.NewHandler(logger, libraries, scans),
+		handler:   httpapi.NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db)),
 	}, nil
 }
 

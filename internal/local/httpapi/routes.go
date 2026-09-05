@@ -4,13 +4,20 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func NewHandler(logger *slog.Logger, libraries *library.Service, scans *scan.Service) http.Handler {
+func NewHandler(logger *slog.Logger, libraries *library.Service, scans *scan.Service, galleries *gallery.SQLiteRepository) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET /api/galleries", HandleListGalleries(galleries))
+	mux.Handle("GET /api/galleries/{id}", HandleGetGallery(galleries))
+	mux.Handle("GET /api/galleries/{id}/pages/{number}/image", HandleGalleryImage(galleries))
+	mux.HandleFunc("/api/galleries", methodNotAllowed("GET, HEAD"))
+	mux.HandleFunc("/api/galleries/{id}", methodNotAllowed("GET, HEAD"))
+	mux.HandleFunc("/api/galleries/{id}/pages/{number}/image", methodNotAllowed("GET, HEAD"))
 	mux.Handle("POST /api/scans", HandleRequestScan(scans))
 	mux.Handle("GET /api/scans/status", HandleScanStatus(scans))
 	mux.HandleFunc("/api/scans", methodNotAllowed("POST"))

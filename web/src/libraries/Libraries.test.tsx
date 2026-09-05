@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import Libraries from './Libraries'
 import type { Library } from './api'
 
+vi.mock('../scans/useScan', () => ({ useScan: () => ({ status: null, error: '', disabled: true, start: vi.fn() }) }))
+
 const library: Library = {
   id: 'manga-1',
   name: 'Manga',
@@ -73,7 +75,7 @@ test('shows a load failure instead of an empty library and supports retry', asyn
     .mockResolvedValueOnce(Response.json([{ ...library, availability: 'unknown', last_checked_at: null }]))
   const user = userEvent.setup()
   render(<Libraries />)
-  expect(screen.getByRole('status').textContent).toBe('Loading libraries…')
+  expect(screen.getByText('Loading libraries…')).toBeTruthy()
   expect((await screen.findByRole('alert')).textContent).toContain('Could not reach Tana')
   expect(screen.queryByText('Your collection starts here.')).toBeNull()
   await user.click(screen.getByRole('button', { name: 'Retry' }))

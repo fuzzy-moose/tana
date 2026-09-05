@@ -1,0 +1,173 @@
+.reader {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr) 96px;
+  height: 100dvh;
+  padding: 0;
+  overflow: hidden;
+  background: #090a0b;
+}
+
+.reader-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.reader-header h1 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.reader-header > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reader-stage {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.reader-spread {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 12px 24px;
+}
+
+.reader-page {
+  flex: 0 1 50%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reader-page img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left center;
+  user-select: none;
+}
+
+.reader-page + .reader-page img {
+  object-position: right center;
+}
+
+.reader-single .reader-page {
+  flex-basis: 100%;
+}
+
+.reader-single .reader-page img {
+  object-position: center;
+}
+
+.reader-page-error {
+  position: relative;
+  z-index: 2;
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.reader-page-error .button {
+  margin-top: 16px;
+}
+
+.reader-side {
+  position: absolute;
+  inset-block: 0;
+  width: 50%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.reader-side:disabled {
+  cursor: default;
+}
+
+.reader-side-left {
+  left: 0;
+}
+
+.reader-side-right {
+  right: 0;
+}
+
+.reader-footer {
+  display: grid;
+  justify-content: center;
+  align-content: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.reader-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.reader-position {
+  min-width: 160px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-position span {
+  display: block;
+  margin-top: 3px;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.reader-help {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.reader-single-turn {
+  color: var(--muted);
+}
+
+.reader-loading {
+  position: absolute;
+  inset: 50% 0 auto;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.reader-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
