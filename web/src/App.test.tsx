@@ -26,6 +26,7 @@ test('defaults to galleries, searches and paginates, then opens gallery details 
   await user.click(await screen.findByRole('link', { name: 'Next' }))
   await screen.findByRole('heading', { name: 'Manga Two' })
   expect(window.location.hash).toBe('#/galleries?q=Manga&page=2')
+  expect(screen.getByRole('link', { name: 'Page 1' }).getAttribute('href')).toBe('#/galleries?q=Manga')
   await user.click(within(screen.getByRole('list', { name: 'Galleries' })).getByRole('link'))
   await screen.findByRole('link', { name: 'Read gallery' })
   expect(screen.getByRole('link', { name: 'Read from page 3' }).getAttribute('href')).toBe('#/galleries/g/read?page=3')

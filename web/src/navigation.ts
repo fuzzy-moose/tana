@@ -41,4 +41,9 @@ export const galleryLink = (id: string) => `#/galleries/${encodeURIComponent(id)
 export const readerLink = (id: string, page = 1) => `${galleryLink(id)}/read?page=${page}`
 // Entry links let image dimensions determine the spread; saved URLs identify its exact pages.
 export const readerSpreadLink = (id: string, first: number, last = first) => `${galleryLink(id)}/page/${first === last ? first : `${first}-${last}`}`
-export const listingLink = (search: string, page = 1) => `#/galleries?${new URLSearchParams({ q: search, page: String(page) })}`
+export function listingLink(search: string, page = 1) {
+  const params = new URLSearchParams()
+  if (search) params.set('q', search)
+  if (page > 1) params.set('page', String(page))
+  return `#/galleries${params.size ? `?${params}` : ''}`
+}

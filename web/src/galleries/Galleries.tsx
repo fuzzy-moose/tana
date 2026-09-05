@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { galleryLink, listingLink } from '../navigation'
+import Pagination from '../pagination/Pagination'
 import { listGalleries } from './api'
 import type { GalleryListing } from './api'
 import GalleryImage from './GalleryImage'
@@ -64,11 +65,7 @@ export default function Galleries({ search, page }: { search: string, page: numb
             </a>
           </li>)}
         </ul>}
-        {result.total > result.page_size && <nav className="pagination" aria-label="Gallery pages">
-          {result.page > 1 ? <a className="button" href={listingLink(search, result.page - 1)}>Previous</a> : <button className="button" disabled>Previous</button>}
-          <span>Page {result.page} of {Math.ceil(result.total / result.page_size)}</span>
-          {result.page * result.page_size < result.total ? <a className="button" href={listingLink(search, result.page + 1)}>Next</a> : <button className="button" disabled>Next</button>}
-        </nav>}
+        <Pagination page={result.page} totalPages={Math.ceil(result.total / result.page_size)} pageHref={(number) => listingLink(search, number)} label="Gallery pages" />
       </>}
     </section>
   )
