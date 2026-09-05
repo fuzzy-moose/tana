@@ -11,6 +11,7 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/local/gallery/dbgen"
 	"github.com/fuzzy-moose/tana/internal/local/source"
+	"github.com/fuzzy-moose/tana/internal/local/tag"
 )
 
 var ErrImageUnavailable = errors.New("page image unavailable")
@@ -19,6 +20,32 @@ type Summary struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	PageCount int64  `json:"page_count"`
+}
+
+type Detail struct {
+	Summary
+	Tags []DetailTag `json:"tags"`
+}
+
+type DetailTag struct {
+	Namespace string `json:"namespace"`
+	Value     string `json:"value"`
+}
+
+func (r *SQLiteRepository) Detail(ctx context.Context, id string) (Detail, error) {
+	summary, err := r.Summary(ctx, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	tags, err := tag.NewSQLiteRepository(r.db).ListForGallery(ctx, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	result := Detail{Summary: summary, Tags: make([]DetailTag, 0, len(tags))}
+	for _, t := range tags {
+		result.Tags = append(result.Tags, DetailTag{Namespace: t.Namespace.Name, Value: t.Value})
+	}
+	return result, nil
 }
 
 type Listing struct {

@@ -38,7 +38,7 @@ func positiveQuery(r *http.Request, key string, fallback int64) (int64, bool) {
 
 func HandleGetGallery(galleries *gallery.SQLiteRepository) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		result, err := galleries.Summary(r.Context(), r.PathValue("id"))
+		result, err := galleries.Detail(r.Context(), r.PathValue("id"))
 		if err != nil {
 			writeGalleryError(w, r, err)
 			return

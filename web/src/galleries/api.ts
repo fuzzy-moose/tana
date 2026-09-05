@@ -6,6 +6,10 @@ export interface Gallery {
   page_count: number
 }
 
+export interface GalleryDetails extends Gallery {
+  tags: { namespace: string, value: string }[]
+}
+
 export interface GalleryListing {
   items: Gallery[]
   total: number
@@ -18,7 +22,7 @@ export function listGalleries(search: string, page: number, pageSize: number, si
 }
 
 export function getGallery(id: string, signal?: AbortSignal) {
-  return request<Gallery>(`/api/galleries/${encodeURIComponent(id)}`, { signal }, {
+  return request<GalleryDetails>(`/api/galleries/${encodeURIComponent(id)}`, { signal }, {
     not_found: 'This gallery no longer exists. Return to Galleries to choose another.',
   })
 }

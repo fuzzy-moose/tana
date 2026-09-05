@@ -5,6 +5,12 @@ import './Galleries.css'
 
 export default function GalleryDetail({ id }: { id: string }) {
   const { gallery, error, retry } = useGallery(id)
+  const tagGroups = new Map<string, string[]>()
+  for (const tag of gallery?.tags ?? []) {
+    const values = tagGroups.get(tag.namespace) ?? []
+    values.push(tag.value)
+    tagGroups.set(tag.namespace, values)
+  }
   return <section aria-labelledby="gallery-title">
     <a className="back-link" href="#/">← Galleries</a>
     {error && <div className="error-banner" role="alert"><p>{error}</p><button className="button" onClick={retry}>Retry</button></div>}
@@ -19,6 +25,17 @@ export default function GalleryDetail({ id }: { id: string }) {
           {gallery.page_count > 0 ? <a className="button button-primary" href={readerLink(id)}>Read gallery</a> : <p>This gallery has no pages to read.</p>}
         </div>
       </div>
+      {tagGroups.size > 0 && <section className="gallery-tags" aria-labelledby="gallery-tags-title">
+        <div className="gallery-meta"><h2 id="gallery-tags-title">Tags</h2></div>
+        <dl className="gallery-tag-groups">
+          {[...tagGroups].map(([namespace, values]) => <div className="gallery-tag-group" key={namespace}>
+            <dt>{namespace === 'other' ? 'Other' : namespace}</dt>
+            <dd><ul aria-label={`${namespace === 'other' ? 'Other' : namespace} tags`}>
+              {values.map((value) => <li key={value}>{value}</li>)}
+            </ul></dd>
+          </div>)}
+        </dl>
+      </section>}
       {gallery.page_count > 0 && <>
         <div className="gallery-meta"><h2>Pages</h2><span>Select a page to start reading</span></div>
         <ol className="page-grid" aria-label="Gallery pages">

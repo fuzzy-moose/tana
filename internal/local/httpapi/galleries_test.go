@@ -8,10 +8,62 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 )
+
+func TestGalleryDetailTags(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		metadata string
+		want     []gallery.DetailTag
+	}{
+		{name: "no tags", want: []gallery.DetailTag{}},
+		{
+			name:     "grouped alphabetical tags",
+			metadata: "Tags: language:japanese, artist:zeta, all ages, artist:alpha, custom:example\nAttribution\n",
+			want: []gallery.DetailTag{
+				{Namespace: "artist", Value: "alpha"},
+				{Namespace: "artist", Value: "zeta"},
+				{Namespace: "custom", Value: "example"},
+				{Namespace: "language", Value: "japanese"},
+				{Namespace: "other", Value: "all ages"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := testHandler(t)
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "1.png"), []byte("image"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.metadata != "" {
+				if err := os.WriteFile(filepath.Join(root, "galleryinfo.txt"), []byte(tc.metadata), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			request(t, h, "POST", "/api/libraries", registrationJSON(t, "Library", root), 201)
+			request(t, h, "POST", "/api/scans", `{}`, 202)
+			awaitScan(t, h)
+			var listing gallery.Listing
+			if err := json.Unmarshal(request(t, h, "GET", "/api/galleries", "", 200).Body.Bytes(), &listing); err != nil {
+				t.Fatal(err)
+			}
+			if len(listing.Items) != 1 {
+				t.Fatalf("expected one gallery, got %+v", listing)
+			}
+			var detail gallery.Detail
+			if err := json.Unmarshal(request(t, h, "GET", "/api/galleries/"+listing.Items[0].ID, "", 200).Body.Bytes(), &detail); err != nil {
+				t.Fatal(err)
+			}
+			if detail.Summary != listing.Items[0] || !reflect.DeepEqual(detail.Tags, tc.want) {
+				t.Fatalf("unexpected gallery detail: %+v; want tags %+v", detail, tc.want)
+			}
+		})
+	}
+}
 
 func TestGalleryAPIReadsDirectoryAndArchiveImages(t *testing.T) {
 	h := testHandler(t)

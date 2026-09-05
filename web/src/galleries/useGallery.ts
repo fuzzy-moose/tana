@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { getGallery } from './api'
-import type { Gallery } from './api'
+import type { GalleryDetails } from './api'
 
 export function useGallery(id: string) {
-  const [gallery, setGallery] = useState<Gallery | null>(null)
+  const [gallery, setGallery] = useState<GalleryDetails | null>(null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
