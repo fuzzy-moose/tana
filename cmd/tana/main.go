@@ -8,8 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fuzzy-moose/tana/internal/local/httpapi"
-	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
@@ -30,18 +29,13 @@ func run() error {
 	level.Set(cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	dataDir, err := library.DataDir()
+	app, err := local.New(ctx, logger)
 	if err != nil {
 		logger.Error("startup_failed", "error", err)
 		return err
 	}
-	libraries, err := library.Open(ctx, dataDir, logger)
-	if err != nil {
-		logger.Error("startup_failed", "error", err)
-		return err
-	}
-	defer libraries.Close()
-	if err := server.Run(ctx, cfg, logger, httpapi.NewHandler(logger, libraries)); err != nil {
+	defer app.Close()
+	if err := server.Run(ctx, cfg, logger, app.Handler()); err != nil {
 		logger.Error("server_failed", "error", err)
 		return err
 	}

@@ -7,22 +7,29 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	collector "github.com/fuzzy-moose/tana/internal/collector/httpapi"
 	local "github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/storage"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
 func TestServiceRoutes(t *testing.T) {
 	localHandler := func(logger *slog.Logger) http.Handler {
-		libraries, err := library.Open(context.Background(), t.TempDir(), logger)
+		db, dir, err := storage.Open(context.Background(), t.TempDir())
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = libraries.Close() })
+		t.Cleanup(func() { _ = db.Close() })
+		libraries, err := library.New(context.Background(), library.NewSQLiteRepository(db), os.DirFS, dir, logger)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(libraries.Close)
 		return local.NewHandler(logger, libraries)
 	}
 	for name, newHandler := range map[string]func(*slog.Logger) http.Handler{"local": localHandler, "collector": collector.NewHandler} {

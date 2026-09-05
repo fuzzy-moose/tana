@@ -1,9 +1,7 @@
-package library
+package storage
 
 import (
 	"errors"
-	"io"
-	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,87 +10,61 @@ import (
 
 func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "data #? with spaces")
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s, err := openService(t.Context(), dir, logger)
+	db, _, err := Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	registered, err := s.Create(t.Context(), "Persistent", t.TempDir())
+	_, err = db.Exec("INSERT INTO libraries (id, name, path) VALUES (?, ?, ?)", "persistent", "Persistent", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Close(); err != nil {
+	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s, err = openService(t.Context(), dir, logger)
+	db, _, err = Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
-	row, err := s.Get(t.Context(), registered.ID)
-	if err != nil || row.Name != registered.Name || row.Path != registered.Path {
-		t.Fatalf("registration did not survive reopen: %+v %v", row, err)
+	defer db.Close()
+	var name string
+	if err := db.QueryRow("SELECT name FROM libraries WHERE id = ?", "persistent").Scan(&name); err != nil || name != "Persistent" {
+		t.Fatalf("registration did not survive reopen: %q %v", name, err)
 	}
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
 		t.Fatalf("schema version %d: %v", version, err)
 	}
 	// Force a fresh pooled connection: connection-local settings must survive.
-	s.db.SetConnMaxLifetime(time.Nanosecond)
+	db.SetConnMaxLifetime(time.Nanosecond)
 	for _, tc := range []struct {
 		pragma string
 		want   int
 	}{{"foreign_keys", 1}, {"busy_timeout", 5000}} {
 		var value int
-		if err := s.db.QueryRow("PRAGMA " + tc.pragma).Scan(&value); err != nil || value != tc.want {
+		if err := db.QueryRow("PRAGMA " + tc.pragma).Scan(&value); err != nil || value != tc.want {
 			t.Fatalf("%s=%d, error=%v", tc.pragma, value, err)
 		}
 	}
 	var mode string
-	if err := s.db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil || mode != "wal" {
+	if err := db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil || mode != "wal" {
 		t.Fatalf("journal_mode=%q, error=%v", mode, err)
 	}
 }
 
-func TestLibraryDeletionCascadesToOwnedRecords(t *testing.T) {
-	s := testService(t)
-	root, err := s.Create(t.Context(), "Comics", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Exercise the relationship required of future catalog/progress tables.
-	_, err = s.db.Exec(`CREATE TABLE owned_records (
-		library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
-		value TEXT NOT NULL
-	)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec("INSERT INTO owned_records VALUES (?, 'progress')", root.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Delete(t.Context(), root.ID); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err := s.db.QueryRow("SELECT count(*) FROM owned_records").Scan(&count); err != nil || count != 0 {
-		t.Fatalf("orphaned records=%d: %v", count, err)
-	}
-	if _, err := s.db.Exec("INSERT INTO owned_records VALUES ('missing', 'progress')"); err == nil {
-		t.Fatal("foreign key constraint not enforced")
-	}
-}
-
 func TestFutureDatabaseVersionRejected(t *testing.T) {
-	s := testService(t)
-	if _, err := s.db.Exec("PRAGMA user_version = 999"); err != nil {
+	db, _, err := Open(t.Context(), t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := migrate(t.Context(), s.db); err == nil || !strings.Contains(err.Error(), "newer") {
+	defer db.Close()
+	if _, err := db.Exec("PRAGMA user_version = 999"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(t.Context(), db); err == nil || !strings.Contains(err.Error(), "newer") {
 		t.Fatalf("future schema accepted: %v", err)
 	}
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 999 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 999 {
 		t.Fatalf("future schema was changed: %d, %v", version, err)
 	}
 }

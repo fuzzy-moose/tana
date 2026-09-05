@@ -13,16 +13,22 @@ import (
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
 
 func testHandler(t *testing.T) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	libraries, err := library.Open(t.Context(), t.TempDir(), logger)
+	db, dir, err := storage.Open(t.Context(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = libraries.Close() })
+	t.Cleanup(func() { _ = db.Close() })
+	libraries, err := library.New(t.Context(), library.NewSQLiteRepository(db), os.DirFS, dir, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(libraries.Close)
 	return NewHandler(logger, libraries)
 }
 

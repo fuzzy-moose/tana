@@ -1,4 +1,5 @@
-package library
+// Package storage opens and migrates the local application database.
+package storage
 
 import (
 	"context"
@@ -56,17 +57,15 @@ func dataDir(getenv func(string) string, homeDir func() (string, error), goos st
 	return filepath.Abs(filepath.Join(base, "tana"))
 }
 
-func openDatabase(ctx context.Context, dir string) (*sql.DB, string, error) {
+// Open returns the initialized database and absolute application storage path.
+// The caller owns the database and must close it after its users have stopped.
+func Open(ctx context.Context, dir string) (*sql.DB, string, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, "", err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, "", fmt.Errorf("create application storage: %w", err)
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		return nil, "", fmt.Errorf("resolve application storage: %w", err)
 	}
 	path := filepath.ToSlash(filepath.Join(dir, "tana.db"))
 	if !filepath.IsAbs(path) || path[0] != '/' {

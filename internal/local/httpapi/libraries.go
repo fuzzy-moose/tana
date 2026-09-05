@@ -11,79 +11,86 @@ import (
 	"github.com/fuzzy-moose/tana/internal/local/library"
 )
 
-type libraryAPI struct {
-	libraries *library.Service
-	logger    *slog.Logger
+func HandleCreateLibrary(libraries *library.Service, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		}
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		result, err := libraries.Create(r.Context(), input.Name, input.Path)
+		if err != nil {
+			writeLibraryError(w, logger, err)
+			return
+		}
+		w.Header().Set("Location", "/api/libraries/"+result.ID)
+		writeJSON(w, http.StatusCreated, result)
+	})
 }
 
-func (a libraryAPI) create(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-	}
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, err := a.libraries.Create(r.Context(), input.Name, input.Path)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	w.Header().Set("Location", "/api/libraries/"+result.ID)
-	writeJSON(w, http.StatusCreated, result)
+func HandleListLibraries(libraries *library.Service, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result, err := libraries.List(r.Context())
+		if err != nil {
+			writeLibraryError(w, logger, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
 }
 
-func (a libraryAPI) list(w http.ResponseWriter, r *http.Request) {
-	result, err := a.libraries.List(r.Context())
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
+func HandleGetLibrary(libraries *library.Service, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result, err := libraries.Get(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeLibraryError(w, logger, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
 }
 
-func (a libraryAPI) get(w http.ResponseWriter, r *http.Request) {
-	result, err := a.libraries.Get(r.Context(), r.PathValue("id"))
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
+func HandleRenameLibrary(libraries *library.Service, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Name string `json:"name"`
+		}
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		result, err := libraries.Rename(r.Context(), r.PathValue("id"), input.Name)
+		if err != nil {
+			writeLibraryError(w, logger, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
 }
 
-func (a libraryAPI) rename(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Name string `json:"name"`
-	}
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, err := a.libraries.Rename(r.Context(), r.PathValue("id"), input.Name)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
+func HandleDeleteLibrary(libraries *library.Service, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := libraries.Delete(r.Context(), r.PathValue("id")); err != nil {
+			writeLibraryError(w, logger, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNoContent)
+	})
 }
 
-func (a libraryAPI) delete(w http.ResponseWriter, r *http.Request) {
-	if err := a.libraries.Delete(r.Context(), r.PathValue("id")); err != nil {
-		a.fail(w, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusNoContent)
+func HandleCheckLibraryAvailability(libraries *library.Service, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := libraries.RequestCheck(r.Context(), r.PathValue("id")); err != nil {
+			writeLibraryError(w, logger, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
+	})
 }
 
-func (a libraryAPI) check(w http.ResponseWriter, r *http.Request) {
-	if err := a.libraries.RequestCheck(r.Context(), r.PathValue("id")); err != nil {
-		a.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
-}
-
-func (a libraryAPI) fail(w http.ResponseWriter, err error) {
+func writeLibraryError(w http.ResponseWriter, logger *slog.Logger, err error) {
 	status, code := http.StatusInternalServerError, "internal_error"
 	switch {
 	case errors.Is(err, library.ErrInvalidName):
@@ -103,7 +110,7 @@ func (a libraryAPI) fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, context.Canceled):
 		status, code = http.StatusRequestTimeout, "request_canceled"
 	default:
-		a.logger.Error("library_request_failed", "error", err)
+		logger.Error("library_request_failed", "error", err)
 	}
 	writeJSON(w, status, map[string]string{"error": code})
 }

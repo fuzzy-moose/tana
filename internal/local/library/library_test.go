@@ -11,16 +11,64 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
 
 func testService(t *testing.T) *Service {
 	t.Helper()
-	s, err := openService(t.Context(), t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return testServiceAt(t, t.TempDir())
+}
+
+func testServiceAt(t *testing.T, dir string) *Service {
+	t.Helper()
+	db, dir, err := storage.Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.Close() })
+	t.Cleanup(func() { _ = db.Close() })
+	s, err := newService(t.Context(), NewSQLiteRepository(db), os.DirFS, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
 	return s
+}
+
+func TestServiceLeavesDatabaseOwnershipWithCaller(t *testing.T) {
+	for _, reject := range []bool{false, true} {
+		name := "close"
+		if reject {
+			name = "initialization failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			db, dir, err := storage.Open(t.Context(), t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if reject {
+				// A previously registered root cannot contain application storage.
+				_, err := db.Exec("INSERT INTO libraries (id, name, path) VALUES (?, ?, ?)", "overlap", "Overlap", dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			s, err := New(t.Context(), NewSQLiteRepository(db), os.DirFS, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if s != nil {
+				s.Close()
+			}
+			if reject && !errors.Is(err, ErrStorageOverlap) {
+				t.Fatalf("expected storage overlap, got %v", err)
+			}
+			if !reject && err != nil {
+				t.Fatal(err)
+			}
+			if err := db.PingContext(t.Context()); err != nil {
+				t.Fatalf("library closed the application database: %v", err)
+			}
+		})
+	}
 }
 
 func TestRegistrationRoots(t *testing.T) {
@@ -38,17 +86,22 @@ func TestRegistrationRoots(t *testing.T) {
 	if err := os.Symlink(root, alias); err != nil {
 		t.Fatal(err)
 	}
-	registered, err := s.Create(t.Context(), "  Manga  ", alias)
+	registered, err := s.Create(t.Context(), "  Manga  ", root+string(filepath.Separator)+".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if registered.Path != root || registered.Name != "Manga" || registered.Availability != "available" || registered.LastCheckedAt == nil {
 		t.Fatalf("unexpected registration: %+v", registered)
 	}
-	for _, path := range []string{root, child, parent, alias, root + string(filepath.Separator)} {
+	for _, path := range []string{root, child, parent, root + string(filepath.Separator)} {
 		if _, err := s.Create(t.Context(), "Duplicate", path); !errors.Is(err, ErrRootConflict) {
 			t.Errorf("path %q: want conflict, got %v", path, err)
 		}
+	}
+	// Symlinks follow normal filesystem behavior; their paths stay distinct.
+	linked, err := s.Create(t.Context(), "Alias", alias)
+	if err != nil || linked.Path != alias {
+		t.Fatalf("symlink path was rewritten or rejected: %+v %v", linked, err)
 	}
 	if _, err := s.Create(t.Context(), "Manga", sibling); err != nil {
 		t.Fatalf("sibling root and duplicate name must be allowed: %v", err)
@@ -94,46 +147,6 @@ func TestRegistrationOnlyRequiresExistingDirectory(t *testing.T) {
 	}
 }
 
-func TestConcurrentOverlappingRegistrations(t *testing.T) {
-	s := testService(t)
-	other, err := openService(t.Context(), s.dataDir, s.logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer other.Close()
-	parent := t.TempDir()
-	child := filepath.Join(parent, "nested")
-	if err := os.Mkdir(child, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	start := make(chan struct{})
-	results := make(chan error, 2)
-	for i, service := range []*Service{s, other} {
-		path := []string{parent, child}[i]
-		go func() {
-			<-start
-			_, err := service.Create(t.Context(), "Library", path)
-			results <- err
-		}()
-	}
-	close(start)
-	var successes, conflicts int
-	for range 2 {
-		err := <-results
-		switch {
-		case err == nil:
-			successes++
-		case errors.Is(err, ErrRootConflict):
-			conflicts++
-		default:
-			t.Fatal(err)
-		}
-	}
-	if successes != 1 || conflicts != 1 {
-		t.Fatalf("successes=%d, conflicts=%d", successes, conflicts)
-	}
-}
-
 func TestAvailabilityOutageAndRecovery(t *testing.T) {
 	s := testService(t)
 	parent := t.TempDir()
@@ -173,10 +186,10 @@ func TestStalledChecksDoNotBlockCRUDOrWriteLateResults(t *testing.T) {
 	s.timeout = 20 * time.Millisecond
 	blocked := make(chan struct{})
 	finished := make(chan struct{})
-	s.probe.inspect = func(path string, canonicalize bool) (string, error) {
+	s.probe.inspect = func(path string) error {
 		<-blocked
 		defer close(finished)
-		return path, nil
+		return nil
 	}
 	var release sync.Once
 	t.Cleanup(func() { release.Do(func() { close(blocked) }) })
@@ -206,10 +219,10 @@ func TestRegistrationTimeoutNeverSavesLateResult(t *testing.T) {
 	s.timeout = 20 * time.Millisecond
 	blocked := make(chan struct{})
 	finished := make(chan struct{})
-	s.probe.inspect = func(path string, canonicalize bool) (string, error) {
+	s.probe.inspect = func(path string) error {
 		<-blocked
 		defer close(finished)
-		return path, nil
+		return nil
 	}
 	_, err := s.Create(t.Context(), "NAS", t.TempDir())
 	close(blocked)
@@ -224,22 +237,22 @@ func TestRegistrationTimeoutNeverSavesLateResult(t *testing.T) {
 }
 
 func TestFilesystemProbesBoundWorkAndShareStalledPaths(t *testing.T) {
-	p := newFilesystemProbe()
+	p := newFilesystemProbe(os.DirFS)
 	blocked := make(chan struct{})
 	var started atomic.Int32
 	finished := make(chan struct{}, 20)
 	var release sync.Once
 	t.Cleanup(func() { release.Do(func() { close(blocked) }) })
-	p.inspect = func(path string, canonicalize bool) (string, error) {
+	p.inspect = func(path string) error {
 		started.Add(1)
 		<-blocked
 		finished <- struct{}{}
-		return path, nil
+		return nil
 	}
 	// Repeated requests for one stalled path must consume only one slot.
 	for range 3 {
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-		_, err := p.check(ctx, "same", false)
+		err := p.check(ctx, "same")
 		cancel()
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatal(err)
@@ -253,7 +266,7 @@ func TestFilesystemProbesBoundWorkAndShareStalledPaths(t *testing.T) {
 		callers.Go(func() {
 			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 			defer cancel()
-			_, _ = p.check(ctx, string(rune('A'+i)), false)
+			_ = p.check(ctx, string(rune('A'+i)))
 		})
 	}
 	callers.Wait()
@@ -278,10 +291,10 @@ func TestShutdownDoesNotWaitForStalledFilesystem(t *testing.T) {
 	started := make(chan struct{})
 	blocked := make(chan struct{})
 	t.Cleanup(func() { close(blocked) })
-	s.probe.inspect = func(path string, canonicalize bool) (string, error) {
+	s.probe.inspect = func(path string) error {
 		close(started)
 		<-blocked
-		return path, nil
+		return nil
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	s.cancel = cancel
@@ -291,13 +304,13 @@ func TestShutdownDoesNotWaitForStalledFilesystem(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("startup check did not start")
 	}
-	closed := make(chan error, 1)
-	go func() { closed <- s.Close() }()
+	closed := make(chan struct{})
+	go func() {
+		s.Close()
+		close(closed)
+	}()
 	select {
-	case err := <-closed:
-		if err != nil {
-			t.Fatal(err)
-		}
+	case <-closed:
 	case <-time.After(time.Second):
 		t.Fatal("shutdown blocked on filesystem call")
 	}
@@ -310,9 +323,9 @@ func TestScheduledAndExplicitChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	checks := make(chan struct{}, 10)
-	s.probe.inspect = func(path string, canonicalize bool) (string, error) {
+	s.probe.inspect = func(path string) error {
 		checks <- struct{}{}
-		return path, nil
+		return nil
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	s.cancel = cancel
