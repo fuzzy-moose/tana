@@ -32,13 +32,16 @@ Descriptive information belonging to a gallery, including its title and tags. It
 A supplier of gallery metadata. Different providers may supply different information from different origins, including files within a source.
 
 **Panda**:
-A metadata provider supplying gallery metadata. Its upstream galleries are identified by a gallery ID and token, independently of galleries in Tana's catalog.
+A metadata provider supplying gallery metadata. Its upstream galleries are uniquely identified by gallery ID, independently of galleries in Tana's catalog.
 
 **Panda gallery reference**:
-The gallery ID and token identifying an upstream Panda gallery for metadata retrieval.
+An upstream Panda gallery's ID together with the token needed to access it. The gallery ID alone determines identity.
 
 **Raw feed**:
 A captured upstream feed in its original form, retained independently of its parsed entries. Panda feed entries identify upstream galleries for later metadata retrieval.
+
+**Feed continuity check**:
+A check for gallery IDs already collected when a raw feed is processed. A nonempty feed containing only new gallery IDs indicates a possible collection gap; empty or unparseable feeds leave continuity unknown, and the first capture has no baseline.
 
 **Tag**:
 A descriptive label shared across galleries and libraries, uniquely identified by its namespace and value. Values use lowercase ASCII letters, digits, spaces, hyphens, and dots.
