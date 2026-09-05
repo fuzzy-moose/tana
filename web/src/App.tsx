@@ -7,7 +7,7 @@ import { useRoute } from './navigation'
 
 function App() {
   const route = useRoute()
-  if (route.kind === 'reader') return <Reader key={`${route.id}:${route.page}`} id={route.id} initialPage={route.page} />
+  if (route.kind === 'reader') return <Reader key={`${route.id}:${route.page}:${route.lastPage ?? ''}`} id={route.id} initialPage={route.page} initialLastPage={route.lastPage} />
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus() }}>Skip to content</a>

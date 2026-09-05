@@ -2,8 +2,6 @@
   position: fixed;
   inset: 0;
   z-index: 10;
-  display: grid;
-  grid-template-rows: 64px minmax(0, 1fr) 96px;
   height: 100dvh;
   padding: 0;
   overflow: hidden;
@@ -11,6 +9,9 @@
 }
 
 .reader-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -36,7 +37,8 @@
 }
 
 .reader-stage {
-  position: relative;
+  position: absolute;
+  inset: 0;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -48,7 +50,6 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  padding: 12px 24px;
 }
 
 .reader-page {
@@ -93,7 +94,8 @@
   margin-top: 16px;
 }
 
-.reader-side {
+.reader-side,
+.reader-toggle {
   position: absolute;
   inset-block: 0;
   width: 50%;
@@ -115,14 +117,78 @@
   right: 0;
 }
 
+.reader-toggle {
+  display: none;
+  left: calc(100% / 3);
+  width: calc(100% / 3);
+}
+
+.reader-bottom {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
 .reader-footer {
   display: grid;
-  justify-content: center;
   align-content: center;
   gap: 10px;
   padding: 8px 16px;
   border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+.reader-header,
+.reader-footer {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.reader[data-controls-visible="true"] .reader-header,
+.reader[data-controls-visible="true"] .reader-footer,
+.reader-header:has(:focus-visible),
+.reader-bottom:has(:focus-visible) .reader-footer {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reader-header,
+  .reader-bottom {
+    pointer-events: auto;
+  }
+
+  .reader-header:hover,
+  .reader-bottom:hover .reader-footer {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.reader-progress {
+  position: relative;
+  height: 24px;
+  cursor: pointer;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.reader-progress:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.reader-progress-track {
+  --step-width: calc(100% / var(--page-count));
+  /* Separators disappear when a page occupies three pixels or less. */
+  --step-gap: clamp(0px, calc(var(--step-width) - 3px), 1px);
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: linear-gradient(to left, var(--accent) var(--progress), #45484b 0);
+  mask-image: repeating-linear-gradient(to left, #000 0 calc(var(--step-width) - var(--step-gap)), transparent 0 var(--step-width));
 }
 
 .reader-controls {
@@ -154,6 +220,59 @@
 
 .reader-single-turn {
   color: var(--muted);
+}
+
+.reader-help-touch {
+  display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .reader-side {
+    width: calc(100% / 3);
+  }
+
+  .reader-toggle,
+  .reader-help-touch {
+    display: block;
+  }
+
+  .reader-help-desktop {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .reader-header {
+    gap: 12px;
+    padding: 8px;
+  }
+
+  .reader-header > span {
+    display: none;
+  }
+
+  .reader-controls {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .reader-controls .button {
+    flex: 1;
+    white-space: nowrap;
+  }
+
+  .reader-position {
+    order: -1;
+    flex-basis: 100%;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-header,
+  .reader-footer {
+    transition: none;
+  }
 }
 
 .reader-loading {

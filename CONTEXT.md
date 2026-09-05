@@ -33,3 +33,6 @@ A supported image source file's occurrence in a gallery, numbered consecutively 
 
 **Reading spread**:
 One or two consecutive gallery pages presented together as a reading unit.
+
+**Reading progress**:
+The proportion of a gallery through the last page of the current reading spread, including the visible pages. It describes the current position, not a history of pages read.
