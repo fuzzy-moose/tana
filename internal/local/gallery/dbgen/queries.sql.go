@@ -10,17 +10,6 @@ import (
 	"database/sql"
 )
 
-const countGallerySummaries = `-- name: CountGallerySummaries :one
-SELECT count(*) FROM galleries WHERE instr(lower(title), lower(?1)) > 0
-`
-
-func (q *Queries) CountGallerySummaries(ctx context.Context, search string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countGallerySummaries, search)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createGallery = `-- name: CreateGallery :one
 INSERT INTO galleries (id, title, source_id) VALUES (?, ?, ?) RETURNING id, title, source_id
 `
@@ -213,50 +202,6 @@ func (q *Queries) ListGalleryPages(ctx context.Context, galleryID string) ([]Lis
 	for rows.Next() {
 		var i ListGalleryPagesRow
 		if err := rows.Scan(&i.GalleryID, &i.SourceFileID, &i.PageNumber); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listGallerySummaries = `-- name: ListGallerySummaries :many
-SELECT g.id, g.title, count(p.position) AS page_count
-FROM galleries g LEFT JOIN gallery_pages p ON p.gallery_id = g.id
-WHERE instr(lower(g.title), lower(?1)) > 0
-GROUP BY g.id
-ORDER BY g.title COLLATE NOCASE, g.id
-LIMIT ?3 OFFSET ?2
-`
-
-type ListGallerySummariesParams struct {
-	Search     string
-	PageOffset int64
-	PageSize   int64
-}
-
-type ListGallerySummariesRow struct {
-	ID        string
-	Title     string
-	PageCount int64
-}
-
-func (q *Queries) ListGallerySummaries(ctx context.Context, arg ListGallerySummariesParams) ([]ListGallerySummariesRow, error) {
-	rows, err := q.db.QueryContext(ctx, listGallerySummaries, arg.Search, arg.PageOffset, arg.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListGallerySummariesRow{}
-	for rows.Next() {
-		var i ListGallerySummariesRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.PageCount); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

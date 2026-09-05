@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"image"
 	"image/png"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -61,8 +62,45 @@ func TestGalleryDetailTags(t *testing.T) {
 			if detail.Summary != listing.Items[0] || !reflect.DeepEqual(detail.Tags, tc.want) {
 				t.Fatalf("unexpected gallery detail: %+v; want tags %+v", detail, tc.want)
 			}
+			if len(tc.want) > 0 {
+				var filtered gallery.Listing
+				if err := json.Unmarshal(request(t, h, "GET", "/api/galleries?q="+url.QueryEscape("a:alpha$ custom:example$"), "", 200).Body.Bytes(), &filtered); err != nil {
+					t.Fatal(err)
+				}
+				if filtered.Total != 1 || filtered.Items[0].ID != detail.ID {
+					t.Fatalf("tag query did not match imported gallery: %+v", filtered)
+				}
+				var completion gallery.Completion
+				if err := json.Unmarshal(request(t, h, "GET", "/api/gallery-search/completions?q=a%3Aal&cursor=4", "", 200).Body.Bytes(), &completion); err != nil {
+					t.Fatal(err)
+				}
+				if len(completion.Items) != 1 || completion.Items[0].Term != "artist:alpha$" {
+					t.Fatalf("tag completion: %+v", completion)
+				}
+			}
 		})
 	}
+}
+
+func TestGallerySearchReturnsGenericErrors(t *testing.T) {
+	h := testHandler(t)
+	for _, path := range []string{
+		"/api/galleries?q=" + url.QueryEscape(`title:blue$`),
+		"/api/galleries?q=" + url.QueryEscape(`"unclosed`),
+		"/api/galleries?q=unknown%3Ablue",
+		"/api/gallery-search/completions?q=blue&cursor=99",
+		"/api/gallery-search/completions?q=blue&cursor=bad",
+	} {
+		var body map[string]string
+		if err := json.Unmarshal(request(t, h, "GET", path, "", 400).Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(body, map[string]string{"error": "invalid_query"}) {
+			t.Fatalf("expected generic error, got %v", body)
+		}
+	}
+	request(t, h, "GET", "/api/gallery-search/completions?q=a%3A%22art&cursor=6", "", 200)
+	request(t, h, "POST", "/api/gallery-search/completions", "", 405)
 }
 
 func TestGalleryAPIReadsDirectoryAndArchiveImages(t *testing.T) {

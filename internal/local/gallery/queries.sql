@@ -35,17 +35,6 @@ WHERE sources.id = ?;
 -- name: ListSourceFilesForGallery :many
 SELECT id, path FROM source_files WHERE source_id = ?;
 
--- name: CountGallerySummaries :one
-SELECT count(*) FROM galleries WHERE instr(lower(title), lower(sqlc.arg(search))) > 0;
-
--- name: ListGallerySummaries :many
-SELECT g.id, g.title, count(p.position) AS page_count
-FROM galleries g LEFT JOIN gallery_pages p ON p.gallery_id = g.id
-WHERE instr(lower(g.title), lower(sqlc.arg(search))) > 0
-GROUP BY g.id
-ORDER BY g.title COLLATE NOCASE, g.id
-LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
-
 -- name: GetGallerySummary :one
 SELECT g.id, g.title, count(p.position) AS page_count
 FROM galleries g LEFT JOIN gallery_pages p ON p.gallery_id = g.id

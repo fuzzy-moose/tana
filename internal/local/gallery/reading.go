@@ -63,20 +63,36 @@ func (r *SQLiteRepository) Browse(ctx context.Context, search string, page, page
 		return result, err
 	}
 	defer tx.Rollback()
-	q := r.queries.WithTx(tx)
-	result.Total, err = q.CountGallerySummaries(ctx, search)
+	namespaces, err := searchNamespaces(ctx, tx)
+	if err != nil {
+		return result, err
+	}
+	predicate, args, err := searchPredicate(search, namespaces)
+	if err != nil {
+		return result, err
+	}
+	err = tx.QueryRowContext(ctx, "SELECT count(*) FROM galleries g WHERE "+predicate, args...).Scan(&result.Total)
 	if err != nil {
 		return result, err
 	}
 	result.Page = min(max(1, page), max(1, (result.Total+pageSize-1)/pageSize))
-	rows, err := q.ListGallerySummaries(ctx, dbgen.ListGallerySummariesParams{
-		Search: search, PageSize: pageSize, PageOffset: (result.Page - 1) * pageSize,
-	})
+	rows, err := tx.QueryContext(ctx, `SELECT g.id, g.title, count(p.position)
+		FROM galleries g LEFT JOIN gallery_pages p ON p.gallery_id = g.id
+		WHERE `+predicate+` GROUP BY g.id ORDER BY g.title COLLATE NOCASE, g.id LIMIT ? OFFSET ?`,
+		append(args, pageSize, (result.Page-1)*pageSize)...)
 	if err != nil {
 		return result, err
 	}
-	for _, row := range rows {
-		result.Items = append(result.Items, Summary{ID: row.ID, Title: row.Title, PageCount: row.PageCount})
+	defer rows.Close()
+	for rows.Next() {
+		var summary Summary
+		if err := rows.Scan(&summary.ID, &summary.Title, &summary.PageCount); err != nil {
+			return result, err
+		}
+		result.Items = append(result.Items, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return result, err
 	}
 	return result, tx.Commit()
 }

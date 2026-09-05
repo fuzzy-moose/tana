@@ -105,7 +105,7 @@ test('paginates with arrows and A/D, respects boundaries, and ignores editing an
   fireEvent.keyDown(window, { key: 'a' })
   await listing(0, 8)
 
-  fireEvent.keyDown(screen.getByLabelText('Search titles'), { key: 'd' })
+  fireEvent.keyDown(screen.getByLabelText('Search titles and tags'), { key: 'd' })
   for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey', 'isComposing']) {
     fireEvent.keyDown(window, { key: 'ArrowRight', [modifier]: true })
   }
@@ -125,7 +125,7 @@ test('clamps a saved page after galleries disappear and supports an empty search
   await listing(32, 8)
   expect(window.location.hash).toBe('#/galleries?page=5')
   total = 0
-  fireEvent.change(screen.getByLabelText('Search titles'), { target: { value: 'missing' } })
+  fireEvent.change(screen.getByLabelText('Search titles and tags'), { target: { value: 'missing' } })
   fireEvent.submit(screen.getByRole('search'))
   await screen.findByText('No matching galleries.')
   expect(screen.queryByRole('navigation', { name: 'Gallery pages' })).toBeNull()

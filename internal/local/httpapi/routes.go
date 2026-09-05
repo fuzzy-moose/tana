@@ -13,6 +13,8 @@ import (
 func NewHandler(logger *slog.Logger, libraries *library.Service, scans *scan.Service, galleries *gallery.SQLiteRepository) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/galleries", HandleListGalleries(galleries))
+	mux.Handle("GET /api/gallery-search/completions", HandleCompleteGallerySearch(galleries))
+	mux.HandleFunc("/api/gallery-search/completions", methodNotAllowed("GET, HEAD"))
 	mux.Handle("GET /api/galleries/{id}", HandleGetGallery(galleries))
 	mux.Handle("GET /api/galleries/{id}/pages/{number}/image", HandleGalleryImage(galleries))
 	mux.HandleFunc("/api/galleries", methodNotAllowed("GET, HEAD"))

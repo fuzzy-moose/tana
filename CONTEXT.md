@@ -37,6 +37,9 @@ A descriptive label shared across galleries and libraries, uniquely identified b
 **Namespace**:
 A service-wide named category of tags, uniquely identified by a name using only lowercase ASCII letters (`a-z`). Tags supplied without a namespace belong to `other`.
 
+**Tag catalog**:
+The shared vocabulary of tags across all libraries, including tags no longer assigned to any gallery.
+
 **Gallery**:
 A titled, ordered collection of pages drawn from supported image files, independent of any single library. Its content can comprise a subset of one source or files from multiple sources across libraries.
 

@@ -36,6 +36,22 @@ func positiveQuery(r *http.Request, key string, fallback int64) (int64, bool) {
 	return n, err == nil && n > 0
 }
 
+func HandleCompleteGallerySearch(galleries *gallery.SQLiteRepository) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cursor, err := strconv.Atoi(r.URL.Query().Get("cursor"))
+		if err != nil {
+			writeGalleryError(w, r, gallery.ErrInvalidQuery)
+			return
+		}
+		result, err := galleries.Complete(r.Context(), r.URL.Query().Get("q"), cursor)
+		if err != nil {
+			writeGalleryError(w, r, err)
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, result)
+	})
+}
+
 func HandleGetGallery(galleries *gallery.SQLiteRepository) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		result, err := galleries.Detail(r.Context(), r.PathValue("id"))
@@ -75,6 +91,8 @@ func HandleGalleryImage(galleries *gallery.SQLiteRepository) http.Handler {
 
 func writeGalleryError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, gallery.ErrInvalidQuery):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_query"})
 	case errors.Is(err, gallery.ErrNotFound):
 		server.NotFound(w, r)
 	case errors.Is(err, gallery.ErrImageUnavailable):

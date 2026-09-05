@@ -4,20 +4,33 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"embed"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 //go:generate go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate -f ../../../sqlc.yaml
 
 //go:embed migrations/*.sql
 var migrations embed.FS
+
+func init() {
+	// SQLite's built-in lower only folds ASCII; gallery titles may use Unicode.
+	sqlite.MustRegisterDeterministicScalarFunction("unicode_lower", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		value, ok := args[0].(string)
+		if !ok {
+			return nil, nil
+		}
+		return strings.ToLower(value), nil
+	})
+}
 
 // DataDir resolves local application storage without accessing library roots.
 func DataDir() (string, error) {

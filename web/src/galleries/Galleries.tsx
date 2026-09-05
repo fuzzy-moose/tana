@@ -5,12 +5,12 @@ import Pagination from '../pagination/Pagination'
 import { listGalleries } from './api'
 import type { GalleryListing } from './api'
 import GalleryCard from './GalleryCard'
+import GallerySearch from './GallerySearch'
 import { replaceListingPage, useGalleryLayout } from './useGalleryLayout'
 import './Galleries.css'
 
 export default function Galleries({ search, page }: { search: string, page: number }) {
   const [result, setResult] = useState<GalleryListing | null>(null)
-  const [query, setQuery] = useState(search)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
   const { viewportRef, cardRef, pageSize, cardHeight } = useGalleryLayout(search, page)
@@ -63,13 +63,7 @@ export default function Galleries({ search, page }: { search: string, page: numb
           <h1 id="galleries-title">Galleries</h1>
           <p>A little space to get lost in a story.</p>
         </div>
-        <form className="gallery-search" role="search" onSubmit={(event) => { event.preventDefault(); window.location.hash = listingLink(query.trim()) }}>
-          <label className="form-field" htmlFor="gallery-search">Search titles</label>
-          <div className="button-group">
-            <input id="gallery-search" className="text-input" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a gallery…" />
-            <button className="button" type="submit">Search</button>
-          </div>
-        </form>
+        <GallerySearch search={search} />
       </div>
       {error && <div className="error-banner" role="alert"><p>{error}</p><button className="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></div>}
       <div className="gallery-meta">
@@ -82,7 +76,7 @@ export default function Galleries({ search, page }: { search: string, page: numb
         {!current && !error && <p className="gallery-loading" role="status">Loading galleries…</p>}
         {current && (current.items.length === 0 ? <div className="library-placeholder">
           <h2>{search ? 'No matching galleries.' : 'Your next read starts here.'}</h2>
-          <p>{search ? 'Try a different title.' : 'Add a library and scan it to discover your comics and manga.'}</p>
+          <p>{search ? 'Try different titles or tags.' : 'Add a library and scan it to discover your comics and manga.'}</p>
           <a className="button" href={search ? '#/' : '#/libraries'}>{search ? 'Clear search' : 'Manage libraries'}</a>
         </div> : <ul className="gallery-grid" aria-label="Galleries">
           {current.items.map((gallery) => <li key={gallery.id}><GalleryCard gallery={gallery} /></li>)}
