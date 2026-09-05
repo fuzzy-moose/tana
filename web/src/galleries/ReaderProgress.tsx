@@ -19,8 +19,12 @@ export default function ReaderProgress({ page, lastPage, total, onSelect }: {
     let next: number
     switch (event.key) {
       case 'ArrowLeft':
+      case 'a':
+      case 'A':
       case 'ArrowUp': next = page + 1; break
       case 'ArrowRight':
+      case 'd':
+      case 'D':
       case 'ArrowDown': next = page - 1; break
       case 'Home': next = 1; break
       case 'End': next = total; break

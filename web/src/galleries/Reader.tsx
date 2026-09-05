@@ -70,9 +70,10 @@ function ReadingGallery({ gallery, initialPage, initialLastPage }: { gallery: Ga
   useEffect(() => {
     const navigate = (event: KeyboardEvent) => {
       if (event.altKey || event.ctrlKey || event.metaKey || (event.target instanceof HTMLElement && event.target.matches('input, textarea, select, [contenteditable="true"]'))) return
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const key = event.key.toLowerCase()
+      if (key === 'arrowleft' || key === 'arrowright' || key === 'a' || key === 'd') {
         event.preventDefault()
-        move(event.key === 'ArrowLeft' ? 1 : -1, event.shiftKey)
+        move(key === 'arrowleft' || key === 'a' ? 1 : -1, event.shiftKey)
       }
     }
     window.addEventListener('keydown', navigate)
@@ -108,7 +109,7 @@ function ReadingGallery({ gallery, initialPage, initialLastPage }: { gallery: Ga
           <button className="button" title="Right arrow" disabled={start === 1 || !previousReady} onClick={() => move(-1)}>Previous →</button>
         </div>
         <p className="reader-help">
-          <span className="reader-help-desktop">Click either side or use arrow keys · Shift + arrow turns one page · Esc returns to gallery</span>
+          <span className="reader-help-desktop">Click either side or use arrow keys / A / D · Hold Shift to turn one page · Esc returns to gallery</span>
           <span className="reader-help-touch">Tap sides to turn pages · Tap center for controls</span>
         </p>
       </footer>
