@@ -2,7 +2,11 @@ module github.com/fuzzy-moose/tana
 
 go 1.27.0
 
-require modernc.org/sqlite v1.58.0
+require (
+	github.com/joho/godotenv v1.5.1
+	golang.org/x/time v0.15.0
+	modernc.org/sqlite v1.58.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

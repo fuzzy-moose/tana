@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,14 +14,24 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	dev := flag.Bool("dev", false, "run in local development mode and load .env")
+	flag.Parse()
+	if flag.NArg() != 0 {
+		slog.Error("unexpected_positional_arguments")
+		os.Exit(1)
+	}
+	if err := run(*dev); err != nil {
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(development bool) error {
 	var level slog.LevelVar
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: &level})).With("service", "tana")
+	if err := server.LoadEnvironment(development); err != nil {
+		logger.Error("startup_failed", "error", err)
+		return err
+	}
 	cfg, err := server.LoadConfig(os.Getenv, "TANA", "8080")
 	if err != nil {
 		logger.Error("startup_failed", "error", err)

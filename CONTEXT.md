@@ -31,6 +31,9 @@ Descriptive information belonging to a gallery, including its title and tags. It
 **Metadata provider**:
 A supplier of gallery metadata. Different providers may supply different information from different origins, including files within a source.
 
+**Panda**:
+A metadata provider supplying gallery metadata. Its upstream galleries are identified by a gallery ID and token, independently of galleries in Tana's catalog.
+
 **Tag**:
 A descriptive label shared across galleries and libraries, uniquely identified by its namespace and value. Values use lowercase ASCII letters, digits, spaces, hyphens, and dots.
 
