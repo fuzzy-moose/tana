@@ -8,3 +8,22 @@ sql:
         package: dbgen
         out: internal/local/library/dbgen
         emit_empty_slices: true
+        omit_unused_structs: true
+  - engine: sqlite
+    schema: internal/local/storage/migrations
+    queries: internal/local/source/queries.sql
+    gen:
+      go:
+        package: dbgen
+        out: internal/local/source/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+  - engine: sqlite
+    schema: internal/local/storage/migrations
+    queries: internal/local/gallery/queries.sql
+    gen:
+      go:
+        package: dbgen
+        out: internal/local/gallery/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
