@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countGallerySummaries = `-- name: CountGallerySummaries :one
@@ -21,18 +22,19 @@ func (q *Queries) CountGallerySummaries(ctx context.Context, search string) (int
 }
 
 const createGallery = `-- name: CreateGallery :one
-INSERT INTO galleries (id, title) VALUES (?, ?) RETURNING id, title
+INSERT INTO galleries (id, title, source_id) VALUES (?, ?, ?) RETURNING id, title, source_id
 `
 
 type CreateGalleryParams struct {
-	ID    string
-	Title string
+	ID       string
+	Title    string
+	SourceID sql.NullString
 }
 
 func (q *Queries) CreateGallery(ctx context.Context, arg CreateGalleryParams) (Gallery, error) {
-	row := q.db.QueryRowContext(ctx, createGallery, arg.ID, arg.Title)
+	row := q.db.QueryRowContext(ctx, createGallery, arg.ID, arg.Title, arg.SourceID)
 	var i Gallery
-	err := row.Scan(&i.ID, &i.Title)
+	err := row.Scan(&i.ID, &i.Title, &i.SourceID)
 	return i, err
 }
 
@@ -70,13 +72,13 @@ func (q *Queries) DeleteGalleryPages(ctx context.Context, galleryID string) erro
 }
 
 const getGallery = `-- name: GetGallery :one
-SELECT id, title FROM galleries WHERE id = ?
+SELECT id, title, source_id FROM galleries WHERE id = ?
 `
 
 func (q *Queries) GetGallery(ctx context.Context, id string) (Gallery, error) {
 	row := q.db.QueryRowContext(ctx, getGallery, id)
 	var i Gallery
-	err := row.Scan(&i.ID, &i.Title)
+	err := row.Scan(&i.ID, &i.Title, &i.SourceID)
 	return i, err
 }
 
@@ -163,7 +165,7 @@ func (q *Queries) GetSourceTitle(ctx context.Context, id string) (GetSourceTitle
 }
 
 const listGalleries = `-- name: ListGalleries :many
-SELECT id, title FROM galleries ORDER BY title, id
+SELECT id, title, source_id FROM galleries ORDER BY title, id
 `
 
 func (q *Queries) ListGalleries(ctx context.Context) ([]Gallery, error) {
@@ -175,7 +177,7 @@ func (q *Queries) ListGalleries(ctx context.Context) ([]Gallery, error) {
 	items := []Gallery{}
 	for rows.Next() {
 		var i Gallery
-		if err := rows.Scan(&i.ID, &i.Title); err != nil {
+		if err := rows.Scan(&i.ID, &i.Title, &i.SourceID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -301,7 +303,7 @@ func (q *Queries) ListSourceFilesForGallery(ctx context.Context, sourceID string
 }
 
 const renameGallery = `-- name: RenameGallery :one
-UPDATE galleries SET title = ? WHERE id = ? RETURNING id, title
+UPDATE galleries SET title = ? WHERE id = ? RETURNING id, title, source_id
 `
 
 type RenameGalleryParams struct {
@@ -312,6 +314,6 @@ type RenameGalleryParams struct {
 func (q *Queries) RenameGallery(ctx context.Context, arg RenameGalleryParams) (Gallery, error) {
 	row := q.db.QueryRowContext(ctx, renameGallery, arg.Title, arg.ID)
 	var i Gallery
-	err := row.Scan(&i.ID, &i.Title)
+	err := row.Scan(&i.ID, &i.Title, &i.SourceID)
 	return i, err
 }

@@ -25,8 +25,23 @@ Registration of a source and its complete file inventory in the catalog. File co
 **Source file**:
 A file cataloged as part of a source, whether or not it is a supported image, reusable across galleries. Files at every path inside an archive belong to its inventory; a nested archive is an ordinary source file.
 
+**Gallery metadata**:
+Descriptive information belonging to a gallery, including its title and tags. It may be supplied by metadata providers or edited by the user.
+
+**Metadata provider**:
+A supplier of gallery metadata. Different providers may supply different information from different origins, including files within a source.
+
+**Tag**:
+A descriptive label shared across galleries and libraries, uniquely identified by its namespace and value. Values use lowercase ASCII letters, digits, spaces, hyphens, and dots.
+
+**Namespace**:
+A service-wide named category of tags, uniquely identified by a name using only lowercase ASCII letters (`a-z`). Tags supplied without a namespace belong to `other`.
+
 **Gallery**:
 A titled, ordered collection of pages drawn from supported image files, independent of any single library. Its content can comprise a subset of one source or files from multiple sources across libraries.
+
+**Source-linked gallery**:
+A gallery created from and explicitly linked to a single source, containing that source's supported images. Its pages may be reordered but not added or removed by users; deleting its source also deletes the gallery.
 
 **Gallery page**:
 A supported image source file's occurrence in a gallery, numbered consecutively from 1. A file can occur more than once in a gallery and have different page numbers in different galleries.

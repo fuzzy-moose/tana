@@ -12,11 +12,13 @@ var (
 	ErrInvalidTitle = errors.New("title must not be empty")
 	ErrInvalidPage  = errors.New("page must reference a supported image source file")
 	ErrNoImages     = errors.New("source has no supported images")
+	ErrLinkedPages  = errors.New("source-linked gallery pages may only be reordered")
 )
 
 type Gallery struct {
-	ID    string
-	Title string
+	ID       string
+	Title    string
+	SourceID string // Empty for independent galleries.
 }
 
 type Page struct {

@@ -12,7 +12,9 @@ import (
 	"strings"
 
 	"github.com/fuzzy-moose/tana/internal/local/gallery/dbgen"
+	"github.com/fuzzy-moose/tana/internal/local/metadata"
 	"github.com/fuzzy-moose/tana/internal/local/source"
+	"github.com/fuzzy-moose/tana/internal/local/tag"
 )
 
 type SQLiteRepository struct {
@@ -36,7 +38,7 @@ func (r *SQLiteRepository) Create(ctx context.Context, title string, fileIDs []s
 		return Gallery{}, err
 	}
 	defer tx.Rollback()
-	g, err := create(ctx, r.queries.WithTx(tx), title, fileIDs)
+	g, err := create(ctx, r.queries.WithTx(tx), title, fileIDs, "")
 	if err != nil {
 		return Gallery{}, err
 	}
@@ -46,8 +48,8 @@ func (r *SQLiteRepository) Create(ctx context.Context, title string, fileIDs []s
 	return g, nil
 }
 
-func create(ctx context.Context, q *dbgen.Queries, title string, fileIDs []string) (Gallery, error) {
-	row, err := q.CreateGallery(ctx, dbgen.CreateGalleryParams{ID: rand.Text(), Title: title})
+func create(ctx context.Context, q *dbgen.Queries, title string, fileIDs []string, sourceID string) (Gallery, error) {
+	row, err := q.CreateGallery(ctx, dbgen.CreateGalleryParams{ID: rand.Text(), Title: title, SourceID: sql.NullString{String: sourceID, Valid: sourceID != ""}})
 	if err != nil {
 		return Gallery{}, err
 	}
@@ -63,7 +65,7 @@ func (r *SQLiteRepository) CreateFromSource(ctx context.Context, sourceID string
 		return Gallery{}, err
 	}
 	defer tx.Rollback()
-	g, err := r.CreateFromSourceTx(ctx, tx, sourceID)
+	g, err := r.CreateFromSourceTx(ctx, tx, sourceID, metadata.Values{})
 	if err != nil {
 		return Gallery{}, err
 	}
@@ -75,7 +77,7 @@ func (r *SQLiteRepository) CreateFromSource(ctx context.Context, sourceID string
 
 // CreateFromSourceTx creates a gallery in the caller's transaction. ErrNoImages
 // makes no changes; other errors require the caller to roll back.
-func (r *SQLiteRepository) CreateFromSourceTx(ctx context.Context, tx *sql.Tx, sourceID string) (Gallery, error) {
+func (r *SQLiteRepository) CreateFromSourceTx(ctx context.Context, tx *sql.Tx, sourceID string, values metadata.Values) (Gallery, error) {
 	q := r.queries.WithTx(tx)
 	s, err := q.GetSourceTitle(ctx, sourceID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -113,11 +115,21 @@ func (r *SQLiteRepository) CreateFromSourceTx(ctx context.Context, tx *sql.Tx, s
 	if source.Kind(s.Kind) == source.Archive {
 		title = strings.TrimSuffix(title, path.Ext(title))
 	}
+	if strings.TrimSpace(values.Title) != "" {
+		title = values.Title
+	}
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Gallery{}, ErrInvalidTitle
 	}
-	return create(ctx, q, title, fileIDs)
+	g, err := create(ctx, q, title, fileIDs, sourceID)
+	if err != nil {
+		return Gallery{}, err
+	}
+	if err := tag.NewSQLiteRepository(r.db).ReplaceForGalleryTx(ctx, tx, g.ID, values.Tags); err != nil {
+		return Gallery{}, err
+	}
+	return g, nil
 }
 
 func (r *SQLiteRepository) Get(ctx context.Context, id string) (Gallery, error) {
@@ -165,8 +177,28 @@ func (r *SQLiteRepository) ReplacePages(ctx context.Context, id string, fileIDs 
 	}
 	defer tx.Rollback()
 	q := r.queries.WithTx(tx)
-	if _, err := q.GetGallery(ctx, id); err != nil {
+	g, err := q.GetGallery(ctx, id)
+	if err != nil {
 		return domainError(err)
+	}
+	if g.SourceID.Valid {
+		pages, err := q.ListGalleryPages(ctx, id)
+		if err != nil {
+			return err
+		}
+		if len(pages) != len(fileIDs) {
+			return ErrLinkedPages
+		}
+		remaining := make(map[string]int, len(pages))
+		for _, page := range pages {
+			remaining[page.SourceFileID]++
+		}
+		for _, fileID := range fileIDs {
+			if remaining[fileID] == 0 {
+				return ErrLinkedPages
+			}
+			remaining[fileID]--
+		}
 	}
 	if err := q.DeleteGalleryPages(ctx, id); err != nil {
 		return err
@@ -201,7 +233,7 @@ func (r *SQLiteRepository) Delete(ctx context.Context, id string) error {
 }
 
 func fromRow(row dbgen.Gallery) Gallery {
-	return Gallery{ID: row.ID, Title: row.Title}
+	return Gallery{ID: row.ID, Title: row.Title, SourceID: row.SourceID.String}
 }
 
 func domainError(err error) error {

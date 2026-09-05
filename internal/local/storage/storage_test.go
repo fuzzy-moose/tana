@@ -1,49 +1,11 @@
 package storage
 
 import (
-	"database/sql"
 	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestGalleryMigrationPreservesExistingLibrary(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-	db, err := sql.Open("sqlite", filepath.Join(dir, "tana.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	ddl, err := migrations.ReadFile("migrations/0001_libraries.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, string(ddl)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "PRAGMA user_version = 1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO libraries (id, name, path) VALUES ('existing', 'Existing', ?)", t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	db, _, err = Open(ctx, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var name string
-	if err := db.QueryRowContext(ctx, "SELECT name FROM libraries WHERE id = 'existing'").Scan(&name); err != nil || name != "Existing" {
-		t.Fatalf("existing library: %q, %v", name, err)
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO sources (id, library_id, path, kind) VALUES ('new-source', 'existing', 'book.zip', 'archive')"); err != nil {
-		t.Fatalf("upgraded library cannot own a source: %v", err)
-	}
-}
 
 func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "data #? with spaces")
@@ -68,7 +30,7 @@ func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 		t.Fatalf("registration did not survive reopen: %q %v", name, err)
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
 		t.Fatalf("schema version %d: %v", version, err)
 	}
 }

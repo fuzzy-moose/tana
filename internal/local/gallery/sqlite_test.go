@@ -136,7 +136,7 @@ func TestPageReplacementIsAtomicAndGalleryDeletionPreservesSource(t *testing.T) 
 	_, libraries, sources, galleries := openRepositories(t)
 	ctx := t.Context()
 	_, s, ids := inventory(t, libraries, sources, "book.zip", source.Archive, "1.jpg", "2.png", "notes.txt")
-	g, err := galleries.CreateFromSource(ctx, s.ID)
+	g, err := galleries.Create(ctx, "book", []string{ids["1.jpg"], ids["2.png"]})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,8 +192,49 @@ func TestPageReplacementIsAtomicAndGalleryDeletionPreservesSource(t *testing.T) 
 		t.Fatal(err)
 	}
 	assertPages(t, galleries, remaining.ID)
-	if _, err := galleries.Get(ctx, remaining.ID); err != nil {
+	if _, err := galleries.Get(ctx, remaining.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("source deletion retained linked gallery: %v", err)
+	}
+}
+
+func TestSourceLinkedGalleryMembershipAndLifecycle(t *testing.T) {
+	_, libraries, sources, galleries := openRepositories(t)
+	ctx := t.Context()
+	l, s, ids := inventory(t, libraries, sources, "book.zip", source.Archive, "1.jpg", "2.png", "notes.txt")
+	_, _, other := inventory(t, libraries, sources, "other", source.Directory, "1.jpg")
+	g, err := galleries.CreateFromSource(ctx, s.ID)
+	if err != nil || g.SourceID != s.ID {
+		t.Fatalf("source link: %+v, %v", g, err)
+	}
+	for _, pages := range [][]string{
+		nil,
+		{ids["1.jpg"]},
+		{ids["1.jpg"], ids["2.png"], ids["1.jpg"]},
+		{ids["1.jpg"], ids["1.jpg"]},
+		{ids["1.jpg"], other["1.jpg"]},
+		{ids["1.jpg"], ids["notes.txt"]},
+	} {
+		if err := galleries.ReplacePages(ctx, g.ID, pages); !errors.Is(err, ErrLinkedPages) {
+			t.Fatalf("membership change accepted: %v, %v", pages, err)
+		}
+		assertPages(t, galleries, g.ID, ids["1.jpg"], ids["2.png"])
+	}
+	if err := galleries.ReplacePages(ctx, g.ID, []string{ids["2.png"], ids["1.jpg"]}); err != nil {
 		t.Fatal(err)
+	}
+	assertPages(t, galleries, g.ID, ids["2.png"], ids["1.jpg"])
+	if renamed, err := galleries.Rename(ctx, g.ID, "Edited"); err != nil || renamed.SourceID != s.ID {
+		t.Fatalf("rename lost source link: %+v, %v", renamed, err)
+	}
+	if err := libraries.UpdateAvailability(ctx, l.ID, "unavailable", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	assertPages(t, galleries, g.ID, ids["2.png"], ids["1.jpg"])
+	if err := libraries.Delete(ctx, l.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := galleries.Get(ctx, g.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("library deletion retained linked gallery: %v", err)
 	}
 }
 

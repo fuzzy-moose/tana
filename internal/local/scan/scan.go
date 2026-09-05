@@ -12,6 +12,8 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/metadata"
+	"github.com/fuzzy-moose/tana/internal/local/metadata/galleryinfo"
 	"github.com/fuzzy-moose/tana/internal/local/source"
 )
 
@@ -43,6 +45,7 @@ type Service struct {
 	libraries libraryCatalog
 	sources   *source.SQLiteRepository
 	galleries *gallery.SQLiteRepository
+	provider  metadata.Provider
 	dirFS     func(string) fs.FS
 	logger    *slog.Logger
 	ctx       context.Context
@@ -58,7 +61,7 @@ func New(ctx context.Context, db *sql.DB, libraries libraryCatalog, dirFS func(s
 	ctx, cancel := context.WithCancel(ctx)
 	return &Service{
 		db: db, libraries: libraries, sources: source.NewSQLiteRepository(db),
-		galleries: gallery.NewSQLiteRepository(db), dirFS: dirFS, logger: logger,
+		galleries: gallery.NewSQLiteRepository(db), provider: galleryinfo.Provider{}, dirFS: dirFS, logger: logger,
 		ctx: ctx, cancel: cancel, status: Status{Phase: "idle"},
 	}
 }
@@ -138,6 +141,7 @@ func (s *Service) run(libraries []library.Library) {
 type preparedSource struct {
 	candidate candidate
 	files     []string
+	metadata  metadata.Values
 	err       error
 }
 
@@ -153,9 +157,9 @@ func (s *Service) importCandidates(ctx context.Context, candidates []candidate) 
 					return
 				}
 				c := candidates[i]
-				files, err := inventory(ctx, c)
+				result := s.prepareSource(ctx, c)
 				select {
-				case results <- preparedSource{candidate: c, files: files, err: err}:
+				case results <- result:
 				case <-ctx.Done():
 					return
 				}
@@ -173,7 +177,7 @@ func (s *Service) importCandidates(ctx context.Context, candidates []candidate) 
 		createdGallery := false
 		err := result.err
 		if err == nil {
-			createdGallery, err = s.importSource(ctx, result.candidate, result.files)
+			createdGallery, err = s.importSource(ctx, result.candidate, result.files, result.metadata)
 		}
 		s.mu.Lock()
 		if err != nil {
@@ -192,7 +196,7 @@ func (s *Service) importCandidates(ctx context.Context, candidates []candidate) 
 	return ctx.Err()
 }
 
-func (s *Service) importSource(ctx context.Context, c candidate, files []string) (bool, error) {
+func (s *Service) importSource(ctx context.Context, c candidate, files []string, values metadata.Values) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -202,7 +206,7 @@ func (s *Service) importSource(ctx context.Context, c candidate, files []string)
 	if err != nil {
 		return false, err
 	}
-	_, err = s.galleries.CreateFromSourceTx(ctx, tx, imported.ID)
+	_, err = s.galleries.CreateFromSourceTx(ctx, tx, imported.ID, values)
 	createdGallery := err == nil
 	if err != nil && !errors.Is(err, gallery.ErrNoImages) {
 		return false, err

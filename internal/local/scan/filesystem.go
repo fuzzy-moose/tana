@@ -9,6 +9,7 @@ import (
 	"path"
 
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/metadata"
 	"github.com/fuzzy-moose/tana/internal/local/source"
 )
 
@@ -76,46 +77,67 @@ func (s *Service) discover(ctx context.Context, libraries []library.Library) ([]
 	return candidates, ctx.Err()
 }
 
-// inventory reads the discovered source as it exists during import. It neither
-// repeats discovery nor opens nested archives or decodes image contents.
-func inventory(ctx context.Context, c candidate) ([]string, error) {
-	var files []string
+// prepareSource reads inventories and metadata outside the import transaction,
+// retaining encounter order and keeping archives open only during preparation.
+func (s *Service) prepareSource(ctx context.Context, c candidate) preparedSource {
+	result := preparedSource{candidate: c}
 	if c.kind == source.Directory {
 		entries, err := fs.ReadDir(c.root, c.path)
 		if err != nil {
-			return nil, err
+			result.err = err
+			return result
 		}
 		for _, entry := range entries {
 			if entry.Type().IsRegular() {
-				files = append(files, entry.Name())
+				result.files = append(result.files, entry.Name())
 			}
 		}
-		return files, ctx.Err()
+		root, err := fs.Sub(c.root, c.path)
+		if err != nil {
+			result.err = err
+			return result
+		}
+		return s.readMetadata(ctx, result, root)
 	}
 	f, err := c.root.Open(c.path)
 	if err != nil {
-		return nil, err
+		result.err = err
+		return result
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		return nil, err
+		result.err = err
+		return result
 	}
 	reader, ok := f.(io.ReaderAt)
 	if !ok {
-		return nil, fmt.Errorf("archive %s does not support random reads", c.path)
+		result.err = fmt.Errorf("archive %s does not support random reads", c.path)
+		return result
 	}
 	archive, err := zip.NewReader(reader, info.Size())
 	if err != nil {
-		return nil, err
+		result.err = err
+		return result
 	}
 	for _, entry := range archive.File {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			result.err = err
+			return result
 		}
 		if entry.Mode().IsRegular() {
-			files = append(files, entry.Name)
+			result.files = append(result.files, entry.Name)
 		}
 	}
-	return files, nil
+	return s.readMetadata(ctx, result, archive)
+}
+
+func (s *Service) readMetadata(ctx context.Context, result preparedSource, root fs.FS) preparedSource {
+	var diagnostics []error
+	result.metadata, diagnostics = s.provider.Read(ctx, metadata.Source{Files: result.files, FS: root})
+	for _, diagnostic := range diagnostics {
+		s.logger.Warn("source_metadata_failed", "library_id", result.candidate.libraryID, "path", result.candidate.path, "provider", "galleryinfo", "error", diagnostic)
+	}
+	result.err = ctx.Err()
+	return result
 }

@@ -4,7 +4,12 @@
 
 package dbgen
 
+import (
+	"database/sql"
+)
+
 type Gallery struct {
-	ID    string
-	Title string
+	ID       string
+	Title    string
+	SourceID sql.NullString
 }
