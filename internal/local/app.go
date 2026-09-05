@@ -11,12 +11,14 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
 
 type App struct {
 	db        *sql.DB
 	libraries *library.Service
+	scans     *scan.Service
 	handler   http.Handler
 }
 
@@ -35,10 +37,12 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("open libraries: %w", err)
 	}
+	scans := scan.New(ctx, db, libraries, os.DirFS, logger)
 	return &App{
 		db:        db,
 		libraries: libraries,
-		handler:   httpapi.NewHandler(logger, libraries),
+		scans:     scans,
+		handler:   httpapi.NewHandler(logger, libraries, scans),
 	}, nil
 }
 
@@ -48,6 +52,7 @@ func (a *App) Handler() http.Handler {
 
 // Close stops background work and releases storage after HTTP requests drain.
 func (a *App) Close() error {
+	a.scans.Close()
 	a.libraries.Close()
 	return a.db.Close()
 }

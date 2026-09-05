@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,10 +14,16 @@ import (
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
 
 func testHandler(t *testing.T) http.Handler {
+	t.Helper()
+	return testHandlerWithScanFS(t, os.DirFS)
+}
+
+func testHandlerWithScanFS(t *testing.T, dirFS func(string) fs.FS) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	db, dir, err := storage.Open(t.Context(), t.TempDir())
@@ -29,7 +36,9 @@ func testHandler(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	t.Cleanup(libraries.Close)
-	return NewHandler(logger, libraries)
+	scans := scan.New(t.Context(), db, libraries, dirFS, logger)
+	t.Cleanup(scans.Close)
+	return NewHandler(logger, libraries, scans)
 }
 
 func request(t *testing.T, handler http.Handler, method, path, body string, wantStatus int) *httptest.ResponseRecorder {

@@ -16,8 +16,11 @@ Whether a registered library's root is currently present as a directory. This do
 **Source**:
 A `.cbz` or `.zip` archive, or a directory containing files and no subdirectories or qualifying archives. Its inventory includes all contained files, including those unsupported for reading; qualifying archives take precedence over their containing directory.
 
+**Scan**:
+Discovery of new sources in one or all registered libraries, followed by their import and automatic gallery creation where supported images exist.
+
 **Import**:
-Discovery of new sources in a library and registration of their file inventories in the database. File contents remain at their existing locations.
+Registration of a source and its complete file inventory in the catalog. File contents remain at their existing locations.
 
 **Source file**:
 A file cataloged as part of a source, whether or not it is a supported image, reusable across galleries. Files at every path inside an archive belong to its inventory; a nested archive is an ordinary source file.

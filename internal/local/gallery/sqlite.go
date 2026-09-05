@@ -63,6 +63,19 @@ func (r *SQLiteRepository) CreateFromSource(ctx context.Context, sourceID string
 		return Gallery{}, err
 	}
 	defer tx.Rollback()
+	g, err := r.CreateFromSourceTx(ctx, tx, sourceID)
+	if err != nil {
+		return Gallery{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Gallery{}, err
+	}
+	return g, nil
+}
+
+// CreateFromSourceTx creates a gallery in the caller's transaction. ErrNoImages
+// makes no changes; other errors require the caller to roll back.
+func (r *SQLiteRepository) CreateFromSourceTx(ctx context.Context, tx *sql.Tx, sourceID string) (Gallery, error) {
 	q := r.queries.WithTx(tx)
 	s, err := q.GetSourceTitle(ctx, sourceID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -104,14 +117,7 @@ func (r *SQLiteRepository) CreateFromSource(ctx context.Context, sourceID string
 	if title == "" {
 		return Gallery{}, ErrInvalidTitle
 	}
-	g, err := create(ctx, q, title, fileIDs)
-	if err != nil {
-		return Gallery{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Gallery{}, err
-	}
-	return g, nil
+	return create(ctx, q, title, fileIDs)
 }
 
 func (r *SQLiteRepository) Get(ctx context.Context, id string) (Gallery, error) {

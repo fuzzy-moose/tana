@@ -21,14 +21,27 @@ func NewSQLiteRepository(db *sql.DB) *SQLiteRepository {
 }
 
 func (r *SQLiteRepository) Create(ctx context.Context, libraryID, path string, kind Kind, files []string) (Source, error) {
-	if err := validate(path, kind, files); err != nil {
-		return Source{}, err
-	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Source{}, err
 	}
 	defer tx.Rollback()
+	s, err := r.CreateTx(ctx, tx, libraryID, path, kind, files)
+	if err != nil {
+		return Source{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Source{}, err
+	}
+	return s, nil
+}
+
+// CreateTx registers an inventory in the caller's transaction. The caller must
+// roll back the transaction on error.
+func (r *SQLiteRepository) CreateTx(ctx context.Context, tx *sql.Tx, libraryID, path string, kind Kind, files []string) (Source, error) {
+	if err := validate(path, kind, files); err != nil {
+		return Source{}, err
+	}
 	q := r.queries.WithTx(tx)
 	row, err := q.CreateSource(ctx, dbgen.CreateSourceParams{ID: rand.Text(), LibraryID: libraryID, Path: path, Kind: string(kind)})
 	if err != nil {
@@ -38,9 +51,6 @@ func (r *SQLiteRepository) Create(ctx context.Context, libraryID, path string, k
 		if err := q.CreateSourceFile(ctx, dbgen.CreateSourceFileParams{ID: rand.Text(), SourceID: row.ID, Path: name}); err != nil {
 			return Source{}, err
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return Source{}, err
 	}
 	return fromRow(row), nil
 }

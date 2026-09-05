@@ -5,11 +5,16 @@ import (
 	"net/http"
 
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func NewHandler(logger *slog.Logger, libraries *library.Service) http.Handler {
+func NewHandler(logger *slog.Logger, libraries *library.Service, scans *scan.Service) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("POST /api/scans", HandleRequestScan(scans))
+	mux.Handle("GET /api/scans/status", HandleScanStatus(scans))
+	mux.HandleFunc("/api/scans", methodNotAllowed("POST"))
+	mux.HandleFunc("/api/scans/status", methodNotAllowed("GET, HEAD"))
 	mux.Handle("POST /api/libraries", HandleCreateLibrary(libraries))
 	mux.Handle("GET /api/libraries", HandleListLibraries(libraries))
 	mux.Handle("GET /api/libraries/{id}", HandleGetLibrary(libraries))

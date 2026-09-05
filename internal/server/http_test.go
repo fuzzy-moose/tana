@@ -14,6 +14,7 @@ import (
 	collector "github.com/fuzzy-moose/tana/internal/collector/httpapi"
 	local "github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
 
@@ -29,7 +30,9 @@ func TestServiceRoutes(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(libraries.Close)
-		return local.NewHandler(logger, libraries)
+		scans := scan.New(t.Context(), db, libraries, os.DirFS, logger)
+		t.Cleanup(scans.Close)
+		return local.NewHandler(logger, libraries, scans)
 	}
 	for name, newHandler := range map[string]func(*slog.Logger) http.Handler{"local": localHandler, "collector": collector.NewHandler} {
 		t.Run(name, func(t *testing.T) {
