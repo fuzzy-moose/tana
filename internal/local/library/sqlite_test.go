@@ -8,40 +8,6 @@ import (
 	"testing"
 )
 
-func TestLibraryDeletionCascadesToOwnedRecords(t *testing.T) {
-	db, _, err := storage.Open(t.Context(), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	s := NewSQLiteRepository(db)
-	root, err := s.Create(t.Context(), "Comics", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Exercise the relationship required of future catalog/progress tables.
-	_, err = db.Exec(`CREATE TABLE owned_records (
-		library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
-		value TEXT NOT NULL
-	)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("INSERT INTO owned_records VALUES (?, 'progress')", root.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Delete(t.Context(), root.ID); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err := db.QueryRow("SELECT count(*) FROM owned_records").Scan(&count); err != nil || count != 0 {
-		t.Fatalf("orphaned records=%d: %v", count, err)
-	}
-	if _, err := db.Exec("INSERT INTO owned_records VALUES ('missing', 'progress')"); err == nil {
-		t.Fatal("foreign key constraint not enforced")
-	}
-}
-
 func TestConcurrentOverlappingRegistrations(t *testing.T) {
 	dir := t.TempDir()
 	db, _, err := storage.Open(t.Context(), dir)

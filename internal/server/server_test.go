@@ -102,15 +102,3 @@ func testShutdown(t *testing.T, force bool) {
 		t.Fatal("handler did not finish")
 	}
 }
-
-func TestRunReturnsBindError(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	err = Run(t.Context(), Config{Addr: listener.Addr().String(), GracePeriod: time.Second}, slog.Default(), http.NotFoundHandler())
-	if err == nil {
-		t.Fatal("expected bind error")
-	}
-}

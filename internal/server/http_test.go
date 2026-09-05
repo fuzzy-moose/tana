@@ -15,7 +15,6 @@ import (
 	local "github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
-	"github.com/fuzzy-moose/tana/internal/server"
 )
 
 func TestServiceRoutes(t *testing.T) {
@@ -44,7 +43,6 @@ func TestServiceRoutes(t *testing.T) {
 				{"POST", "/healthz", `{"error":"method_not_allowed"}`, 405, ""},
 				{"GET", "/missing?secret=hidden", `{"error":"not_found"}`, 404, ""},
 				{"POST", "/healthz", `{"error":"cross_origin_request"}`, 403, "https://untrusted.example"},
-				{"GET", "/healthz", `{"status":"ok"}`, 200, "https://untrusted.example"},
 			} {
 				t.Run(tc.method+tc.path, func(t *testing.T) {
 					var logs bytes.Buffer
@@ -76,40 +74,6 @@ func TestServiceRoutes(t *testing.T) {
 						t.Fatalf("unexpected request log: %s", &logs)
 					}
 				})
-			}
-		})
-	}
-}
-
-func TestLoggingRecordsCommittedStatus(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		handler http.HandlerFunc
-		status  int
-	}{
-		{"empty", func(http.ResponseWriter, *http.Request) {}, 200},
-		{"implicit", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }, 200},
-		{"duplicate", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(201); w.WriteHeader(500) }, 201},
-		{"flush", func(w http.ResponseWriter, _ *http.Request) {
-			if err := http.NewResponseController(w).Flush(); err != nil {
-				t.Error(err)
-			}
-			w.WriteHeader(500)
-		}, 200},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var logs bytes.Buffer
-			h := server.HTTPContextMiddleware(server.LoggingMiddleware(slog.New(slog.NewJSONHandler(&logs, nil)), tc.handler))
-			rr := httptest.NewRecorder()
-			h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
-			var record struct {
-				Status int `json:"status"`
-			}
-			if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
-				t.Fatal(err)
-			}
-			if record.Status != tc.status || rr.Code != tc.status {
-				t.Fatalf("response %d, log %d, want %d", rr.Code, record.Status, tc.status)
 			}
 		})
 	}

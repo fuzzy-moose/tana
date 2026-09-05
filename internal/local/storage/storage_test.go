@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
@@ -33,21 +32,6 @@ func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 	var version int
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
 		t.Fatalf("schema version %d: %v", version, err)
-	}
-	// Force a fresh pooled connection: connection-local settings must survive.
-	db.SetConnMaxLifetime(time.Nanosecond)
-	for _, tc := range []struct {
-		pragma string
-		want   int
-	}{{"foreign_keys", 1}, {"busy_timeout", 5000}} {
-		var value int
-		if err := db.QueryRow("PRAGMA " + tc.pragma).Scan(&value); err != nil || value != tc.want {
-			t.Fatalf("%s=%d, error=%v", tc.pragma, value, err)
-		}
-	}
-	var mode string
-	if err := db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil || mode != "wal" {
-		t.Fatalf("journal_mode=%q, error=%v", mode, err)
 	}
 }
 

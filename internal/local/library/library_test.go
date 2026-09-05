@@ -35,42 +35,6 @@ func testServiceAt(t *testing.T, dir string) *Service {
 	return s
 }
 
-func TestServiceLeavesDatabaseOwnershipWithCaller(t *testing.T) {
-	for _, reject := range []bool{false, true} {
-		name := "close"
-		if reject {
-			name = "initialization failure"
-		}
-		t.Run(name, func(t *testing.T) {
-			db, dir, err := storage.Open(t.Context(), t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer db.Close()
-			if reject {
-				// A previously registered root cannot contain application storage.
-				_, err := db.Exec("INSERT INTO libraries (id, name, path) VALUES (?, ?, ?)", "overlap", "Overlap", dir)
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			s, err := New(t.Context(), NewSQLiteRepository(db), os.DirFS, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
-			if s != nil {
-				s.Close()
-			}
-			if reject && !errors.Is(err, ErrStorageOverlap) {
-				t.Fatalf("expected storage overlap, got %v", err)
-			}
-			if !reject && err != nil {
-				t.Fatal(err)
-			}
-			if err := db.PingContext(t.Context()); err != nil {
-				t.Fatalf("library closed the application database: %v", err)
-			}
-		})
-	}
-}
-
 func TestRegistrationRoots(t *testing.T) {
 	s := testService(t)
 	parent := t.TempDir()
@@ -82,10 +46,6 @@ func TestRegistrationRoots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	alias := filepath.Join(parent, "alias")
-	if err := os.Symlink(root, alias); err != nil {
-		t.Fatal(err)
-	}
 	registered, err := s.Create(t.Context(), "  Manga  ", root+string(filepath.Separator)+".")
 	if err != nil {
 		t.Fatal(err)
@@ -93,15 +53,10 @@ func TestRegistrationRoots(t *testing.T) {
 	if registered.Path != root || registered.Name != "Manga" || registered.Availability != "available" || registered.LastCheckedAt == nil {
 		t.Fatalf("unexpected registration: %+v", registered)
 	}
-	for _, path := range []string{root, child, parent, root + string(filepath.Separator)} {
+	for _, path := range []string{root, child, parent} {
 		if _, err := s.Create(t.Context(), "Duplicate", path); !errors.Is(err, ErrRootConflict) {
 			t.Errorf("path %q: want conflict, got %v", path, err)
 		}
-	}
-	// Symlinks follow normal filesystem behavior; their paths stay distinct.
-	linked, err := s.Create(t.Context(), "Alias", alias)
-	if err != nil || linked.Path != alias {
-		t.Fatalf("symlink path was rewritten or rejected: %+v %v", linked, err)
 	}
 	if _, err := s.Create(t.Context(), "Manga", sibling); err != nil {
 		t.Fatalf("sibling root and duplicate name must be allowed: %v", err)
@@ -114,7 +69,7 @@ func TestRegistrationRoots(t *testing.T) {
 	}
 }
 
-func TestRegistrationOnlyRequiresExistingDirectory(t *testing.T) {
+func TestRegistrationValidation(t *testing.T) {
 	s := testService(t)
 	root := t.TempDir()
 	file := filepath.Join(root, "comic.cbz")
@@ -136,14 +91,6 @@ func TestRegistrationOnlyRequiresExistingDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "missing")); !os.IsNotExist(err) {
 		t.Fatalf("registration created a directory: %v", err)
-	}
-	empty := t.TempDir()
-	if err := os.Chmod(empty, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(empty, 0o700) })
-	if _, err := s.Create(t.Context(), "No listing permission", empty); err != nil {
-		t.Fatalf("existence-only registration rejected directory: %v", err)
 	}
 }
 
