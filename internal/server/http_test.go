@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -11,11 +12,20 @@ import (
 
 	collector "github.com/fuzzy-moose/tana/internal/collector/httpapi"
 	local "github.com/fuzzy-moose/tana/internal/local/httpapi"
+	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
 func TestServiceRoutes(t *testing.T) {
-	for name, newHandler := range map[string]func(*slog.Logger) http.Handler{"local": local.NewHandler, "collector": collector.NewHandler} {
+	localHandler := func(logger *slog.Logger) http.Handler {
+		libraries, err := library.Open(context.Background(), t.TempDir(), logger)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = libraries.Close() })
+		return local.NewHandler(logger, libraries)
+	}
+	for name, newHandler := range map[string]func(*slog.Logger) http.Handler{"local": localHandler, "collector": collector.NewHandler} {
 		t.Run(name, func(t *testing.T) {
 			for _, tc := range []struct {
 				method, path, body string
