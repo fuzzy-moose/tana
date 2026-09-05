@@ -1,5 +1,10 @@
 # Repository Guidelines
 
+## Documentation
+
+- Keep code and configuration as the source of truth for implemented behavior; document only rationale, conventions, and gotchas that cannot be inferred from them.
+- Update README files only when explicitly instructed or to correct contradictory or outdated information.
+
 ## Agent skills
 
 ### Issue tracker
