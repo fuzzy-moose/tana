@@ -10,6 +10,8 @@ import (
 
 const maxFilesystemProbes = 4
 
+var errProbeNotAdmitted = errors.New("filesystem probe was not admitted")
+
 type probeCall struct {
 	done chan struct{}
 	err  error
@@ -55,7 +57,7 @@ func inspectDirectory(dirFS func(string) fs.FS, path string) error {
 func (p *filesystemProbe) check(ctx context.Context, path string) error {
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return errors.Join(errProbeNotAdmitted, err)
 		}
 		p.mu.Lock()
 		call := p.active[path]
@@ -87,7 +89,7 @@ func (p *filesystemProbe) check(ctx context.Context, path string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return errors.Join(errProbeNotAdmitted, ctx.Err())
 		case <-changed:
 		}
 	}

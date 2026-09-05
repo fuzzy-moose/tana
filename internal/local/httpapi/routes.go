@@ -10,17 +10,21 @@ import (
 
 func NewHandler(logger *slog.Logger, libraries *library.Service) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /api/libraries", HandleCreateLibrary(libraries, logger))
-	mux.Handle("GET /api/libraries", HandleListLibraries(libraries, logger))
-	mux.Handle("GET /api/libraries/{id}", HandleGetLibrary(libraries, logger))
-	mux.Handle("PATCH /api/libraries/{id}", HandleRenameLibrary(libraries, logger))
-	mux.Handle("DELETE /api/libraries/{id}", HandleDeleteLibrary(libraries, logger))
-	mux.Handle("POST /api/libraries/{id}/availability-check", HandleCheckLibraryAvailability(libraries, logger))
+	mux.Handle("POST /api/libraries", HandleCreateLibrary(libraries))
+	mux.Handle("GET /api/libraries", HandleListLibraries(libraries))
+	mux.Handle("GET /api/libraries/{id}", HandleGetLibrary(libraries))
+	mux.Handle("PATCH /api/libraries/{id}", HandleRenameLibrary(libraries))
+	mux.Handle("DELETE /api/libraries/{id}", HandleDeleteLibrary(libraries))
+	mux.Handle("POST /api/libraries/{id}/availability-check", HandleCheckLibraryAvailability(libraries))
 	mux.HandleFunc("/api/libraries", methodNotAllowed("GET, HEAD, POST"))
 	mux.HandleFunc("/api/libraries/{id}", methodNotAllowed("GET, HEAD, PATCH, DELETE"))
 	mux.HandleFunc("/api/libraries/{id}/availability-check", methodNotAllowed("POST"))
 	mux.HandleFunc("GET /healthz", server.Health)
 	mux.HandleFunc("/healthz", server.HealthMethodNotAllowed)
 	mux.HandleFunc("/", server.NotFound)
-	return server.Logging(logger, mux)
+	var handler http.Handler = mux
+	handler = server.CSRFMiddleware(handler)
+	handler = server.LoggingMiddleware(logger, handler)
+	handler = server.HTTPContextMiddleware(handler)
+	return handler
 }

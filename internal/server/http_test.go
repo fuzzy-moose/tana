@@ -37,17 +37,24 @@ func TestServiceRoutes(t *testing.T) {
 			for _, tc := range []struct {
 				method, path, body string
 				status             int
+				origin             string
 			}{
-				{"GET", "/healthz", `{"status":"ok"}`, 200},
-				{"HEAD", "/healthz", "", 200},
-				{"POST", "/healthz", `{"error":"method_not_allowed"}`, 405},
-				{"GET", "/missing?secret=hidden", `{"error":"not_found"}`, 404},
+				{"GET", "/healthz", `{"status":"ok"}`, 200, ""},
+				{"HEAD", "/healthz", "", 200, ""},
+				{"POST", "/healthz", `{"error":"method_not_allowed"}`, 405, ""},
+				{"GET", "/missing?secret=hidden", `{"error":"not_found"}`, 404, ""},
+				{"POST", "/healthz", `{"error":"cross_origin_request"}`, 403, "https://untrusted.example"},
+				{"GET", "/healthz", `{"status":"ok"}`, 200, "https://untrusted.example"},
 			} {
 				t.Run(tc.method+tc.path, func(t *testing.T) {
 					var logs bytes.Buffer
 					handler := newHandler(slog.New(slog.NewJSONHandler(&logs, nil)))
 					rr := httptest.NewRecorder()
-					handler.ServeHTTP(rr, httptest.NewRequest(tc.method, tc.path, nil))
+					req := httptest.NewRequest(tc.method, tc.path, nil)
+					if tc.origin != "" {
+						req.Header.Set("Origin", tc.origin)
+					}
+					handler.ServeHTTP(rr, req)
 					if rr.Code != tc.status || rr.Header().Get("Content-Type") != "application/json" || rr.Header().Get("Cache-Control") != "no-store" {
 						t.Fatalf("unexpected response: %d %v %s", rr.Code, rr.Header(), rr.Body)
 					}
@@ -92,7 +99,7 @@ func TestLoggingRecordsCommittedStatus(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs bytes.Buffer
-			h := server.Logging(slog.New(slog.NewJSONHandler(&logs, nil)), tc.handler)
+			h := server.HTTPContextMiddleware(server.LoggingMiddleware(slog.New(slog.NewJSONHandler(&logs, nil)), tc.handler))
 			rr := httptest.NewRecorder()
 			h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 			var record struct {

@@ -12,5 +12,9 @@ func NewHandler(logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /healthz", server.Health)
 	mux.HandleFunc("/healthz", server.HealthMethodNotAllowed)
 	mux.HandleFunc("/", server.NotFound)
-	return server.Logging(logger, mux)
+	var handler http.Handler = mux
+	handler = server.CSRFMiddleware(handler)
+	handler = server.LoggingMiddleware(logger, handler)
+	handler = server.HTTPContextMiddleware(handler)
+	return handler
 }

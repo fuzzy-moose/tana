@@ -283,6 +283,67 @@ func TestFilesystemProbesBoundWorkAndShareStalledPaths(t *testing.T) {
 	}
 }
 
+func TestProbeAdmissionTimeoutPreservesObservation(t *testing.T) {
+	s := testService(t)
+	healthy, err := s.Create(t.Context(), "Healthy", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.timeout = 20 * time.Millisecond
+	blocked := make(chan struct{})
+	started := make(chan struct{}, maxFilesystemProbes)
+	finished := make(chan error, maxFilesystemProbes)
+	var healthyChecks atomic.Int32
+	s.probe.inspect = func(path string) error {
+		if path == healthy.Path {
+			healthyChecks.Add(1)
+			return nil
+		}
+		started <- struct{}{}
+		<-blocked
+		return nil
+	}
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(blocked) }) })
+	for i := range maxFilesystemProbes {
+		go func() { finished <- s.probe.check(t.Context(), string(rune('A'+i))) }()
+	}
+	for range maxFilesystemProbes {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("probe did not start")
+		}
+	}
+	s.check(t.Context(), healthy.ID)
+	got, err := s.Get(t.Context(), healthy.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Availability != healthy.Availability || got.LastCheckedAt == nil || !got.LastCheckedAt.Equal(*healthy.LastCheckedAt) || healthyChecks.Load() != 0 {
+		t.Errorf("unstarted probe changed observation: before=%+v after=%+v checks=%d", healthy, got, healthyChecks.Load())
+	}
+	if _, err := s.Create(t.Context(), "Waiting", t.TempDir()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("registration admission timeout: %v", err)
+	}
+	release.Do(func() { close(blocked) })
+	for range maxFilesystemProbes {
+		select {
+		case err := <-finished:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("released probe did not finish")
+		}
+	}
+	s.check(t.Context(), healthy.ID)
+	got, err = s.Get(t.Context(), healthy.ID)
+	if err != nil || got.Availability != "available" || got.LastCheckedAt == nil || !got.LastCheckedAt.After(*healthy.LastCheckedAt) || healthyChecks.Load() != 1 {
+		t.Fatalf("probe did not recover: %+v checks=%d error=%v", got, healthyChecks.Load(), err)
+	}
+}
+
 func TestShutdownDoesNotWaitForStalledFilesystem(t *testing.T) {
 	s := testService(t)
 	if _, err := s.Create(t.Context(), "NAS", t.TempDir()); err != nil {

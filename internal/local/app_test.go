@@ -32,7 +32,9 @@ func TestAppLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	app.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/libraries", bytes.NewReader(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/libraries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	app.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create library: %d %s", w.Code, w.Body)
 	}

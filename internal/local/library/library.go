@@ -231,6 +231,11 @@ func (s *Service) check(ctx context.Context, id string) {
 	if ctx.Err() != nil {
 		return // Shutdown is not evidence of unavailability.
 	}
+	if errors.Is(err, errProbeNotAdmitted) {
+		// Waiting for probe capacity is not an observation of this root.
+		s.logger.Warn("library_check_deferred", "library_id", id, "reason", "probe_not_admitted")
+		return
+	}
 	availability := "available"
 	if err != nil {
 		availability = "unavailable"
