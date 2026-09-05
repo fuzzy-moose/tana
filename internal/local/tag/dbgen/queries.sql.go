@@ -15,8 +15,8 @@ ON CONFLICT DO NOTHING
 `
 
 type AssignGalleryTagParams struct {
-	GalleryID string
-	TagID     string
+	GalleryID int64
+	TagID     int64
 }
 
 func (q *Queries) AssignGalleryTag(ctx context.Context, arg AssignGalleryTagParams) error {
@@ -28,41 +28,35 @@ const deleteGalleryTags = `-- name: DeleteGalleryTags :exec
 DELETE FROM gallery_tags WHERE gallery_id = ?
 `
 
-func (q *Queries) DeleteGalleryTags(ctx context.Context, galleryID string) error {
+func (q *Queries) DeleteGalleryTags(ctx context.Context, galleryID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteGalleryTags, galleryID)
 	return err
 }
 
 const ensureNamespace = `-- name: EnsureNamespace :one
-INSERT INTO namespaces (id, name) VALUES (?, ?)
+INSERT INTO namespaces (name) VALUES (?)
 ON CONFLICT (name) DO UPDATE SET name = excluded.name RETURNING id, name
 `
 
-type EnsureNamespaceParams struct {
-	ID   string
-	Name string
-}
-
-func (q *Queries) EnsureNamespace(ctx context.Context, arg EnsureNamespaceParams) (Namespace, error) {
-	row := q.db.QueryRowContext(ctx, ensureNamespace, arg.ID, arg.Name)
+func (q *Queries) EnsureNamespace(ctx context.Context, name string) (Namespace, error) {
+	row := q.db.QueryRowContext(ctx, ensureNamespace, name)
 	var i Namespace
 	err := row.Scan(&i.ID, &i.Name)
 	return i, err
 }
 
 const ensureTag = `-- name: EnsureTag :one
-INSERT INTO tags (id, namespace_id, value) VALUES (?, ?, ?)
+INSERT INTO tags (namespace_id, value) VALUES (?, ?)
 ON CONFLICT (namespace_id, value) DO UPDATE SET value = excluded.value RETURNING id, namespace_id, value
 `
 
 type EnsureTagParams struct {
-	ID          string
-	NamespaceID string
+	NamespaceID int64
 	Value       string
 }
 
 func (q *Queries) EnsureTag(ctx context.Context, arg EnsureTagParams) (Tag, error) {
-	row := q.db.QueryRowContext(ctx, ensureTag, arg.ID, arg.NamespaceID, arg.Value)
+	row := q.db.QueryRowContext(ctx, ensureTag, arg.NamespaceID, arg.Value)
 	var i Tag
 	err := row.Scan(&i.ID, &i.NamespaceID, &i.Value)
 	return i, err
@@ -76,13 +70,13 @@ WHERE g.gallery_id = ? ORDER BY n.name, t.value
 `
 
 type ListGalleryTagsRow struct {
-	ID            string
+	ID            int64
 	Value         string
-	NamespaceID   string
+	NamespaceID   int64
 	NamespaceName string
 }
 
-func (q *Queries) ListGalleryTags(ctx context.Context, galleryID string) ([]ListGalleryTagsRow, error) {
+func (q *Queries) ListGalleryTags(ctx context.Context, galleryID int64) ([]ListGalleryTagsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listGalleryTags, galleryID)
 	if err != nil {
 		return nil, err

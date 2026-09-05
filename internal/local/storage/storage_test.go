@@ -13,9 +13,13 @@ func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec("INSERT INTO libraries (id, name, path) VALUES (?, ?, ?)", "persistent", "Persistent", t.TempDir())
+	var id int64
+	err = db.QueryRow("INSERT INTO libraries (name, path) VALUES (?, ?) RETURNING id", "Persistent", t.TempDir()).Scan(&id)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if id != 1 {
+		t.Fatalf("first library ID: %d", id)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
@@ -26,7 +30,7 @@ func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 	}
 	defer db.Close()
 	var name string
-	if err := db.QueryRow("SELECT name FROM libraries WHERE id = ?", "persistent").Scan(&name); err != nil || name != "Persistent" {
+	if err := db.QueryRow("SELECT name FROM libraries WHERE id = ?", id).Scan(&name); err != nil || name != "Persistent" {
 		t.Fatalf("registration did not survive reopen: %q %v", name, err)
 	}
 	var version int

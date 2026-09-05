@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -43,7 +44,7 @@ func TestScanAPISingleAndAllLibraries(t *testing.T) {
 	if status := scanStatus(t, h); status.Phase != "idle" || status.StartedAt != nil || status.FinishedAt != nil {
 		t.Fatalf("initial status: %+v", status)
 	}
-	var ids []string
+	var ids []int64
 	for _, name := range []string{"A", "B"} {
 		root := t.TempDir()
 		if err := os.WriteFile(filepath.Join(root, "1.jpg"), nil, 0o600); err != nil {
@@ -52,7 +53,7 @@ func TestScanAPISingleAndAllLibraries(t *testing.T) {
 		l := decodeLibrary(t, request(t, h, "POST", "/api/libraries", registrationJSON(t, name, root), 201))
 		ids = append(ids, l.ID)
 	}
-	w := request(t, h, "POST", "/api/scans", `{"library_id":"`+ids[0]+`"}`, 202)
+	w := request(t, h, "POST", "/api/scans", `{"library_id":`+strconv.FormatInt(ids[0], 10)+`}`, 202)
 	if w.Header().Get("Location") != "/api/scans/status" || strings.TrimSpace(w.Body.String()) != `{"status":"accepted"}` {
 		t.Fatalf("acceptance: %v %s", w.Header(), w.Body)
 	}
@@ -62,7 +63,7 @@ func TestScanAPISingleAndAllLibraries(t *testing.T) {
 	}
 	request(t, h, "POST", "/api/scans", `{}`, 202)
 	status = awaitScan(t, h)
-	if status.Phase != "completed" || status.LibraryID != "" || status.LibrariesTotal != 2 || status.Discovered != 1 || status.Imported != 1 {
+	if status.Phase != "completed" || status.LibraryID != 0 || status.LibrariesTotal != 2 || status.Discovered != 1 || status.Imported != 1 {
 		t.Fatalf("all-library scan: %+v", status)
 	}
 	request(t, h, "POST", "/api/scans", `{}`, 202)
@@ -79,9 +80,9 @@ func TestScanAPIValidation(t *testing.T) {
 		status                   int
 	}{
 		{"POST", "/api/scans", "{", "invalid_json", 400},
-		{"POST", "/api/scans", `{"library_id":12}`, "invalid_json", 400},
+		{"POST", "/api/scans", `{"library_id":"12"}`, "invalid_json", 400},
 		{"POST", "/api/scans", `{"extra":1}`, "invalid_json", 400},
-		{"POST", "/api/scans", `{"library_id":"missing"}`, "not_found", 404},
+		{"POST", "/api/scans", `{"library_id":999}`, "not_found", 404},
 		{"GET", "/api/scans", "", "method_not_allowed", 405},
 		{"POST", "/api/scans/status", `{}`, "method_not_allowed", 405},
 	} {
@@ -130,7 +131,7 @@ func TestScanAPIRejectsOverlappingRequests(t *testing.T) {
 	if status := scanStatus(t, h); status.Phase != "discovering" || status.FinishedAt != nil {
 		t.Fatalf("active status: %+v", status)
 	}
-	for _, body := range []string{`{}`, `{"library_id":"` + l.ID + `"}`} {
+	for _, body := range []string{`{}`, `{"library_id":` + strconv.FormatInt(l.ID, 10) + `}`} {
 		w := request(t, h, "POST", "/api/scans", body, 409)
 		if strings.TrimSpace(w.Body.String()) != `{"error":"scan_active"}` {
 			t.Fatalf("conflict response: %s", w.Body)

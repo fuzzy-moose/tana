@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getGallery } from './api'
 import type { GalleryDetails } from './api'
 
-export function useGallery(id: string) {
+export function useGallery(id: number) {
   const [gallery, setGallery] = useState<GalleryDetails | null>(null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)

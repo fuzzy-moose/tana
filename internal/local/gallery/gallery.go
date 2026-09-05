@@ -16,15 +16,15 @@ var (
 )
 
 type Gallery struct {
-	ID       string
+	ID       int64
 	Title    string
-	SourceID string // Empty for independent galleries.
+	SourceID int64 // Zero for independent galleries.
 }
 
 type Page struct {
-	GalleryID    string
+	GalleryID    int64
 	Number       int64
-	SourceFileID string
+	SourceFileID int64
 }
 
 // SupportsImage classifies filenames without decoding or reading file contents.

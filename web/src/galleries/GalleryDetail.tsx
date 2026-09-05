@@ -3,7 +3,7 @@ import GalleryImage from './GalleryImage'
 import { useGallery } from './useGallery'
 import './Galleries.css'
 
-export default function GalleryDetail({ id }: { id: string }) {
+export default function GalleryDetail({ id }: { id: number }) {
   const { gallery, error, retry } = useGallery(id)
   const tagGroups = new Map<string, string[]>()
   for (const tag of gallery?.tags ?? []) {

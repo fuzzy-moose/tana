@@ -9,7 +9,7 @@ import (
 )
 
 type Gallery struct {
-	ID       string
+	ID       int64
 	Title    string
-	SourceID sql.NullString
+	SourceID sql.NullInt64
 }

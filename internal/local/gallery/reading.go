@@ -17,7 +17,7 @@ import (
 var ErrImageUnavailable = errors.New("page image unavailable")
 
 type Summary struct {
-	ID        string `json:"id"`
+	ID        int64  `json:"id"`
 	Title     string `json:"title"`
 	PageCount int64  `json:"page_count"`
 }
@@ -32,7 +32,7 @@ type DetailTag struct {
 	Value     string `json:"value"`
 }
 
-func (r *SQLiteRepository) Detail(ctx context.Context, id string) (Detail, error) {
+func (r *SQLiteRepository) Detail(ctx context.Context, id int64) (Detail, error) {
 	summary, err := r.Summary(ctx, id)
 	if err != nil {
 		return Detail{}, err
@@ -97,7 +97,7 @@ func (r *SQLiteRepository) Browse(ctx context.Context, search string, page, page
 	return result, tx.Commit()
 }
 
-func (r *SQLiteRepository) Summary(ctx context.Context, id string) (Summary, error) {
+func (r *SQLiteRepository) Summary(ctx context.Context, id int64) (Summary, error) {
 	row, err := r.queries.GetGallerySummary(ctx, id)
 	return Summary{ID: row.ID, Title: row.Title, PageCount: row.PageCount}, domainError(err)
 }
@@ -110,7 +110,7 @@ type Image struct {
 
 // OpenImage resolves a gallery occurrence through its source, never accepting a
 // filesystem path from a client. Rooted opens also contain symlink replacements.
-func (r *SQLiteRepository) OpenImage(ctx context.Context, id string, number int64) (Image, error) {
+func (r *SQLiteRepository) OpenImage(ctx context.Context, id int64, number int64) (Image, error) {
 	if number < 1 {
 		return Image{}, ErrNotFound
 	}

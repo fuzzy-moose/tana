@@ -2,7 +2,6 @@ package library
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"errors"
 	"time"
@@ -39,7 +38,7 @@ func (r *SQLiteRepository) Create(ctx context.Context, name, root string) (Libra
 		}
 	}
 	row, err := q.CreateLibrary(ctx, dbgen.CreateLibraryParams{
-		ID: rand.Text(), Name: name, Path: root,
+		Name: name, Path: root,
 		LastCheckedAt: sql.NullInt64{Int64: time.Now().UnixMilli(), Valid: true},
 	})
 	if err != nil {
@@ -63,17 +62,17 @@ func (r *SQLiteRepository) List(ctx context.Context) ([]Library, error) {
 	return result, nil
 }
 
-func (r *SQLiteRepository) Get(ctx context.Context, id string) (Library, error) {
+func (r *SQLiteRepository) Get(ctx context.Context, id int64) (Library, error) {
 	row, err := r.queries.GetLibrary(ctx, id)
 	return fromRow(row), domainError(err)
 }
 
-func (r *SQLiteRepository) Rename(ctx context.Context, id, name string) (Library, error) {
+func (r *SQLiteRepository) Rename(ctx context.Context, id int64, name string) (Library, error) {
 	row, err := r.queries.RenameLibrary(ctx, dbgen.RenameLibraryParams{ID: id, Name: name})
 	return fromRow(row), domainError(err)
 }
 
-func (r *SQLiteRepository) Delete(ctx context.Context, id string) error {
+func (r *SQLiteRepository) Delete(ctx context.Context, id int64) error {
 	// The database owns library records; this operation never visits the root.
 	return r.queries.DeleteLibrary(ctx, id)
 }
@@ -82,7 +81,7 @@ func (r *SQLiteRepository) ResetAvailability(ctx context.Context) error {
 	return r.queries.ResetAvailability(ctx)
 }
 
-func (r *SQLiteRepository) UpdateAvailability(ctx context.Context, id, availability string, checkedAt time.Time) error {
+func (r *SQLiteRepository) UpdateAvailability(ctx context.Context, id int64, availability string, checkedAt time.Time) error {
 	return r.queries.UpdateAvailability(ctx, dbgen.UpdateAvailabilityParams{
 		ID: id, Availability: availability,
 		LastCheckedAt: sql.NullInt64{Int64: checkedAt.UnixMilli(), Valid: true},

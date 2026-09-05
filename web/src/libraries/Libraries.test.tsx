@@ -9,7 +9,7 @@ import type { Library } from './api'
 vi.mock('../scans/useScan', () => ({ useScan: () => ({ status: null, error: '', disabled: true, start: vi.fn() }) }))
 
 const library: Library = {
-  id: 'manga-1',
+  id: 1,
   name: 'Manga',
   path: '/mnt/manga',
   availability: 'available',
@@ -96,7 +96,7 @@ test('renames a library without offering or sending a root change', async () => 
   await user.type(within(form).getByLabelText('Name'), 'Comics')
   await user.click(within(form).getByRole('button', { name: 'Save name' }))
   expect(await screen.findByRole('heading', { name: 'Comics' })).toBeTruthy()
-  expect(fetchMock).toHaveBeenLastCalledWith('/api/libraries/manga-1', expect.objectContaining({
+  expect(fetchMock).toHaveBeenLastCalledWith('/api/libraries/1', expect.objectContaining({
     method: 'PATCH', body: JSON.stringify({ name: 'Comics' }),
   }))
   expect(screen.getByText('/mnt/manga')).toBeTruthy()
@@ -118,7 +118,7 @@ test('requires removal confirmation, retains the library on failure, and handles
   expect(screen.getByRole('heading', { name: 'Manga' })).toBeTruthy()
   await user.click(screen.getByRole('button', { name: 'Remove library' }))
   expect(await screen.findByText('Your collection starts here.')).toBeTruthy()
-  expect(fetchMock).toHaveBeenLastCalledWith('/api/libraries/manga-1', expect.objectContaining({ method: 'DELETE' }))
+  expect(fetchMock).toHaveBeenLastCalledWith('/api/libraries/1', expect.objectContaining({ method: 'DELETE' }))
 })
 
 test('waits for an availability observation and retains unavailable libraries', async () => {
@@ -133,7 +133,7 @@ test('waits for an availability observation and retains unavailable libraries', 
   expect(screen.getByText('Available')).toBeTruthy()
   expect(await screen.findByText('Unavailable', {}, { timeout: 3000 })).toBeTruthy()
   expect(screen.getByRole('heading', { name: 'Manga' })).toBeTruthy()
-  expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/libraries/manga-1/availability-check', expect.objectContaining({ method: 'POST' }))
+  expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/libraries/1/availability-check', expect.objectContaining({ method: 'POST' }))
 })
 
 test('ignores an obsolete initial response under StrictMode', async () => {

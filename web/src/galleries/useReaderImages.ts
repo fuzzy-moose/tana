@@ -7,7 +7,7 @@ export interface ReaderImage {
   url?: string
 }
 
-export function useReaderImages(id: string, start: number, total: number) {
+export function useReaderImages(id: number, start: number, total: number) {
   const cache = useRef(new Map<number, ReaderImage>())
   const [images, setImages] = useState(new Map<number, ReaderImage>())
   const [attempt, setAttempt] = useState(0)

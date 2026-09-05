@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
@@ -56,7 +57,7 @@ func TestGalleryDetailTags(t *testing.T) {
 				t.Fatalf("expected one gallery, got %+v", listing)
 			}
 			var detail gallery.Detail
-			if err := json.Unmarshal(request(t, h, "GET", "/api/galleries/"+listing.Items[0].ID, "", 200).Body.Bytes(), &detail); err != nil {
+			if err := json.Unmarshal(request(t, h, "GET", "/api/galleries/"+strconv.FormatInt(listing.Items[0].ID, 10), "", 200).Body.Bytes(), &detail); err != nil {
 				t.Fatal(err)
 			}
 			if detail.Summary != listing.Items[0] || !reflect.DeepEqual(detail.Tags, tc.want) {
@@ -133,7 +134,7 @@ func TestGalleryAPIReadsDirectoryAndArchiveImages(t *testing.T) {
 			t.Fatal(err)
 		}
 		l := decodeLibrary(t, request(t, h, "POST", "/api/libraries", registrationJSON(t, "Library", root), 201))
-		request(t, h, "POST", "/api/scans", `{"library_id":"`+l.ID+`"}`, 202)
+		request(t, h, "POST", "/api/scans", `{"library_id":`+strconv.FormatInt(l.ID, 10)+`}`, 202)
 		awaitScan(t, h)
 		var listing gallery.Listing
 		if err := json.Unmarshal(request(t, h, "GET", "/api/galleries", "", 200).Body.Bytes(), &listing); err != nil {
@@ -145,10 +146,10 @@ func TestGalleryAPIReadsDirectoryAndArchiveImages(t *testing.T) {
 				g = item
 			}
 		}
-		if g.ID == "" || g.PageCount != 1 {
+		if g.ID == 0 || g.PageCount != 1 {
 			t.Fatalf("missing imported gallery: %+v", listing)
 		}
-		path := "/api/galleries/" + g.ID
+		path := "/api/galleries/" + strconv.FormatInt(g.ID, 10)
 		request(t, h, "GET", path, "", 200)
 		imagePath := path + "/pages/1/image"
 		w := request(t, h, "GET", imagePath, "", 200)
@@ -208,5 +209,5 @@ func TestGalleryImageRejectsSymlinkReplacementOutsideLibrary(t *testing.T) {
 	if err := os.Symlink(outside, name); err != nil {
 		t.Fatal(err)
 	}
-	request(t, h, "GET", "/api/galleries/"+listing.Items[0].ID+"/pages/1/image", "", 422)
+	request(t, h, "GET", "/api/galleries/"+strconv.FormatInt(listing.Items[0].ID, 10)+"/pages/1/image", "", 422)
 }

@@ -1,5 +1,5 @@
 CREATE TABLE raw_feeds (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     captured_at INTEGER NOT NULL,
     feed_url TEXT NOT NULL,
     body BLOB NOT NULL,

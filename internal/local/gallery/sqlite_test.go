@@ -23,7 +23,7 @@ func openRepositories(t *testing.T) (*sql.DB, *library.SQLiteRepository, *source
 	return db, library.NewSQLiteRepository(db), source.NewSQLiteRepository(db), NewSQLiteRepository(db)
 }
 
-func inventory(t *testing.T, libraries *library.SQLiteRepository, sources *source.SQLiteRepository, sourcePath string, kind source.Kind, paths ...string) (library.Library, source.Source, map[string]string) {
+func inventory(t *testing.T, libraries *library.SQLiteRepository, sources *source.SQLiteRepository, sourcePath string, kind source.Kind, paths ...string) (library.Library, source.Source, map[string]int64) {
 	t.Helper()
 	l, err := libraries.Create(t.Context(), "Library", filepath.Join(t.TempDir(), "unavailable"))
 	if err != nil {
@@ -37,14 +37,14 @@ func inventory(t *testing.T, libraries *library.SQLiteRepository, sources *sourc
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := make(map[string]string, len(files))
+	ids := make(map[string]int64, len(files))
 	for _, file := range files {
 		ids[file.Path] = file.ID
 	}
 	return l, s, ids
 }
 
-func assertPages(t *testing.T, r *SQLiteRepository, galleryID string, want ...string) {
+func assertPages(t *testing.T, r *SQLiteRepository, galleryID int64, want ...int64) {
 	t.Helper()
 	pages, err := r.Pages(t.Context(), galleryID)
 	if err != nil {
@@ -55,7 +55,7 @@ func assertPages(t *testing.T, r *SQLiteRepository, galleryID string, want ...st
 	}
 	for i, page := range pages {
 		if page.GalleryID != galleryID || page.Number != int64(i+1) || page.SourceFileID != want[i] {
-			t.Fatalf("page %d: %+v; want %s", i+1, page, want[i])
+			t.Fatalf("page %d: %+v; want %d", i+1, page, want[i])
 		}
 	}
 }
@@ -82,7 +82,7 @@ func TestDefaultGallerySelectsSupportedImagesInNaturalOrder(t *testing.T) {
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("empty default gallery created: %+v, %v", listed, err)
 	}
-	if _, err := galleries.CreateFromSource(t.Context(), "missing"); !errors.Is(err, source.ErrNotFound) {
+	if _, err := galleries.CreateFromSource(t.Context(), 999); !errors.Is(err, source.ErrNotFound) {
 		t.Fatalf("missing source: %v", err)
 	}
 }
@@ -92,11 +92,11 @@ func TestCrossLibraryPagesAndDeletion(t *testing.T) {
 	ctx := t.Context()
 	a, sa, af := inventory(t, libraries, sources, "A.zip", source.Archive, "1.jpg", "2.jpg", "unused.jpg")
 	b, sb, bf := inventory(t, libraries, sources, "B", source.Directory, "1.png", "2.png")
-	g, err := galleries.Create(ctx, "Combined", []string{af["1.jpg"], bf["2.png"], af["1.jpg"], af["2.jpg"], bf["1.png"], af["2.jpg"], bf["2.png"]})
+	g, err := galleries.Create(ctx, "Combined", []int64{af["1.jpg"], bf["2.png"], af["1.jpg"], af["2.jpg"], bf["1.png"], af["2.jpg"], bf["2.png"]})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := galleries.Create(ctx, "Subset", []string{af["2.jpg"], af["1.jpg"]})
+	other, err := galleries.Create(ctx, "Subset", []int64{af["2.jpg"], af["1.jpg"]})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,16 +136,16 @@ func TestPageReplacementIsAtomicAndGalleryDeletionPreservesSource(t *testing.T) 
 	_, libraries, sources, galleries := openRepositories(t)
 	ctx := t.Context()
 	_, s, ids := inventory(t, libraries, sources, "book.zip", source.Archive, "1.jpg", "2.png", "notes.txt")
-	g, err := galleries.Create(ctx, "book", []string{ids["1.jpg"], ids["2.png"]})
+	g, err := galleries.Create(ctx, "book", []int64{ids["1.jpg"], ids["2.png"]})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, invalid := range []string{ids["notes.txt"], "missing"} {
-		if err := galleries.ReplacePages(ctx, g.ID, []string{ids["2.png"], invalid}); !errors.Is(err, ErrInvalidPage) {
+	for _, invalid := range []int64{ids["notes.txt"], 999} {
+		if err := galleries.ReplacePages(ctx, g.ID, []int64{ids["2.png"], invalid}); !errors.Is(err, ErrInvalidPage) {
 			t.Fatalf("invalid replacement: %v", err)
 		}
 		assertPages(t, galleries, g.ID, ids["1.jpg"], ids["2.png"])
-		if _, err := galleries.Create(ctx, "Invalid", []string{ids["1.jpg"], invalid}); !errors.Is(err, ErrInvalidPage) {
+		if _, err := galleries.Create(ctx, "Invalid", []int64{ids["1.jpg"], invalid}); !errors.Is(err, ErrInvalidPage) {
 			t.Fatalf("invalid create: %v", err)
 		}
 	}
@@ -153,10 +153,10 @@ func TestPageReplacementIsAtomicAndGalleryDeletionPreservesSource(t *testing.T) 
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("failed create left a gallery: %+v, %v", listed, err)
 	}
-	if err := galleries.ReplacePages(ctx, "missing", nil); !errors.Is(err, ErrNotFound) {
+	if err := galleries.ReplacePages(ctx, 999, nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing gallery: %v", err)
 	}
-	if err := galleries.ReplacePages(ctx, g.ID, []string{ids["2.png"], ids["1.jpg"], ids["2.png"]}); err != nil {
+	if err := galleries.ReplacePages(ctx, g.ID, []int64{ids["2.png"], ids["1.jpg"], ids["2.png"]}); err != nil {
 		t.Fatal(err)
 	}
 	assertPages(t, galleries, g.ID, ids["2.png"], ids["1.jpg"], ids["2.png"])
@@ -206,7 +206,7 @@ func TestSourceLinkedGalleryMembershipAndLifecycle(t *testing.T) {
 	if err != nil || g.SourceID != s.ID {
 		t.Fatalf("source link: %+v, %v", g, err)
 	}
-	for _, pages := range [][]string{
+	for _, pages := range [][]int64{
 		nil,
 		{ids["1.jpg"]},
 		{ids["1.jpg"], ids["2.png"], ids["1.jpg"]},
@@ -219,7 +219,7 @@ func TestSourceLinkedGalleryMembershipAndLifecycle(t *testing.T) {
 		}
 		assertPages(t, galleries, g.ID, ids["1.jpg"], ids["2.png"])
 	}
-	if err := galleries.ReplacePages(ctx, g.ID, []string{ids["2.png"], ids["1.jpg"]}); err != nil {
+	if err := galleries.ReplacePages(ctx, g.ID, []int64{ids["2.png"], ids["1.jpg"]}); err != nil {
 		t.Fatal(err)
 	}
 	assertPages(t, galleries, g.ID, ids["2.png"], ids["1.jpg"])
@@ -271,5 +271,24 @@ func TestGalleryPersistence(t *testing.T) {
 	gotPages, err := galleries.Pages(ctx, g.ID)
 	if err != nil || !reflect.DeepEqual(gotPages, pages) {
 		t.Fatalf("reopened pages: %+v, %v", gotPages, err)
+	}
+}
+
+func TestReimportDoesNotReuseDeletedIDs(t *testing.T) {
+	_, libraries, sources, galleries := openRepositories(t)
+	var previousLibrary, previousSource, previousFile, previousGallery int64
+	for range 2 {
+		l, s, files := inventory(t, libraries, sources, "book", source.Directory, "1.jpg")
+		g, err := galleries.CreateFromSource(t.Context(), s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l.ID <= previousLibrary || s.ID <= previousSource || files["1.jpg"] <= previousFile || g.ID <= previousGallery {
+			t.Fatalf("IDs did not advance: library=%d source=%d file=%d gallery=%d", l.ID, s.ID, files["1.jpg"], g.ID)
+		}
+		previousLibrary, previousSource, previousFile, previousGallery = l.ID, s.ID, files["1.jpg"], g.ID
+		if err := libraries.Delete(t.Context(), l.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

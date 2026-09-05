@@ -7,7 +7,7 @@ import { previousSpread, spreadPages } from './spreads'
 import ReaderProgress from './ReaderProgress'
 import './Reader.css'
 
-export default function Reader({ id, initialPage, initialLastPage }: { id: string, initialPage: number, initialLastPage?: number }) {
+export default function Reader({ id, initialPage, initialLastPage }: { id: number, initialPage: number, initialLastPage?: number }) {
   const { gallery, error, retry } = useGallery(id)
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {

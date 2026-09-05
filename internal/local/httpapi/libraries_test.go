@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -93,10 +94,10 @@ func TestLibraryAPILifecycle(t *testing.T) {
 	}
 	w := request(t, h, "POST", "/api/libraries", registrationJSON(t, "  Manga  ", root), 201)
 	created := decodeLibrary(t, w)
-	if created.ID == "" || created.Name != "Manga" || created.Path != root || created.Availability != "available" || created.LastCheckedAt == nil {
+	if created.ID == 0 || created.Name != "Manga" || created.Path != root || created.Availability != "available" || created.LastCheckedAt == nil {
 		t.Fatalf("invalid representation: %+v", created)
 	}
-	path := "/api/libraries/" + created.ID
+	path := "/api/libraries/" + strconv.FormatInt(created.ID, 10)
 	if w.Header().Get("Location") != path {
 		t.Fatal("missing resource location")
 	}

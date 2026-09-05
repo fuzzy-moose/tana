@@ -34,7 +34,7 @@ beforeEach(() => {
     const page = Math.min(Number(url.searchParams.get('page')), Math.max(1, Math.ceil(total / pageSize)))
     const first = (page - 1) * pageSize
     return Response.json({
-      items: Array.from({ length: Math.min(pageSize, total - first) }, (_, index) => ({ id: String(first + index), title: `Gallery ${first + index}`, page_count: 0 })),
+      items: Array.from({ length: Math.min(pageSize, total - first) }, (_, index) => ({ id: first + index + 1, title: `Gallery ${first + index}`, page_count: 0 })),
       total, page, page_size: pageSize,
     })
   })

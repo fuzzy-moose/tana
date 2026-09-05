@@ -11,17 +11,16 @@ import (
 )
 
 const createGallery = `-- name: CreateGallery :one
-INSERT INTO galleries (id, title, source_id) VALUES (?, ?, ?) RETURNING id, title, source_id
+INSERT INTO galleries (title, source_id) VALUES (?, ?) RETURNING id, title, source_id
 `
 
 type CreateGalleryParams struct {
-	ID       string
 	Title    string
-	SourceID sql.NullString
+	SourceID sql.NullInt64
 }
 
 func (q *Queries) CreateGallery(ctx context.Context, arg CreateGalleryParams) (Gallery, error) {
-	row := q.db.QueryRowContext(ctx, createGallery, arg.ID, arg.Title, arg.SourceID)
+	row := q.db.QueryRowContext(ctx, createGallery, arg.Title, arg.SourceID)
 	var i Gallery
 	err := row.Scan(&i.ID, &i.Title, &i.SourceID)
 	return i, err
@@ -32,9 +31,9 @@ INSERT INTO gallery_pages (gallery_id, position, source_file_id) VALUES (?, ?, ?
 `
 
 type CreateGalleryPageParams struct {
-	GalleryID    string
+	GalleryID    int64
 	Position     int64
-	SourceFileID string
+	SourceFileID int64
 }
 
 func (q *Queries) CreateGalleryPage(ctx context.Context, arg CreateGalleryPageParams) error {
@@ -46,7 +45,7 @@ const deleteGallery = `-- name: DeleteGallery :exec
 DELETE FROM galleries WHERE id = ?
 `
 
-func (q *Queries) DeleteGallery(ctx context.Context, id string) error {
+func (q *Queries) DeleteGallery(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteGallery, id)
 	return err
 }
@@ -55,7 +54,7 @@ const deleteGalleryPages = `-- name: DeleteGalleryPages :exec
 DELETE FROM gallery_pages WHERE gallery_id = ?
 `
 
-func (q *Queries) DeleteGalleryPages(ctx context.Context, galleryID string) error {
+func (q *Queries) DeleteGalleryPages(ctx context.Context, galleryID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteGalleryPages, galleryID)
 	return err
 }
@@ -64,7 +63,7 @@ const getGallery = `-- name: GetGallery :one
 SELECT id, title, source_id FROM galleries WHERE id = ?
 `
 
-func (q *Queries) GetGallery(ctx context.Context, id string) (Gallery, error) {
+func (q *Queries) GetGallery(ctx context.Context, id int64) (Gallery, error) {
 	row := q.db.QueryRowContext(ctx, getGallery, id)
 	var i Gallery
 	err := row.Scan(&i.ID, &i.Title, &i.SourceID)
@@ -81,7 +80,7 @@ WHERE p.gallery_id = ? ORDER BY p.position LIMIT 1 OFFSET ?
 `
 
 type GetGalleryImageLocationParams struct {
-	GalleryID string
+	GalleryID int64
 	Offset    int64
 }
 
@@ -111,12 +110,12 @@ WHERE g.id = ? GROUP BY g.id
 `
 
 type GetGallerySummaryRow struct {
-	ID        string
+	ID        int64
 	Title     string
 	PageCount int64
 }
 
-func (q *Queries) GetGallerySummary(ctx context.Context, id string) (GetGallerySummaryRow, error) {
+func (q *Queries) GetGallerySummary(ctx context.Context, id int64) (GetGallerySummaryRow, error) {
 	row := q.db.QueryRowContext(ctx, getGallerySummary, id)
 	var i GetGallerySummaryRow
 	err := row.Scan(&i.ID, &i.Title, &i.PageCount)
@@ -127,7 +126,7 @@ const getSourceFilePath = `-- name: GetSourceFilePath :one
 SELECT path FROM source_files WHERE id = ?
 `
 
-func (q *Queries) GetSourceFilePath(ctx context.Context, id string) (string, error) {
+func (q *Queries) GetSourceFilePath(ctx context.Context, id int64) (string, error) {
 	row := q.db.QueryRowContext(ctx, getSourceFilePath, id)
 	var path string
 	err := row.Scan(&path)
@@ -146,7 +145,7 @@ type GetSourceTitleRow struct {
 	LibraryPath string
 }
 
-func (q *Queries) GetSourceTitle(ctx context.Context, id string) (GetSourceTitleRow, error) {
+func (q *Queries) GetSourceTitle(ctx context.Context, id int64) (GetSourceTitleRow, error) {
 	row := q.db.QueryRowContext(ctx, getSourceTitle, id)
 	var i GetSourceTitleRow
 	err := row.Scan(&i.Path, &i.Kind, &i.LibraryPath)
@@ -187,12 +186,12 @@ FROM gallery_pages WHERE gallery_id = ? ORDER BY position
 `
 
 type ListGalleryPagesRow struct {
-	GalleryID    string
-	SourceFileID string
+	GalleryID    int64
+	SourceFileID int64
 	PageNumber   int64
 }
 
-func (q *Queries) ListGalleryPages(ctx context.Context, galleryID string) ([]ListGalleryPagesRow, error) {
+func (q *Queries) ListGalleryPages(ctx context.Context, galleryID int64) ([]ListGalleryPagesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listGalleryPages, galleryID)
 	if err != nil {
 		return nil, err
@@ -220,11 +219,11 @@ SELECT id, path FROM source_files WHERE source_id = ?
 `
 
 type ListSourceFilesForGalleryRow struct {
-	ID   string
+	ID   int64
 	Path string
 }
 
-func (q *Queries) ListSourceFilesForGallery(ctx context.Context, sourceID string) ([]ListSourceFilesForGalleryRow, error) {
+func (q *Queries) ListSourceFilesForGallery(ctx context.Context, sourceID int64) ([]ListSourceFilesForGalleryRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSourceFilesForGallery, sourceID)
 	if err != nil {
 		return nil, err
@@ -253,7 +252,7 @@ UPDATE galleries SET title = ? WHERE id = ? RETURNING id, title, source_id
 
 type RenameGalleryParams struct {
 	Title string
-	ID    string
+	ID    int64
 }
 
 func (q *Queries) RenameGallery(ctx context.Context, arg RenameGalleryParams) (Gallery, error) {

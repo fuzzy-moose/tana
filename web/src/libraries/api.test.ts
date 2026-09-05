@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { checkLibraryAvailability, createLibrary } from './api'
 
-const library = { id: 'one', name: 'Comics', path: '/comics', availability: 'available', last_checked_at: '2026-09-05T10:00:00Z' }
+const library = { id: 1, name: 'Comics', path: '/comics', availability: 'available', last_checked_at: '2026-09-05T10:00:00Z' }
 const fetchMock = vi.fn<typeof fetch>()
 
 beforeEach(() => {

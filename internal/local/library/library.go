@@ -29,7 +29,7 @@ var (
 )
 
 type Library struct {
-	ID            string     `json:"id"`
+	ID            int64      `json:"id"`
 	Name          string     `json:"name"`
 	Path          string     `json:"path"`
 	Availability  string     `json:"availability"`
@@ -46,9 +46,9 @@ type Service struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	mu     sync.Mutex
-	queue  []string
+	queue  []int64
 	// Includes queued and running checks so repeated refreshes coalesce.
-	pending map[string]bool
+	pending map[int64]bool
 	wake    chan struct{}
 }
 
@@ -72,7 +72,7 @@ func New(ctx context.Context, repository Repository, dirFS func(string) fs.FS, d
 func newService(ctx context.Context, repository Repository, dirFS func(string) fs.FS, dir string, logger *slog.Logger) (*Service, error) {
 	s := &Service{
 		repository: repository, dataDir: dir, probe: newFilesystemProbe(dirFS),
-		logger: logger, timeout: checkTimeout, pending: make(map[string]bool), wake: make(chan struct{}, checkWorkers),
+		logger: logger, timeout: checkTimeout, pending: make(map[int64]bool), wake: make(chan struct{}, checkWorkers),
 	}
 	roots, err := s.repository.List(ctx)
 	if err == nil {
@@ -124,11 +124,11 @@ func (s *Service) List(ctx context.Context) ([]Library, error) {
 	return s.repository.List(ctx)
 }
 
-func (s *Service) Get(ctx context.Context, id string) (Library, error) {
+func (s *Service) Get(ctx context.Context, id int64) (Library, error) {
 	return s.repository.Get(ctx, id)
 }
 
-func (s *Service) Rename(ctx context.Context, id, name string) (Library, error) {
+func (s *Service) Rename(ctx context.Context, id int64, name string) (Library, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return Library{}, ErrInvalidName
@@ -136,11 +136,11 @@ func (s *Service) Rename(ctx context.Context, id, name string) (Library, error) 
 	return s.repository.Rename(ctx, id, name)
 }
 
-func (s *Service) Delete(ctx context.Context, id string) error {
+func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.repository.Delete(ctx, id)
 }
 
-func (s *Service) RequestCheck(ctx context.Context, id string) error {
+func (s *Service) RequestCheck(ctx context.Context, id int64) error {
 	if _, err := s.Get(ctx, id); err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (s *Service) start(ctx context.Context, interval time.Duration) {
 						break
 					}
 					id := s.queue[0]
-					s.queue[0] = ""
+					s.queue[0] = 0
 					s.queue = s.queue[1:]
 					s.mu.Unlock()
 					s.check(ctx, id)
@@ -204,7 +204,7 @@ func (s *Service) start(ctx context.Context, interval time.Duration) {
 	}()
 }
 
-func (s *Service) enqueue(id string) {
+func (s *Service) enqueue(id int64) {
 	s.mu.Lock()
 	if !s.pending[id] {
 		s.pending[id] = true
@@ -217,7 +217,7 @@ func (s *Service) enqueue(id string) {
 	}
 }
 
-func (s *Service) check(ctx context.Context, id string) {
+func (s *Service) check(ctx context.Context, id int64) {
 	root, err := s.Get(ctx, id)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) && ctx.Err() == nil {

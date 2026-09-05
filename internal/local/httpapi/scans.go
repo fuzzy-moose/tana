@@ -11,7 +11,7 @@ import (
 func HandleRequestScan(scans *scan.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			LibraryID string `json:"library_id"`
+			LibraryID int64 `json:"library_id"`
 		}
 		if !server.DecodeJSON(w, r, &input) {
 			return

@@ -366,7 +366,7 @@ func TestScheduledAndExplicitChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	await()
-	if err := s.RequestCheck(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
+	if err := s.RequestCheck(t.Context(), 999); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing root accepted: %v", err)
 	}
 }

@@ -1,6 +1,6 @@
 -- name: CreateLibrary :one
-INSERT INTO libraries (id, name, path, availability, last_checked_at)
-VALUES (?, ?, ?, 'available', ?)
+INSERT INTO libraries (name, path, availability, last_checked_at)
+VALUES (?, ?, 'available', ?)
 RETURNING *;
 
 -- name: ListLibraries :many

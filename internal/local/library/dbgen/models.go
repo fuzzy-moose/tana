@@ -9,7 +9,7 @@ import (
 )
 
 type Library struct {
-	ID            string
+	ID            int64
 	Name          string
 	Path          string
 	Availability  string

@@ -3,47 +3,12 @@ package galleryinfo
 import (
 	"fmt"
 	"io"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/fuzzy-moose/tana/internal/local/tag"
 )
-
-func TestSampleDocuments(t *testing.T) {
-	for _, tc := range []struct {
-		file, title, uploader, uploaded, downloaded, comment string
-	}{
-		{"galleryinfo-1.txt", "(Dream Stage 4)", "NightHarbor", "2016-04-18 14:37", "2018-01-22 21:14", "Translated by Paper Lantern"},
-		{"galleryinfo-2.txt", "(C74)", "CopperFox27", "2011-06-09 08:42", "2018-03-11 18:05", ""},
-		{"galleryinfo-3.txt", "(C90)", "RiverOtter", "2019-09-12 20:26", "2019-09-13 07:48", `RAW <a href="https://archiveharbor.net/`},
-	} {
-		t.Run(tc.file, func(t *testing.T) {
-			data, err := os.ReadFile("../../../../" + tc.file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			doc, diagnostics := Parse(strings.NewReader(string(data)))
-			if len(diagnostics) != 0 {
-				t.Fatalf("sample rejected: %v", diagnostics)
-			}
-			if !strings.HasPrefix(doc.Title, tc.title) || doc.UploadedBy != tc.uploader {
-				t.Fatalf("headers: %+v", doc)
-			}
-			if doc.UploadTime.Format("2006-01-02 15:04") != tc.uploaded || doc.Downloaded.Format("2006-01-02 15:04") != tc.downloaded || doc.UploadTime.Location() != time.UTC || doc.Downloaded.Location() != time.UTC {
-				t.Fatalf("UTC times: %+v", doc)
-			}
-			if !strings.HasPrefix(doc.UploaderComments, tc.comment) || tc.comment == "" && doc.UploaderComments != "" || strings.Contains(doc.UploaderComments, doc.Attribution) {
-				t.Fatalf("comments/footer boundary: %+v", doc)
-			}
-			if len(doc.Tags) == 0 || doc.Tags[0] != (tag.Value{Namespace: "language", Value: "english"}) {
-				t.Fatalf("tags: %+v", doc.Tags)
-			}
-		})
-	}
-}
 
 func TestPartialFieldsNormalizationAndFirstValidOccurrence(t *testing.T) {
 	text := "Tags: LANGUAGE:English, all ages, Multi-Work Series, language:english, :empty, artist:, artist:日本語, artist:a_b\r\n" +

@@ -11,25 +11,19 @@ import (
 )
 
 const createLibrary = `-- name: CreateLibrary :one
-INSERT INTO libraries (id, name, path, availability, last_checked_at)
-VALUES (?, ?, ?, 'available', ?)
+INSERT INTO libraries (name, path, availability, last_checked_at)
+VALUES (?, ?, 'available', ?)
 RETURNING id, name, path, availability, last_checked_at
 `
 
 type CreateLibraryParams struct {
-	ID            string
 	Name          string
 	Path          string
 	LastCheckedAt sql.NullInt64
 }
 
 func (q *Queries) CreateLibrary(ctx context.Context, arg CreateLibraryParams) (Library, error) {
-	row := q.db.QueryRowContext(ctx, createLibrary,
-		arg.ID,
-		arg.Name,
-		arg.Path,
-		arg.LastCheckedAt,
-	)
+	row := q.db.QueryRowContext(ctx, createLibrary, arg.Name, arg.Path, arg.LastCheckedAt)
 	var i Library
 	err := row.Scan(
 		&i.ID,
@@ -45,7 +39,7 @@ const deleteLibrary = `-- name: DeleteLibrary :exec
 DELETE FROM libraries WHERE id = ?
 `
 
-func (q *Queries) DeleteLibrary(ctx context.Context, id string) error {
+func (q *Queries) DeleteLibrary(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteLibrary, id)
 	return err
 }
@@ -54,7 +48,7 @@ const getLibrary = `-- name: GetLibrary :one
 SELECT id, name, path, availability, last_checked_at FROM libraries WHERE id = ?
 `
 
-func (q *Queries) GetLibrary(ctx context.Context, id string) (Library, error) {
+func (q *Queries) GetLibrary(ctx context.Context, id int64) (Library, error) {
 	row := q.db.QueryRowContext(ctx, getLibrary, id)
 	var i Library
 	err := row.Scan(
@@ -106,7 +100,7 @@ UPDATE libraries SET name = ? WHERE id = ? RETURNING id, name, path, availabilit
 
 type RenameLibraryParams struct {
 	Name string
-	ID   string
+	ID   int64
 }
 
 func (q *Queries) RenameLibrary(ctx context.Context, arg RenameLibraryParams) (Library, error) {
@@ -138,7 +132,7 @@ UPDATE libraries SET availability = ?, last_checked_at = ? WHERE id = ?
 type UpdateAvailabilityParams struct {
 	Availability  string
 	LastCheckedAt sql.NullInt64
-	ID            string
+	ID            int64
 }
 
 func (q *Queries) UpdateAvailability(ctx context.Context, arg UpdateAvailabilityParams) error {

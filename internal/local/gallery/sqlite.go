@@ -2,7 +2,6 @@ package gallery
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -28,7 +27,7 @@ func NewSQLiteRepository(db *sql.DB) *SQLiteRepository {
 	return &SQLiteRepository{db: db, queries: dbgen.New(db)}
 }
 
-func (r *SQLiteRepository) Create(ctx context.Context, title string, fileIDs []string) (Gallery, error) {
+func (r *SQLiteRepository) Create(ctx context.Context, title string, fileIDs []int64) (Gallery, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Gallery{}, ErrInvalidTitle
@@ -38,7 +37,7 @@ func (r *SQLiteRepository) Create(ctx context.Context, title string, fileIDs []s
 		return Gallery{}, err
 	}
 	defer tx.Rollback()
-	g, err := create(ctx, r.queries.WithTx(tx), title, fileIDs, "")
+	g, err := create(ctx, r.queries.WithTx(tx), title, fileIDs, 0)
 	if err != nil {
 		return Gallery{}, err
 	}
@@ -48,8 +47,8 @@ func (r *SQLiteRepository) Create(ctx context.Context, title string, fileIDs []s
 	return g, nil
 }
 
-func create(ctx context.Context, q *dbgen.Queries, title string, fileIDs []string, sourceID string) (Gallery, error) {
-	row, err := q.CreateGallery(ctx, dbgen.CreateGalleryParams{ID: rand.Text(), Title: title, SourceID: sql.NullString{String: sourceID, Valid: sourceID != ""}})
+func create(ctx context.Context, q *dbgen.Queries, title string, fileIDs []int64, sourceID int64) (Gallery, error) {
+	row, err := q.CreateGallery(ctx, dbgen.CreateGalleryParams{Title: title, SourceID: sql.NullInt64{Int64: sourceID, Valid: sourceID != 0}})
 	if err != nil {
 		return Gallery{}, err
 	}
@@ -59,7 +58,7 @@ func create(ctx context.Context, q *dbgen.Queries, title string, fileIDs []strin
 	return fromRow(row), nil
 }
 
-func (r *SQLiteRepository) CreateFromSource(ctx context.Context, sourceID string) (Gallery, error) {
+func (r *SQLiteRepository) CreateFromSource(ctx context.Context, sourceID int64) (Gallery, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Gallery{}, err
@@ -77,7 +76,7 @@ func (r *SQLiteRepository) CreateFromSource(ctx context.Context, sourceID string
 
 // CreateFromSourceTx creates a gallery in the caller's transaction. ErrNoImages
 // makes no changes; other errors require the caller to roll back.
-func (r *SQLiteRepository) CreateFromSourceTx(ctx context.Context, tx *sql.Tx, sourceID string, values metadata.Values) (Gallery, error) {
+func (r *SQLiteRepository) CreateFromSourceTx(ctx context.Context, tx *sql.Tx, sourceID int64, values metadata.Values) (Gallery, error) {
 	q := r.queries.WithTx(tx)
 	s, err := q.GetSourceTitle(ctx, sourceID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -99,7 +98,7 @@ func (r *SQLiteRepository) CreateFromSourceTx(ctx context.Context, tx *sql.Tx, s
 		}
 		return 0
 	})
-	fileIDs := make([]string, 0, len(files))
+	fileIDs := make([]int64, 0, len(files))
 	for _, file := range files {
 		if SupportsImage(file.Path) {
 			fileIDs = append(fileIDs, file.ID)
@@ -132,7 +131,7 @@ func (r *SQLiteRepository) CreateFromSourceTx(ctx context.Context, tx *sql.Tx, s
 	return g, nil
 }
 
-func (r *SQLiteRepository) Get(ctx context.Context, id string) (Gallery, error) {
+func (r *SQLiteRepository) Get(ctx context.Context, id int64) (Gallery, error) {
 	row, err := r.queries.GetGallery(ctx, id)
 	return fromRow(row), domainError(err)
 }
@@ -149,7 +148,7 @@ func (r *SQLiteRepository) List(ctx context.Context) ([]Gallery, error) {
 	return result, nil
 }
 
-func (r *SQLiteRepository) Pages(ctx context.Context, id string) ([]Page, error) {
+func (r *SQLiteRepository) Pages(ctx context.Context, id int64) ([]Page, error) {
 	rows, err := r.queries.ListGalleryPages(ctx, id)
 	if err != nil {
 		return nil, err
@@ -161,7 +160,7 @@ func (r *SQLiteRepository) Pages(ctx context.Context, id string) ([]Page, error)
 	return result, nil
 }
 
-func (r *SQLiteRepository) Rename(ctx context.Context, id, title string) (Gallery, error) {
+func (r *SQLiteRepository) Rename(ctx context.Context, id int64, title string) (Gallery, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Gallery{}, ErrInvalidTitle
@@ -170,7 +169,7 @@ func (r *SQLiteRepository) Rename(ctx context.Context, id, title string) (Galler
 	return fromRow(row), domainError(err)
 }
 
-func (r *SQLiteRepository) ReplacePages(ctx context.Context, id string, fileIDs []string) error {
+func (r *SQLiteRepository) ReplacePages(ctx context.Context, id int64, fileIDs []int64) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -189,7 +188,7 @@ func (r *SQLiteRepository) ReplacePages(ctx context.Context, id string, fileIDs 
 		if len(pages) != len(fileIDs) {
 			return ErrLinkedPages
 		}
-		remaining := make(map[string]int, len(pages))
+		remaining := make(map[int64]int, len(pages))
 		for _, page := range pages {
 			remaining[page.SourceFileID]++
 		}
@@ -209,17 +208,17 @@ func (r *SQLiteRepository) ReplacePages(ctx context.Context, id string, fileIDs 
 	return tx.Commit()
 }
 
-func insertPages(ctx context.Context, q *dbgen.Queries, id string, fileIDs []string) error {
+func insertPages(ctx context.Context, q *dbgen.Queries, id int64, fileIDs []int64) error {
 	for i, fileID := range fileIDs {
 		name, err := q.GetSourceFilePath(ctx, fileID)
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: %s", ErrInvalidPage, fileID)
+			return fmt.Errorf("%w: %d", ErrInvalidPage, fileID)
 		}
 		if err != nil {
 			return err
 		}
 		if !SupportsImage(name) {
-			return fmt.Errorf("%w: %s", ErrInvalidPage, fileID)
+			return fmt.Errorf("%w: %d", ErrInvalidPage, fileID)
 		}
 		if err := q.CreateGalleryPage(ctx, dbgen.CreateGalleryPageParams{GalleryID: id, Position: int64(i + 1), SourceFileID: fileID}); err != nil {
 			return err
@@ -228,12 +227,12 @@ func insertPages(ctx context.Context, q *dbgen.Queries, id string, fileIDs []str
 	return nil
 }
 
-func (r *SQLiteRepository) Delete(ctx context.Context, id string) error {
+func (r *SQLiteRepository) Delete(ctx context.Context, id int64) error {
 	return r.queries.DeleteGallery(ctx, id)
 }
 
 func fromRow(row dbgen.Gallery) Gallery {
-	return Gallery{ID: row.ID, Title: row.Title, SourceID: row.SourceID.String}
+	return Gallery{ID: row.ID, Title: row.Title, SourceID: row.SourceID.Int64}
 }
 
 func domainError(err error) error {

@@ -1,7 +1,7 @@
 import { request as apiRequest } from '../api'
 
 export interface Library {
-  id: string
+  id: number
   name: string
   path: string
   availability: 'available' | 'unavailable' | 'unknown'
@@ -24,7 +24,7 @@ async function request<T>(path = '', init: RequestInit = {}): Promise<T> {
   return apiRequest<T>(`/api/libraries${path}`, init, errorMessages)
 }
 
-const libraryPath = (id: string) => `/${encodeURIComponent(id)}`
+const libraryPath = (id: number) => `/${id}`
 
 export function listLibraries(signal?: AbortSignal) {
   return request<Library[]>('', { signal })
@@ -38,7 +38,7 @@ export function createLibrary(name: string, path: string) {
   })
 }
 
-export function renameLibrary(id: string, name: string) {
+export function renameLibrary(id: number, name: string) {
   return request<Library>(libraryPath(id), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -46,7 +46,7 @@ export function renameLibrary(id: string, name: string) {
   })
 }
 
-export function removeLibrary(id: string) {
+export function removeLibrary(id: number) {
   return request<void>(libraryPath(id), { method: 'DELETE' })
 }
 
@@ -65,7 +65,7 @@ function pause(signal: AbortSignal) {
   })
 }
 
-export async function checkLibraryAvailability(id: string, signal: AbortSignal) {
+export async function checkLibraryAvailability(id: number, signal: AbortSignal) {
   const path = libraryPath(id)
   let library = await request<Library>(path, { signal })
   const previousCheck = library.last_checked_at

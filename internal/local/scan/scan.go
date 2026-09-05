@@ -23,7 +23,7 @@ var ErrActive = errors.New("a scan is already active")
 
 type Status struct {
 	Phase            string     `json:"phase"`
-	LibraryID        string     `json:"library_id,omitempty"`
+	LibraryID        int64      `json:"library_id,omitempty"`
 	LibrariesTotal   int        `json:"libraries_total"`
 	Discovered       int        `json:"discovered"`
 	Imported         int        `json:"imported"`
@@ -37,7 +37,7 @@ type Status struct {
 
 type libraryCatalog interface {
 	List(context.Context) ([]library.Library, error)
-	Get(context.Context, string) (library.Library, error)
+	Get(context.Context, int64) (library.Library, error)
 }
 
 type Service struct {
@@ -67,8 +67,8 @@ func New(ctx context.Context, db *sql.DB, libraries libraryCatalog, dirFS func(s
 }
 
 // Request snapshots the selected libraries and starts work independently of the
-// request context. An empty libraryID selects all registered libraries.
-func (s *Service) Request(ctx context.Context, libraryID string) error {
+// request context. A zero libraryID selects all registered libraries.
+func (s *Service) Request(ctx context.Context, libraryID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ctx.Err(); err != nil {
@@ -78,7 +78,7 @@ func (s *Service) Request(ctx context.Context, libraryID string) error {
 		return ErrActive
 	}
 	var libraries []library.Library
-	if libraryID == "" {
+	if libraryID == 0 {
 		var err error
 		libraries, err = s.libraries.List(ctx)
 		if err != nil {

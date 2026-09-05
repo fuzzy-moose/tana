@@ -1,7 +1,7 @@
 import { request } from '../api'
 
 export interface Gallery {
-  id: string
+  id: number
   title: string
   page_count: number
 }
@@ -39,10 +39,10 @@ export function listGalleries(search: string, page: number, pageSize: number, si
   })
 }
 
-export function getGallery(id: string, signal?: AbortSignal) {
-  return request<GalleryDetails>(`/api/galleries/${encodeURIComponent(id)}`, { signal }, {
+export function getGallery(id: number, signal?: AbortSignal) {
+  return request<GalleryDetails>(`/api/galleries/${id}`, { signal }, {
     not_found: 'This gallery no longer exists. Return to Galleries to choose another.',
   })
 }
 
-export const imageURL = (id: string, page: number) => `/api/galleries/${encodeURIComponent(id)}/pages/${page}/image`
+export const imageURL = (id: number, page: number) => `/api/galleries/${id}/pages/${page}/image`

@@ -5,12 +5,12 @@
 package dbgen
 
 type Namespace struct {
-	ID   string
+	ID   int64
 	Name string
 }
 
 type Tag struct {
-	ID          string
-	NamespaceID string
+	ID          int64
+	NamespaceID int64
 	Value       string
 }

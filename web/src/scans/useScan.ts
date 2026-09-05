@@ -3,7 +3,7 @@ import { request } from '../api'
 
 export interface ScanStatus {
   phase: 'idle' | 'discovering' | 'importing' | 'completed' | 'completed_with_errors' | 'failed'
-  library_id?: string
+  library_id?: number
   libraries_total: number
   discovered: number
   imported: number
@@ -41,7 +41,7 @@ export function useScan() {
     return () => { controller.abort(); clearTimeout(timer) }
   }, [refresh])
 
-  async function start(libraryID?: string) {
+  async function start(libraryID?: number) {
     const controller = new AbortController()
     mutation.current = controller
     setPending(true)

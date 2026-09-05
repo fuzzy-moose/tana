@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -40,7 +41,7 @@ func TestLibraryJSONMediaTypes(t *testing.T) {
 	created := decodeLibrary(t, request(t, h, "POST", "/api/libraries", registrationJSON(t, "Original", t.TempDir()), 201))
 	for _, endpoint := range []struct{ method, path, body string }{
 		{"POST", "/api/libraries", registrationJSON(t, "New", t.TempDir())},
-		{"PATCH", "/api/libraries/" + created.ID, `{"name":"Changed"}`},
+		{"PATCH", "/api/libraries/" + strconv.FormatInt(created.ID, 10), `{"name":"Changed"}`},
 	} {
 		for _, contentType := range []string{"", "text/plain"} {
 			t.Run(endpoint.method+contentType, func(t *testing.T) {

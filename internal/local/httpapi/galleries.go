@@ -54,7 +54,12 @@ func HandleCompleteGallerySearch(galleries *gallery.SQLiteRepository) http.Handl
 
 func HandleGetGallery(galleries *gallery.SQLiteRepository) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		result, err := galleries.Detail(r.Context(), r.PathValue("id"))
+		id, ok := pathID(w, r)
+		if !ok {
+			return
+		}
+
+		result, err := galleries.Detail(r.Context(), id)
 		if err != nil {
 			writeGalleryError(w, r, err)
 			return
@@ -65,12 +70,17 @@ func HandleGetGallery(galleries *gallery.SQLiteRepository) http.Handler {
 
 func HandleGalleryImage(galleries *gallery.SQLiteRepository) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := pathID(w, r)
+		if !ok {
+			return
+		}
+
 		number, err := strconv.ParseInt(r.PathValue("number"), 10, 64)
 		if err != nil || number < 1 {
 			server.NotFound(w, r)
 			return
 		}
-		content, err := galleries.OpenImage(r.Context(), r.PathValue("id"), number)
+		content, err := galleries.OpenImage(r.Context(), id, number)
 		if err != nil {
 			writeGalleryError(w, r, err)
 			return

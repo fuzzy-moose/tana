@@ -36,14 +36,14 @@ func TestInventoryPersistsAllFiles(t *testing.T) {
 		t.Fatalf("inventory: %+v", files)
 	}
 	for _, file := range files {
-		if file.ID == "" || file.SourceID != s.ID {
+		if file.ID == 0 || file.SourceID != s.ID {
 			t.Fatalf("file: %+v", file)
 		}
 	}
 	if _, err := r.Create(ctx, l.ID, s.Path, Archive, []string{"other.png"}); err == nil {
 		t.Fatal("duplicate source path accepted")
 	}
-	if _, err := r.Create(ctx, "missing", "book.zip", Archive, []string{"1.jpg"}); err == nil {
+	if _, err := r.Create(ctx, 999, "book.zip", Archive, []string{"1.jpg"}); err == nil {
 		t.Fatal("missing library accepted")
 	}
 	if err := db.Close(); err != nil {

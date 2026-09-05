@@ -2,7 +2,6 @@ package source
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"errors"
 
@@ -20,7 +19,7 @@ func NewSQLiteRepository(db *sql.DB) *SQLiteRepository {
 	return &SQLiteRepository{db: db, queries: dbgen.New(db)}
 }
 
-func (r *SQLiteRepository) Create(ctx context.Context, libraryID, path string, kind Kind, files []string) (Source, error) {
+func (r *SQLiteRepository) Create(ctx context.Context, libraryID int64, path string, kind Kind, files []string) (Source, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Source{}, err
@@ -38,24 +37,24 @@ func (r *SQLiteRepository) Create(ctx context.Context, libraryID, path string, k
 
 // CreateTx registers an inventory in the caller's transaction. The caller must
 // roll back the transaction on error.
-func (r *SQLiteRepository) CreateTx(ctx context.Context, tx *sql.Tx, libraryID, path string, kind Kind, files []string) (Source, error) {
+func (r *SQLiteRepository) CreateTx(ctx context.Context, tx *sql.Tx, libraryID int64, path string, kind Kind, files []string) (Source, error) {
 	if err := validate(path, kind, files); err != nil {
 		return Source{}, err
 	}
 	q := r.queries.WithTx(tx)
-	row, err := q.CreateSource(ctx, dbgen.CreateSourceParams{ID: rand.Text(), LibraryID: libraryID, Path: path, Kind: string(kind)})
+	row, err := q.CreateSource(ctx, dbgen.CreateSourceParams{LibraryID: libraryID, Path: path, Kind: string(kind)})
 	if err != nil {
 		return Source{}, err
 	}
 	for _, name := range files {
-		if err := q.CreateSourceFile(ctx, dbgen.CreateSourceFileParams{ID: rand.Text(), SourceID: row.ID, Path: name}); err != nil {
+		if err := q.CreateSourceFile(ctx, dbgen.CreateSourceFileParams{SourceID: row.ID, Path: name}); err != nil {
 			return Source{}, err
 		}
 	}
 	return fromRow(row), nil
 }
 
-func (r *SQLiteRepository) Get(ctx context.Context, id string) (Source, error) {
+func (r *SQLiteRepository) Get(ctx context.Context, id int64) (Source, error) {
 	row, err := r.queries.GetSource(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
@@ -63,7 +62,7 @@ func (r *SQLiteRepository) Get(ctx context.Context, id string) (Source, error) {
 	return fromRow(row), err
 }
 
-func (r *SQLiteRepository) List(ctx context.Context, libraryID string) ([]Source, error) {
+func (r *SQLiteRepository) List(ctx context.Context, libraryID int64) ([]Source, error) {
 	rows, err := r.queries.ListSources(ctx, libraryID)
 	if err != nil {
 		return nil, err
@@ -75,7 +74,7 @@ func (r *SQLiteRepository) List(ctx context.Context, libraryID string) ([]Source
 	return result, nil
 }
 
-func (r *SQLiteRepository) Files(ctx context.Context, id string) ([]File, error) {
+func (r *SQLiteRepository) Files(ctx context.Context, id int64) ([]File, error) {
 	rows, err := r.queries.ListSourceFiles(ctx, id)
 	if err != nil {
 		return nil, err
@@ -87,7 +86,7 @@ func (r *SQLiteRepository) Files(ctx context.Context, id string) ([]File, error)
 	return result, nil
 }
 
-func (r *SQLiteRepository) Delete(ctx context.Context, id string) error {
+func (r *SQLiteRepository) Delete(ctx context.Context, id int64) error {
 	return r.queries.DeleteSource(ctx, id)
 }
 

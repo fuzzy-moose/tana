@@ -9,12 +9,12 @@ import (
 var ErrInvalid = errors.New("namespace must contain only ASCII letters; tag must contain only ASCII letters, digits, spaces, hyphens, and dots")
 
 type Namespace struct {
-	ID   string
+	ID   int64
 	Name string
 }
 
 type Tag struct {
-	ID        string
+	ID        int64
 	Namespace Namespace
 	Value     string
 }

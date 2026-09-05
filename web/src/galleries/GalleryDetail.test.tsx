@@ -7,7 +7,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 test('displays namespace groups between metadata and pages with read-only tag values', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({
-    id: 'g', title: 'Manga', page_count: 1,
+    id: 1, title: 'Manga', page_count: 1,
     tags: [
       { namespace: 'artist', value: 'alpha' },
       { namespace: 'artist', value: 'zeta' },
@@ -15,7 +15,7 @@ test('displays namespace groups between metadata and pages with read-only tag va
       { namespace: 'other', value: 'all ages' },
     ],
   })))
-  render(<GalleryDetail id="g" />)
+  render(<GalleryDetail id={1} />)
   const tags = await screen.findByRole('region', { name: 'Tags' })
   expect(within(tags).getAllByRole('term').map((term) => term.textContent)).toEqual(['artist', 'custom', 'Other'])
   expect(within(tags).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['alpha', 'zeta', 'alpha', 'all ages'])
@@ -26,8 +26,8 @@ test('displays namespace groups between metadata and pages with read-only tag va
 })
 
 test('hides the tag section when the gallery has no tags', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 'g', title: 'Manga', page_count: 0, tags: [] })))
-  render(<GalleryDetail id="g" />)
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 1, title: 'Manga', page_count: 0, tags: [] })))
+  render(<GalleryDetail id={1} />)
   await screen.findByRole('heading', { name: 'Manga' })
   expect(screen.queryByRole('region', { name: 'Tags' })).toBeNull()
 })

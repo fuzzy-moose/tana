@@ -1,8 +1,8 @@
 -- name: CreateSource :one
-INSERT INTO sources (id, library_id, path, kind) VALUES (?, ?, ?, ?) RETURNING *;
+INSERT INTO sources (library_id, path, kind) VALUES (?, ?, ?) RETURNING *;
 
 -- name: CreateSourceFile :exec
-INSERT INTO source_files (id, source_id, path) VALUES (?, ?, ?);
+INSERT INTO source_files (source_id, path) VALUES (?, ?);
 
 -- name: GetSource :one
 SELECT * FROM sources WHERE id = ?;

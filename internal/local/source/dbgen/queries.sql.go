@@ -10,23 +10,17 @@ import (
 )
 
 const createSource = `-- name: CreateSource :one
-INSERT INTO sources (id, library_id, path, kind) VALUES (?, ?, ?, ?) RETURNING id, library_id, path, kind
+INSERT INTO sources (library_id, path, kind) VALUES (?, ?, ?) RETURNING id, library_id, path, kind
 `
 
 type CreateSourceParams struct {
-	ID        string
-	LibraryID string
+	LibraryID int64
 	Path      string
 	Kind      string
 }
 
 func (q *Queries) CreateSource(ctx context.Context, arg CreateSourceParams) (Source, error) {
-	row := q.db.QueryRowContext(ctx, createSource,
-		arg.ID,
-		arg.LibraryID,
-		arg.Path,
-		arg.Kind,
-	)
+	row := q.db.QueryRowContext(ctx, createSource, arg.LibraryID, arg.Path, arg.Kind)
 	var i Source
 	err := row.Scan(
 		&i.ID,
@@ -38,17 +32,16 @@ func (q *Queries) CreateSource(ctx context.Context, arg CreateSourceParams) (Sou
 }
 
 const createSourceFile = `-- name: CreateSourceFile :exec
-INSERT INTO source_files (id, source_id, path) VALUES (?, ?, ?)
+INSERT INTO source_files (source_id, path) VALUES (?, ?)
 `
 
 type CreateSourceFileParams struct {
-	ID       string
-	SourceID string
+	SourceID int64
 	Path     string
 }
 
 func (q *Queries) CreateSourceFile(ctx context.Context, arg CreateSourceFileParams) error {
-	_, err := q.db.ExecContext(ctx, createSourceFile, arg.ID, arg.SourceID, arg.Path)
+	_, err := q.db.ExecContext(ctx, createSourceFile, arg.SourceID, arg.Path)
 	return err
 }
 
@@ -56,7 +49,7 @@ const deleteSource = `-- name: DeleteSource :exec
 DELETE FROM sources WHERE id = ?
 `
 
-func (q *Queries) DeleteSource(ctx context.Context, id string) error {
+func (q *Queries) DeleteSource(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteSource, id)
 	return err
 }
@@ -65,7 +58,7 @@ const getSource = `-- name: GetSource :one
 SELECT id, library_id, path, kind FROM sources WHERE id = ?
 `
 
-func (q *Queries) GetSource(ctx context.Context, id string) (Source, error) {
+func (q *Queries) GetSource(ctx context.Context, id int64) (Source, error) {
 	row := q.db.QueryRowContext(ctx, getSource, id)
 	var i Source
 	err := row.Scan(
@@ -81,7 +74,7 @@ const listSourceFiles = `-- name: ListSourceFiles :many
 SELECT id, source_id, path FROM source_files WHERE source_id = ? ORDER BY path, id
 `
 
-func (q *Queries) ListSourceFiles(ctx context.Context, sourceID string) ([]SourceFile, error) {
+func (q *Queries) ListSourceFiles(ctx context.Context, sourceID int64) ([]SourceFile, error) {
 	rows, err := q.db.QueryContext(ctx, listSourceFiles, sourceID)
 	if err != nil {
 		return nil, err
@@ -108,7 +101,7 @@ const listSources = `-- name: ListSources :many
 SELECT id, library_id, path, kind FROM sources WHERE library_id = ? ORDER BY path, id
 `
 
-func (q *Queries) ListSources(ctx context.Context, libraryID string) ([]Source, error) {
+func (q *Queries) ListSources(ctx context.Context, libraryID int64) ([]Source, error) {
 	rows, err := q.db.QueryContext(ctx, listSources, libraryID)
 	if err != nil {
 		return nil, err

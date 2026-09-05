@@ -77,7 +77,7 @@ func TestImportGalleryMetadataFromDirectoryAndNestedArchive(t *testing.T) {
 	}
 	var shared []tag.Tag
 	for _, g := range galleries {
-		if g.SourceID == "" {
+		if g.SourceID == 0 {
 			t.Fatalf("automatic gallery missing source link: %+v", g)
 		}
 		imported, err := f.sources.Get(t.Context(), g.SourceID)

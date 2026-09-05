@@ -22,8 +22,8 @@ var (
 )
 
 type Source struct {
-	ID        string
-	LibraryID string
+	ID        int64
+	LibraryID int64
 	// Path is slash-separated and relative to the library root. A directory
 	// source at the library root uses ".".
 	Path string
@@ -31,8 +31,8 @@ type Source struct {
 }
 
 type File struct {
-	ID       string
-	SourceID string
+	ID       int64
+	SourceID int64
 	// Path is relative to the source directory or the archive root.
 	Path string
 }

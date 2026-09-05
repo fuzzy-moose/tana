@@ -21,7 +21,7 @@ export default function Libraries() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [editor, setEditor] = useState<Editor | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
+  const [busy, setBusy] = useState<number | null>(null)
   const [removeError, setRemoveError] = useState('')
   const [refresh, setRefresh] = useState(0)
   const checkController = useRef<AbortController | null>(null)
@@ -161,7 +161,7 @@ export default function Libraries() {
 
       {libraries.length > 0 && (
         <ul className="library-list" aria-label="Registered libraries" aria-busy={loading}>
-          {[...libraries].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)).map((library) => (
+          {[...libraries].sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id).map((library) => (
             <li className="library-card" key={library.id}>
               <div className="library-details">
                 <h2>{library.name}</h2>

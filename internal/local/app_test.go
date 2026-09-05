@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/local"
@@ -47,7 +48,7 @@ func TestAppLifecycle(t *testing.T) {
 	// the HTTP server drains requests, until the application is closed.
 	cancel()
 	w = httptest.NewRecorder()
-	app.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/libraries/"+created.ID, nil))
+	app.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/libraries/"+strconv.FormatInt(created.ID, 10), nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("request during shutdown: %d %s", w.Code, w.Body)
 	}
@@ -61,7 +62,7 @@ func TestAppLifecycle(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
 	w = httptest.NewRecorder()
-	reopened.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/libraries/"+created.ID, nil))
+	reopened.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/libraries/"+strconv.FormatInt(created.ID, 10), nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("persisted library: %d %s", w.Code, w.Body)
 	}

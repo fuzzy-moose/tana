@@ -14,7 +14,7 @@ import (
 )
 
 type candidate struct {
-	libraryID string
+	libraryID int64
 	root      fs.FS
 	path      string
 	kind      source.Kind

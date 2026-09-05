@@ -1,9 +1,9 @@
 -- name: EnsureNamespace :one
-INSERT INTO namespaces (id, name) VALUES (?, ?)
+INSERT INTO namespaces (name) VALUES (?)
 ON CONFLICT (name) DO UPDATE SET name = excluded.name RETURNING *;
 
 -- name: EnsureTag :one
-INSERT INTO tags (id, namespace_id, value) VALUES (?, ?, ?)
+INSERT INTO tags (namespace_id, value) VALUES (?, ?)
 ON CONFLICT (namespace_id, value) DO UPDATE SET value = excluded.value RETURNING *;
 
 -- name: AssignGalleryTag :exec

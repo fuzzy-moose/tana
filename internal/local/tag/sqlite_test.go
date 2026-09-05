@@ -27,7 +27,7 @@ func TestSharedVocabularyNormalizationAndAtomicAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := tag.NewSQLiteRepository(db)
-	assign := func(id string, values ...tag.Value) error {
+	assign := func(id int64, values ...tag.Value) error {
 		t.Helper()
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
@@ -48,6 +48,9 @@ func TestSharedVocabularyNormalizationAndAtomicAssignments(t *testing.T) {
 	at, err := repo.ListForGallery(ctx, a.ID)
 	if err != nil || len(at) != 1 || at[0].Namespace.Name != "language" || at[0].Value != "english.v2" {
 		t.Fatalf("normalized tags: %+v, %v", at, err)
+	}
+	if at[0].ID != 1 || at[0].Namespace.ID != 1 {
+		t.Fatalf("first vocabulary IDs: %+v", at[0])
 	}
 	bt, err := repo.ListForGallery(ctx, b.ID)
 	if err != nil || !reflect.DeepEqual(at, bt) {
@@ -75,7 +78,7 @@ func TestSharedVocabularyNormalizationAndAtomicAssignments(t *testing.T) {
 		t.Fatalf("gallery deletion removed shared tag: %+v, %v", bt, err)
 	}
 	for _, name := range []string{"a.b", "a-b", "a b", "a1"} {
-		if _, err := db.Exec("INSERT INTO namespaces (id, name) VALUES (?, ?)", name, name); err == nil {
+		if _, err := db.Exec("INSERT INTO namespaces (name) VALUES (?)", name); err == nil {
 			t.Errorf("database accepted invalid namespace %q", name)
 		}
 	}

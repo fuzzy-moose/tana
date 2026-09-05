@@ -1,5 +1,5 @@
 -- name: CreateGallery :one
-INSERT INTO galleries (id, title, source_id) VALUES (?, ?, ?) RETURNING *;
+INSERT INTO galleries (title, source_id) VALUES (?, ?) RETURNING *;
 
 -- name: GetGallery :one
 SELECT * FROM galleries WHERE id = ?;

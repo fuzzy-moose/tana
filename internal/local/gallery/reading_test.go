@@ -37,7 +37,7 @@ func TestBrowseSearchPaginationAndEmptyGalleries(t *testing.T) {
 
 func TestReadingCrossLibraryOccurrencesAndRenumbering(t *testing.T) {
 	_, libraries, sources, galleries := openRepositories(t)
-	var libraryIDs, fileIDs []string
+	var libraryIDs, fileIDs []int64
 	for _, body := range []string{"first", "second"} {
 		l, _, files := inventory(t, libraries, sources, ".", source.Directory, "1.png")
 		if err := os.MkdirAll(l.Path, 0o700); err != nil {
@@ -49,7 +49,7 @@ func TestReadingCrossLibraryOccurrencesAndRenumbering(t *testing.T) {
 		libraryIDs = append(libraryIDs, l.ID)
 		fileIDs = append(fileIDs, files["1.png"])
 	}
-	g, err := galleries.Create(t.Context(), "Combined", []string{fileIDs[0], fileIDs[1], fileIDs[0]})
+	g, err := galleries.Create(t.Context(), "Combined", []int64{fileIDs[0], fileIDs[1], fileIDs[0]})
 	if err != nil {
 		t.Fatal(err)
 	}

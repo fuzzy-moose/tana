@@ -5,14 +5,14 @@
 package dbgen
 
 type Source struct {
-	ID        string
-	LibraryID string
+	ID        int64
+	LibraryID int64
 	Path      string
 	Kind      string
 }
 
 type SourceFile struct {
-	ID       string
-	SourceID string
+	ID       int64
+	SourceID int64
 	Path     string
 }

@@ -153,7 +153,7 @@ func TestScanInventoryAndNewPathsOnly(t *testing.T) {
 	if err != nil || len(registered) != len(want) {
 		t.Fatalf("sources: %+v, %v", registered, err)
 	}
-	filePaths := map[string]string{}
+	filePaths := map[int64]string{}
 	for _, imported := range registered {
 		expected, ok := want[imported.Path]
 		if !ok {
@@ -188,7 +188,7 @@ func TestScanInventoryAndNewPathsOnly(t *testing.T) {
 	writeFile(t, l.Path, "leaf/3.jpg")
 	writeFile(t, l.Path, "new/readme.txt")
 	writeArchive(t, l.Path, "bad.zip", "1.jpg")
-	if err := s.Request(t.Context(), ""); err != nil {
+	if err := s.Request(t.Context(), 0); err != nil {
 		t.Fatal(err)
 	}
 	status = awaitFinished(t, s)
@@ -217,7 +217,7 @@ func TestScanAllContinuesUnavailableLibraryAndRootSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := f.scanner(t, os.DirFS)
-	if err := s.Request(t.Context(), ""); err != nil {
+	if err := s.Request(t.Context(), 0); err != nil {
 		t.Fatal(err)
 	}
 	status := awaitFinished(t, s)
@@ -312,7 +312,7 @@ func TestDiscoveryFinishesBeforeImportAndSnapshotsLibraries(t *testing.T) {
 	var release sync.Once
 	defer release.Do(func() { close(gate.release) })
 	requestCtx, cancel := context.WithCancel(t.Context())
-	if err := s.Request(requestCtx, ""); err != nil {
+	if err := s.Request(requestCtx, 0); err != nil {
 		t.Fatal(err)
 	}
 	cancel() // Disconnecting the requester does not cancel accepted work.
@@ -325,9 +325,9 @@ func TestDiscoveryFinishesBeforeImportAndSnapshotsLibraries(t *testing.T) {
 	if err != nil || len(registered) != 0 {
 		t.Fatalf("database changed during discovery: %+v, %v", registered, err)
 	}
-	for _, id := range []string{"", a.ID, b.ID} {
+	for _, id := range []int64{0, a.ID, b.ID} {
 		if err := s.Request(t.Context(), id); !errors.Is(err, ErrActive) {
-			t.Fatalf("overlapping request %q: %v", id, err)
+			t.Fatalf("overlapping request %d: %v", id, err)
 		}
 	}
 	c := f.library(t, "C")
@@ -346,7 +346,7 @@ func TestDiscoveryFinishesBeforeImportAndSnapshotsLibraries(t *testing.T) {
 	if got := restarted.Status(); !reflect.DeepEqual(got, Status{Phase: "idle"}) {
 		t.Fatalf("restart retained status: %+v", got)
 	}
-	if err := restarted.Request(t.Context(), ""); err != nil {
+	if err := restarted.Request(t.Context(), 0); err != nil {
 		t.Fatal(err)
 	}
 	status = awaitFinished(t, restarted)
@@ -397,7 +397,7 @@ func TestImportIOIsBoundedAndUsesDiscoveredSourceList(t *testing.T) {
 	if status := s.Status(); status.Phase != "importing" || status.Discovered != 9 || status.Imported != 0 {
 		t.Fatalf("import status: %+v", status)
 	}
-	if err := s.Request(t.Context(), ""); !errors.Is(err, ErrActive) {
+	if err := s.Request(t.Context(), 0); !errors.Is(err, ErrActive) {
 		t.Fatalf("second scan accepted during import: %v", err)
 	}
 	writeArchive(t, l.Path, "later.zip", "2.jpg")
@@ -434,7 +434,7 @@ func TestShutdownStopsScanAndLeavesUncommittedSourcesForNextScan(t *testing.T) {
 	if status.Phase != "failed" || status.Imported != 0 || status.Skipped != 1 {
 		t.Fatalf("shutdown: %+v", status)
 	}
-	if err := s.Request(t.Context(), ""); !errors.Is(err, context.Canceled) {
+	if err := s.Request(t.Context(), 0); !errors.Is(err, context.Canceled) {
 		t.Fatalf("scan accepted after shutdown: %v", err)
 	}
 	restarted := f.scanner(t, os.DirFS)

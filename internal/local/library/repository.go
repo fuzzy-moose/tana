@@ -13,9 +13,9 @@ type Repository interface {
 	// inserts an available library. name is nonempty and path is clean and absolute.
 	Create(ctx context.Context, name, path string) (Library, error)
 	List(ctx context.Context) ([]Library, error)
-	Get(ctx context.Context, id string) (Library, error)
-	Rename(ctx context.Context, id, name string) (Library, error)
-	Delete(ctx context.Context, id string) error
+	Get(ctx context.Context, id int64) (Library, error)
+	Rename(ctx context.Context, id int64, name string) (Library, error)
+	Delete(ctx context.Context, id int64) error
 	ResetAvailability(ctx context.Context) error
-	UpdateAvailability(ctx context.Context, id, availability string, checkedAt time.Time) error
+	UpdateAvailability(ctx context.Context, id int64, availability string, checkedAt time.Time) error
 }
