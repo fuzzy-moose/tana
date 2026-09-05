@@ -1,0 +1,89 @@
+.button-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.button {
+  min-height: 44px;
+  padding: 8px 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.form-fields {
+  display: grid;
+  gap: 20px;
+  margin: 20px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.form-field {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.text-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+}
+
+.field-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.error-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+}
+
+.error-banner p,
+.error-message {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.error-message {
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
+}
