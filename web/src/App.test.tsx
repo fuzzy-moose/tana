@@ -4,6 +4,10 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import App from './App'
 
+vi.mock('./galleries/useGalleryLayout', () => ({
+  useGalleryLayout: () => ({ pageSize: 24, cardHeight: 317, viewportRef: null, cardRef: null }),
+}))
+
 beforeEach(() => { window.history.replaceState(null, '', '/') })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -22,7 +26,7 @@ test('defaults to galleries, searches and paginates, then opens gallery details 
   expect(screen.queryByRole('button', { name: 'Scan all' })).toBeNull()
   await user.type(screen.getByLabelText('Search titles'), 'Manga')
   await user.click(screen.getByRole('button', { name: 'Search' }))
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/galleries?q=Manga&page=1', expect.anything()))
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/galleries?q=Manga&page=1&page_size=24', expect.anything()))
   await user.click(await screen.findByRole('link', { name: 'Next' }))
   await screen.findByRole('heading', { name: 'Manga Two' })
   expect(window.location.hash).toBe('#/galleries?q=Manga&page=2')

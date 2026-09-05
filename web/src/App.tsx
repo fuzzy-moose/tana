@@ -9,7 +9,7 @@ function App() {
   const route = useRoute()
   if (route.kind === 'reader') return <Reader key={`${route.id}:${route.page}:${route.lastPage ?? ''}`} id={route.id} initialPage={route.page} initialLastPage={route.lastPage} />
   return (
-    <div className="app-shell">
+    <div className={`app-shell${route.kind === 'galleries' ? ' app-shell-galleries' : ''}`}>
       <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus() }}>Skip to content</a>
       <header className="app-header">
         <a className="brand" href="#/" aria-label="Tana home">
@@ -33,7 +33,7 @@ function App() {
       </aside>
       <main id="main-content" tabIndex={-1}>
         {route.kind === 'libraries' && <Libraries />}
-        {route.kind === 'galleries' && <Galleries key={`${route.search}:${route.page}`} search={route.search} page={route.page} />}
+        {route.kind === 'galleries' && <Galleries key={route.search} search={route.search} page={route.page} />}
         {route.kind === 'detail' && <GalleryDetail key={route.id} id={route.id} />}
         {route.kind === 'not-found' && <section><h1>Page not found</h1><a className="button" href="#/">Return to Galleries</a></section>}
       </main>

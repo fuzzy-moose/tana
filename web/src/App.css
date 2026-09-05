@@ -115,6 +115,17 @@ main section {
   scroll-margin-top: 24px;
 }
 
+.app-shell-galleries {
+  height: 100dvh;
+  grid-template-rows: 64px minmax(0, 1fr);
+}
+
+.app-shell-galleries main {
+  min-height: 0;
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
 .eyebrow {
   margin-bottom: 12px;
   color: var(--accent);
@@ -160,6 +171,14 @@ h2 {
   .app-shell {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 60px auto 1fr;
+  }
+
+  .app-shell-galleries {
+    grid-template-rows: 60px auto minmax(0, 1fr);
+  }
+
+  .app-shell-galleries main {
+    padding: 16px;
   }
 
   .app-header {

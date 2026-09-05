@@ -1,9 +1,30 @@
+.gallery-listing {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  max-width: none;
+}
+
+.gallery-listing > :not(.gallery-viewport) {
+  flex-shrink: 0;
+}
+
+.gallery-listing .eyebrow {
+  margin-bottom: 4px;
+}
+
+.gallery-listing h1 {
+  margin-bottom: 4px;
+  font-size: 28px;
+}
+
 .gallery-toolbar {
   display: flex;
   align-items: end;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: 12px;
 }
 
 .gallery-search {
@@ -29,6 +50,16 @@
   color: var(--foreground);
 }
 
+.gallery-listing .gallery-meta {
+  margin: 0;
+}
+
+.gallery-viewport {
+  position: relative;
+  flex: 1 0 var(--gallery-card-height);
+  min-height: var(--gallery-card-height);
+}
+
 .gallery-grid, .page-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
@@ -36,6 +67,48 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.gallery-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr));
+  gap: 12px;
+}
+
+/* Measure a full card even while loading, or when the collection is empty. */
+.gallery-sizing {
+  position: absolute;
+  inset: 0 0 auto;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.gallery-grid > li {
+  min-width: 0;
+}
+
+.gallery-loading {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gallery-pagination {
+  /* Reserve controls before results arrive so page capacity stays stable. */
+  min-height: 44px;
+}
+
+.gallery-pagination .pagination {
+  margin: 0;
+}
+
+.gallery-pagination .pagination-item,
+.gallery-pagination .pagination-ellipsis {
+  min-width: 28px;
+  padding-inline: 4px;
+}
+
+.gallery-listing .library-placeholder {
+  min-height: 100%;
+  margin-top: 0;
 }
 
 .gallery-card, .page-thumbnail {
@@ -66,10 +139,42 @@
   border-color: var(--accent);
 }
 
+.gallery-title {
+  position: relative;
+  margin: 6px 0 2px;
+}
+
 .gallery-card h2 {
-  margin: 12px 0 4px;
-  font-size: 14px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  height: 3em;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.gallery-title-tooltip {
+  position: absolute;
+  inset: auto 0 100%;
+  z-index: 2;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 4px 16px #0006;
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  max-height: 80dvh;
+  overflow-y: auto;
+}
+
+.gallery-card p {
+  line-height: 1.5;
 }
 
 .gallery-card p, .page-thumbnail > span {
@@ -128,5 +233,5 @@
 }
 
 .gallery-toolbar + .error-banner {
-  margin-top: 24px;
+  margin: 0;
 }

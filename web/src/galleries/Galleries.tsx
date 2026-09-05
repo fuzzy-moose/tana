@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { galleryLink, listingLink } from '../navigation'
+import type { CSSProperties } from 'react'
+import { listingLink } from '../navigation'
 import Pagination from '../pagination/Pagination'
 import { listGalleries } from './api'
 import type { GalleryListing } from './api'
-import GalleryImage from './GalleryImage'
+import GalleryCard from './GalleryCard'
+import { replaceListingPage, useGalleryLayout } from './useGalleryLayout'
 import './Galleries.css'
 
 export default function Galleries({ search, page }: { search: string, page: number }) {
@@ -11,14 +13,21 @@ export default function Galleries({ search, page }: { search: string, page: numb
   const [query, setQuery] = useState(search)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const { viewportRef, cardRef, pageSize, cardHeight } = useGalleryLayout(search, page)
+  const current = result?.page_size === pageSize && result.page === page ? result : null
 
   useEffect(() => {
+    if (!pageSize) return
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout>
     async function refresh() {
       try {
-        const next = await listGalleries(search, page, controller.signal)
-        if (!controller.signal.aborted) { setResult(next); setError('') }
+        const next = await listGalleries(search, page, pageSize, controller.signal)
+        if (!controller.signal.aborted) {
+          setResult(next)
+          setError('')
+          if (next.page !== page) replaceListingPage(search, next.page)
+        }
       } catch (error) {
         if (!controller.signal.aborted) setError((error as Error).message)
       } finally {
@@ -28,10 +37,26 @@ export default function Galleries({ search, page }: { search: string, page: numb
     }
     void refresh()
     return () => { controller.abort(); clearTimeout(timer) }
-  }, [search, page, attempt])
+  }, [search, page, pageSize, attempt])
+
+  useEffect(() => {
+    if (!current) return
+    const navigate = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) return
+      const direction = event.key === 'ArrowLeft' || event.key === 'a' ? -1
+        : event.key === 'ArrowRight' || event.key === 'd' ? 1 : 0
+      if (!direction) return
+      event.preventDefault()
+      const nextPage = current.page + direction
+      if (nextPage >= 1 && nextPage <= Math.ceil(current.total / current.page_size)) window.location.hash = listingLink(search, nextPage)
+    }
+    window.addEventListener('keydown', navigate)
+    return () => window.removeEventListener('keydown', navigate)
+  }, [current, search])
 
   return (
-    <section aria-labelledby="galleries-title">
+    <section className="gallery-listing" aria-labelledby="galleries-title" style={{ '--gallery-card-height': `${cardHeight}px` } as CSSProperties}>
       <div className="gallery-toolbar">
         <div className="page-heading">
           <p className="eyebrow">Your collection</p>
@@ -47,26 +72,25 @@ export default function Galleries({ search, page }: { search: string, page: numb
         </form>
       </div>
       {error && <div className="error-banner" role="alert"><p>{error}</p><button className="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></div>}
-      {!result && !error && <p className="gallery-meta" role="status">Loading galleries…</p>}
-      {result && <>
-        <div className="gallery-meta"><span>{result.total} {result.total === 1 ? 'gallery' : 'galleries'}</span><span>Title · A–Z</span></div>
-        {result.items.length === 0 ? <div className="library-placeholder">
+      <div className="gallery-meta">
+        <span>{result ? `${result.total} ${result.total === 1 ? 'gallery' : 'galleries'}` : '\u00a0'}</span><span>Title · A–Z</span>
+      </div>
+      <div className="gallery-viewport" ref={viewportRef} aria-busy={!current && !error}>
+        <div className="gallery-grid gallery-sizing" aria-hidden="true">
+          <div className="gallery-card" ref={cardRef}><div className="gallery-cover" /><div className="gallery-title"><h2 /></div><p>0 pages</p></div>
+        </div>
+        {!current && !error && <p className="gallery-loading" role="status">Loading galleries…</p>}
+        {current && (current.items.length === 0 ? <div className="library-placeholder">
           <h2>{search ? 'No matching galleries.' : 'Your next read starts here.'}</h2>
           <p>{search ? 'Try a different title.' : 'Add a library and scan it to discover your comics and manga.'}</p>
           <a className="button" href={search ? '#/' : '#/libraries'}>{search ? 'Clear search' : 'Manage libraries'}</a>
         </div> : <ul className="gallery-grid" aria-label="Galleries">
-          {result.items.map((gallery) => <li key={gallery.id}>
-            <a className="gallery-card" href={galleryLink(gallery.id)}>
-              <div className="gallery-cover">{gallery.page_count > 0
-                ? <GalleryImage id={gallery.id} page={1} alt="" />
-                : <span className="image-placeholder">No pages</span>}</div>
-              <h2>{gallery.title}</h2>
-              <p>{gallery.page_count} {gallery.page_count === 1 ? 'page' : 'pages'}</p>
-            </a>
-          </li>)}
-        </ul>}
-        <Pagination page={result.page} totalPages={Math.ceil(result.total / result.page_size)} pageHref={(number) => listingLink(search, number)} label="Gallery pages" />
-      </>}
+          {current.items.map((gallery) => <li key={gallery.id}><GalleryCard gallery={gallery} /></li>)}
+        </ul>)}
+      </div>
+      <div className="gallery-pagination">
+        {result && <Pagination page={current?.page ?? page} totalPages={Math.ceil(result.total / (pageSize || 1))} pageHref={(number) => listingLink(search, number)} adjacentCount={1} label="Gallery pages" />}
+      </div>
     </section>
   )
 }

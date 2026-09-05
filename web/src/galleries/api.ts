@@ -13,8 +13,8 @@ export interface GalleryListing {
   page_size: number
 }
 
-export function listGalleries(search: string, page: number, signal?: AbortSignal) {
-  return request<GalleryListing>(`/api/galleries?${new URLSearchParams({ q: search, page: String(page) })}`, { signal })
+export function listGalleries(search: string, page: number, pageSize: number, signal?: AbortSignal) {
+  return request<GalleryListing>(`/api/galleries?${new URLSearchParams({ q: search, page: String(page), page_size: String(pageSize) })}`, { signal })
 }
 
 export function getGallery(id: string, signal?: AbortSignal) {
