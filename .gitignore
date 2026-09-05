@@ -1,2 +1,4 @@
 .idea/
 bin/
+/test-galleries/
+/.tana-fixtures-*/
