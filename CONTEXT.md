@@ -34,6 +34,12 @@ A supplier of gallery metadata. Different providers may supply different informa
 **Panda**:
 A metadata provider supplying gallery metadata. Its upstream galleries are identified by a gallery ID and token, independently of galleries in Tana's catalog.
 
+**Panda gallery reference**:
+The gallery ID and token identifying an upstream Panda gallery for metadata retrieval.
+
+**Raw feed**:
+A captured upstream feed in its original form, retained independently of its parsed entries. Panda feed entries identify upstream galleries for later metadata retrieval.
+
 **Tag**:
 A descriptive label shared across galleries and libraries, uniquely identified by its namespace and value. Values use lowercase ASCII letters, digits, spaces, hyphens, and dots.
 
