@@ -31,8 +31,15 @@ SELECT body FROM raw_feeds WHERE id = ?;
 -- name: RecordFailure :exec
 UPDATE raw_feeds SET last_attempt_at = ?, last_error = ? WHERE id = ? AND processed_at IS NULL;
 
--- name: SaveGalleryRef :execrows
+-- name: SaveGalleryRef :exec
 INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?) ON CONFLICT (gallery_id) DO NOTHING;
+
+-- name: HasFeedSighting :one
+SELECT EXISTS(SELECT 1 FROM feed_gallery_refs WHERE gallery_id = ? AND raw_feed_id != ?);
+
+-- name: SaveFeedGalleryRef :exec
+INSERT INTO feed_gallery_refs (raw_feed_id, gallery_id) VALUES (?, ?)
+ON CONFLICT (raw_feed_id, gallery_id) DO NOTHING;
 
 -- name: MarkProcessed :exec
 UPDATE raw_feeds SET processed_at = sqlc.arg(now), last_attempt_at = sqlc.arg(now), last_error = NULL WHERE id = sqlc.arg(id);

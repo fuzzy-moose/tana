@@ -2,6 +2,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"embed"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/fuzzy-moose/tana/internal/panda"
 
 	_ "modernc.org/sqlite"
 )
@@ -125,9 +128,42 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		if _, err := tx.ExecContext(ctx, string(ddl)); err != nil {
 			return fmt.Errorf("migration %s: %w", entries[i].Name(), err)
 		}
+		if entries[i].Name() == "0002_feed_gallery_refs.sql" {
+			if err := backfillFeedSightings(ctx, tx); err != nil {
+				return fmt.Errorf("backfill feed sightings: %w", err)
+			}
+		}
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+func backfillFeedSightings(ctx context.Context, tx *sql.Tx) error {
+	// Parse one retained capture at a time; the complete feed history can be large.
+	var after int64
+	for {
+		var id int64
+		var body []byte
+		err := tx.QueryRowContext(ctx, `SELECT id, body FROM raw_feeds
+			WHERE processed_at IS NOT NULL AND id > ? ORDER BY id LIMIT 1`, after).Scan(&id, &body)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		entries, err := panda.ParseFeed(bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("capture %d: %w", id, err)
+		}
+		for _, entry := range entries {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO feed_gallery_refs (raw_feed_id, gallery_id)
+				VALUES (?, ?) ON CONFLICT DO NOTHING`, id, entry.GalleryRef.ID); err != nil {
+				return err
+			}
+		}
+		after = id
+	}
 }

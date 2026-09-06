@@ -35,13 +35,25 @@ A supplier of gallery metadata. Different providers may supply different informa
 A metadata provider supplying gallery metadata. Its upstream galleries are uniquely identified by gallery ID, independently of galleries in Tana's catalog.
 
 **Panda gallery reference**:
-An upstream Panda gallery's ID together with the token needed to access it. The gallery ID alone determines identity.
+An upstream Panda gallery's ID together with the token needed to access it. The gallery ID alone determines identity; a gallery's token is assumed immutable.
+
+**Gallery reference inventory**:
+The distinct Panda gallery references discovered through feeds or Panda metadata. A gallery belongs to the inventory whether or not its metadata has been retrieved successfully.
+
+**Collected Panda metadata**:
+The latest successfully retrieved metadata for an upstream Panda gallery, retained indefinitely even if the gallery becomes unavailable upstream.
+
+**Metadata refresh time**:
+The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.
 
 **Raw feed**:
 A captured upstream feed in its original form, retained independently of its parsed entries. Panda feed entries identify upstream galleries for later metadata retrieval.
 
+**Feed gallery reference**:
+A Panda gallery reference observed in a particular raw feed. The same gallery can appear in multiple raw feeds, with one sighting per gallery per raw feed.
+
 **Feed continuity check**:
-A check for gallery IDs already collected when a raw feed is processed. A nonempty feed containing only new gallery IDs indicates a possible collection gap; empty or unparseable feeds leave continuity unknown, and the first capture has no baseline.
+A check for gallery IDs already seen in other processed feeds when a raw feed is processed. A nonempty feed containing only previously unseen gallery IDs indicates a possible collection gap; empty or unparseable feeds leave continuity unknown, and the first capture has no baseline. Discovery through Panda metadata alone does not establish feed continuity.
 
 **Tag**:
 A descriptive label shared across galleries and libraries, uniquely identified by its namespace and value. Values use lowercase ASCII letters, digits, spaces, hyphens, and dots.

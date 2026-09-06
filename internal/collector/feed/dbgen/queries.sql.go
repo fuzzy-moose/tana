@@ -76,6 +76,22 @@ func (q *Queries) DeleteContinuityCheck(ctx context.Context, arg DeleteContinuit
 	return err
 }
 
+const hasFeedSighting = `-- name: HasFeedSighting :one
+SELECT EXISTS(SELECT 1 FROM feed_gallery_refs WHERE gallery_id = ? AND raw_feed_id != ?)
+`
+
+type HasFeedSightingParams struct {
+	GalleryID int64
+	RawFeedID int64
+}
+
+func (q *Queries) HasFeedSighting(ctx context.Context, arg HasFeedSightingParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, hasFeedSighting, arg.GalleryID, arg.RawFeedID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const latestCaptureTime = `-- name: LatestCaptureTime :one
 SELECT captured_at FROM raw_feeds ORDER BY captured_at DESC, id DESC LIMIT 1
 `
@@ -196,7 +212,22 @@ func (q *Queries) SaveCapture(ctx context.Context, arg SaveCaptureParams) (int64
 	return id, err
 }
 
-const saveGalleryRef = `-- name: SaveGalleryRef :execrows
+const saveFeedGalleryRef = `-- name: SaveFeedGalleryRef :exec
+INSERT INTO feed_gallery_refs (raw_feed_id, gallery_id) VALUES (?, ?)
+ON CONFLICT (raw_feed_id, gallery_id) DO NOTHING
+`
+
+type SaveFeedGalleryRefParams struct {
+	RawFeedID int64
+	GalleryID int64
+}
+
+func (q *Queries) SaveFeedGalleryRef(ctx context.Context, arg SaveFeedGalleryRefParams) error {
+	_, err := q.db.ExecContext(ctx, saveFeedGalleryRef, arg.RawFeedID, arg.GalleryID)
+	return err
+}
+
+const saveGalleryRef = `-- name: SaveGalleryRef :exec
 INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?) ON CONFLICT (gallery_id) DO NOTHING
 `
 
@@ -205,10 +236,7 @@ type SaveGalleryRefParams struct {
 	Token     string
 }
 
-func (q *Queries) SaveGalleryRef(ctx context.Context, arg SaveGalleryRefParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, saveGalleryRef, arg.GalleryID, arg.Token)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+func (q *Queries) SaveGalleryRef(ctx context.Context, arg SaveGalleryRefParams) error {
+	_, err := q.db.ExecContext(ctx, saveGalleryRef, arg.GalleryID, arg.Token)
+	return err
 }

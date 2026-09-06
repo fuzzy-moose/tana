@@ -1,0 +1,3 @@
+# Collector owns retained Panda metadata
+
+The collector owns Panda metadata retrieval and retains the latest successful metadata indefinitely, including when a gallery becomes unavailable upstream, so collected information remains available independently of Panda. Tana obtains Panda metadata through the collector and routes missing-metadata requests there, centralizing upstream access and persistence. Collection includes galleries discovered through related references; retained metadata records its last successful retrieval time so consumers can judge its age without assuming automatic refresh.

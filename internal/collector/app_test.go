@@ -2,6 +2,8 @@ package collector
 
 import (
 	"bytes"
+	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,6 +17,10 @@ import (
 func TestAppLifecycle(t *testing.T) {
 	body := []byte(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><link href="https://example.test/g/42/token/"/></entry></feed>`)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			_, _ = io.WriteString(w, `{"gmetadata":[{"gid":42,"token":"token","title":"Collected title"}]}`)
+			return
+		}
 		_, _ = w.Write(body)
 	}))
 	defer upstream.Close()
@@ -23,6 +29,8 @@ func TestAppLifecycle(t *testing.T) {
 	t.Setenv("PANDA_FEED_URL", upstream.URL)
 	t.Setenv("PANDA_FEED_INTERVAL", "1h")
 	t.Setenv("PANDA_FEED_RETRY_DELAY", "1m")
+	t.Setenv("PANDA_API_URL", upstream.URL)
+	t.Setenv("PANDA_RATE_INTERVAL", "2500ms")
 	app, err := New(t.Context(), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -39,11 +47,15 @@ func TestAppLifecycle(t *testing.T) {
 		if err := app.db.QueryRow("SELECT count(*) FROM raw_feeds WHERE processed_at IS NOT NULL").Scan(&n); err != nil {
 			t.Fatal(err)
 		}
-		if n == 1 {
+		collected, err := app.metadata.Get(t.Context(), 42)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			t.Fatal(err)
+		}
+		if n == 1 && err == nil && collected.Metadata.Title == "Collected title" {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("collector did not capture and process feed")
+			t.Fatal("collector did not capture feed and collect metadata")
 		}
 		time.Sleep(time.Millisecond)
 	}

@@ -2,6 +2,15 @@ version: "2"
 sql:
   - engine: sqlite
     schema: internal/collector/storage/migrations
+    queries: internal/collector/metadata/queries.sql
+    gen:
+      go:
+        package: dbgen
+        out: internal/collector/metadata/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+  - engine: sqlite
+    schema: internal/collector/storage/migrations
     queries: internal/collector/feed/queries.sql
     gen:
       go:

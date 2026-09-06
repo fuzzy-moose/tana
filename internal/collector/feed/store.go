@@ -84,12 +84,18 @@ func (s *store) complete(ctx context.Context, id int64, entries []panda.FeedEntr
 			continue
 		}
 		seen[ref.ID] = struct{}{}
-		inserted, err := q.SaveGalleryRef(ctx, dbgen.SaveGalleryRefParams{GalleryID: ref.ID, Token: ref.Token})
+		known, err := q.HasFeedSighting(ctx, dbgen.HasFeedSightingParams{GalleryID: ref.ID, RawFeedID: id})
 		if err != nil {
 			return nil, err
 		}
-		if inserted == 0 {
+		if known != 0 {
 			overlap = true
+		}
+		if err := q.SaveGalleryRef(ctx, dbgen.SaveGalleryRefParams{GalleryID: ref.ID, Token: ref.Token}); err != nil {
+			return nil, err
+		}
+		if err := q.SaveFeedGalleryRef(ctx, dbgen.SaveFeedGalleryRefParams{RawFeedID: id, GalleryID: ref.ID}); err != nil {
+			return nil, err
 		}
 	}
 	if err := q.MarkProcessed(ctx, dbgen.MarkProcessedParams{ID: id, Now: sql.NullInt64{Int64: at.UnixMilli(), Valid: true}}); err != nil {

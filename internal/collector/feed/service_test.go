@@ -168,6 +168,28 @@ func TestOverlapUsesExistingIDsAndIgnoresDuplicatesWithinCapture(t *testing.T) {
 	}
 }
 
+func TestContinuityUsesFeedSightingsInsteadOfMetadataDiscovery(t *testing.T) {
+	db := openTestDB(t, t.TempDir())
+	s := &Service{store: newStore(db), logger: slog.New(slog.DiscardHandler)}
+	// A related gallery discovered through the API has never appeared in a feed.
+	if _, err := db.Exec(`INSERT INTO gallery_refs (gallery_id, token) VALUES (2, 'b')`); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().Add(-time.Hour)
+	first := capture(t, s.store, atomFeed("1/a"), at)
+	second := capture(t, s.store, atomFeed("2/b", "2/b"), at.Add(time.Minute))
+	third := capture(t, s.store, atomFeed("2/b", "3/c"), at.Add(2*time.Minute))
+	s.processPending(t.Context())
+	checkStatus(t, db, first, second, "possible_gap")
+	checkStatus(t, db, second, third, "overlap")
+	if n := count(t, db, "SELECT count(*) FROM feed_gallery_refs"); n != 4 {
+		t.Fatalf("feed sightings = %d, want 4", n)
+	}
+	if n := count(t, db, "SELECT count(*) FROM gallery_refs"); n != 3 {
+		t.Fatalf("inventory = %d, want 3", n)
+	}
+}
+
 func TestContinuityUsesCaptureTimeAndIDForTies(t *testing.T) {
 	db := openTestDB(t, t.TempDir())
 	s := &Service{store: newStore(db), logger: slog.New(slog.DiscardHandler)}
