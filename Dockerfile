@@ -28,9 +28,9 @@ VOLUME ["/data"]
 
 FROM runtime AS collector
 ENV TANA_COLLECTOR_HOST=0.0.0.0
-ENV TANA_COLLECTOR_PORT=8081
+ENV TANA_COLLECTOR_PORT=8080
 ENV TANA_COLLECTOR_DATA_DIR=/data
-EXPOSE 8081
+EXPOSE 8080
 COPY --from=go-build /out/collector /collector
 ENTRYPOINT ["/collector"]
 
