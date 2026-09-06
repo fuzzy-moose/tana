@@ -3,6 +3,7 @@ import Galleries from './galleries/Galleries'
 import GalleryDetail from './galleries/GalleryDetail'
 import Reader from './galleries/Reader'
 import Libraries from './libraries/Libraries'
+import Collector from './collector/Collector'
 import { useRoute } from './navigation'
 
 function App() {
@@ -28,11 +29,16 @@ function App() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 4h4v16H3zM7 6h4v14H7zM14 4l4-1 4 16-4 1z" /></svg>
             Libraries
           </a>
+          <a className="nav-link" href="#/collector" aria-current={route.kind === 'collector' ? 'page' : undefined}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="4" y="3" width="16" height="7" rx="2" /><rect x="4" y="14" width="16" height="7" rx="2" /><path d="M8 6.5h2M8 17.5h2M12 10v4" /></svg>
+            Collector
+          </a>
         </nav>
         <p className="sidebar-caption">A home for your comics &amp; manga.</p>
       </aside>
       <main id="main-content" tabIndex={-1}>
         {route.kind === 'libraries' && <Libraries />}
+        {route.kind === 'collector' && <Collector />}
         {route.kind === 'galleries' && <Galleries key={route.search} search={route.search} page={route.page} />}
         {route.kind === 'detail' && <GalleryDetail key={route.id} id={route.id} />}
         {route.kind === 'not-found' && <section><h1>Page not found</h1><a className="button" href="#/">Return to Galleries</a></section>}

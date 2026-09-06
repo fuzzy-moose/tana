@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collector/favorites/dbgen"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
@@ -38,6 +39,7 @@ type Service struct {
 	mu      sync.Mutex
 	pending []request
 	active  *request
+	runtime [10]collectorapi.FavoriteCategory
 }
 
 func New(ctx context.Context, db *sql.DB, cfg panda.FavoritesConfig, client PageClient, logger *slog.Logger) *Service {
@@ -64,13 +66,32 @@ func (s *Service) Enqueue(category int, full bool) error {
 	if s.ctx.Err() != nil {
 		return ErrClosed
 	}
+	s.enqueueLocked(category, full)
+	return nil
+}
+
+// EnqueueAll admits all ten categories together, using the same coalescing as
+// individual requests. No upstream calls happen during admission.
+func (s *Service) EnqueueAll(full bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ctx.Err() != nil {
+		return ErrClosed
+	}
+	for category := range 10 {
+		s.enqueueLocked(category, full)
+	}
+	return nil
+}
+
+func (s *Service) enqueueLocked(category int, full bool) {
 	if s.active != nil && s.active.category == category && (!full || s.active.full) {
-		return nil
+		return
 	}
 	for i := range s.pending {
 		if s.pending[i].category == category {
 			s.pending[i].full = s.pending[i].full || full
-			return nil
+			return
 		}
 	}
 	s.pending = append(s.pending, request{category: category, full: full})
@@ -78,7 +99,6 @@ func (s *Service) Enqueue(category int, full bool) error {
 	case s.wake <- struct{}{}:
 	default:
 	}
-	return nil
 }
 
 func (s *Service) run(ctx context.Context) {
@@ -96,10 +116,20 @@ func (s *Service) run(ctx context.Context) {
 		job := s.pending[0]
 		s.pending = s.pending[1:]
 		s.active = &job
+		started := time.Now()
+		s.runtime[job.category].StartedAt = &started
 		s.mu.Unlock()
 		for failures := int64(0); ctx.Err() == nil; failures++ {
+			s.mu.Lock()
+			s.runtime[job.category].RetryAt = nil
+			s.mu.Unlock()
 			err := s.collect(ctx, job)
+			at := time.Now()
 			if err == nil {
+				s.mu.Lock()
+				s.runtime[job.category].LastOutcome = "success"
+				s.runtime[job.category].FinishedAt = &at
+				s.mu.Unlock()
 				s.logger.Info("favorites_sync_completed", "category", job.category, "full", job.full)
 				break
 			}
@@ -107,10 +137,19 @@ func (s *Service) run(ctx context.Context) {
 				return
 			}
 			s.logger.Error("favorites_sync_failed", "category", job.category, "full", job.full, "error", err)
+			s.mu.Lock()
+			s.runtime[job.category].LastError = err.Error()
+			s.runtime[job.category].LastErrorAt = &at
 			if !retryable(err) {
+				s.runtime[job.category].LastOutcome = "failed"
+				s.runtime[job.category].FinishedAt = &at
+				s.mu.Unlock()
 				break
 			}
-			delay := panda.RetryDelay(failures, err, time.Now())
+			delay := panda.RetryDelay(failures, err, at)
+			retryAt := at.Add(delay)
+			s.runtime[job.category].RetryAt = &retryAt
+			s.mu.Unlock()
 			s.logger.Info("favorites_sync_retry", "category", job.category, "delay", delay)
 			timer := time.NewTimer(delay)
 			select {

@@ -9,6 +9,8 @@ import (
 
 func NewHandler(app *local.App) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET /api/collector/status", HandleCollectorStatus(app.Collector))
+	mux.Handle("POST /api/collector/favorites/{category}/sync", HandleCollectorSyncFavorites(app.Collector))
 	mux.Handle("GET /api/galleries", HandleListGalleries(app.Galleries))
 	mux.Handle("GET /api/gallery-search/completions", HandleCompleteGallerySearch(app.Galleries))
 	mux.Handle("GET /api/galleries/{id}", HandleGetGallery(app.Galleries))

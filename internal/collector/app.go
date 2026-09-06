@@ -16,6 +16,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
 	"github.com/fuzzy-moose/tana/internal/collector/pandaban"
+	"github.com/fuzzy-moose/tana/internal/collector/status"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
@@ -24,6 +25,7 @@ type App struct {
 	Logger    *slog.Logger
 	Metadata  *metadata.Service
 	Favorites *favorites.Service
+	Status    *status.Service
 	APIToken  string
 
 	db    *sql.DB
@@ -80,13 +82,15 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	favoritesService := favorites.New(ctx, db, favoritesCfg, favoritesClient, logger)
 	return &App{
 		Logger:    logger,
 		APIToken:  token,
 		db:        db,
 		feeds:     feed.New(ctx, db, cfg, nil, logger),
 		Metadata:  metadata.New(ctx, db, client, logger),
-		Favorites: favorites.New(ctx, db, favoritesCfg, favoritesClient, logger),
+		Favorites: favoritesService,
+		Status:    status.New(db, favoritesService, ban),
 	}, nil
 }
 

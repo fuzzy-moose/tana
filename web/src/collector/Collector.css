@@ -1,0 +1,109 @@
+.collector-toolbar,
+.collector-section-heading,
+.collector-connection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.collector-connection {
+  justify-content: flex-start;
+  margin: 28px 0 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.collector-badge {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--foreground);
+}
+
+.collector-badge-ok {
+  color: var(--accent);
+  background: var(--accent-background);
+  border-color: var(--accent-border);
+}
+
+.collector-panel {
+  margin-bottom: 24px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.collector-panel p {
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.collector-section-heading > span,
+.collector-account {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.collector-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  margin: 20px 0;
+}
+
+.collector-metrics dt {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.collector-metrics dd {
+  margin: 6px 0 0;
+  font-size: clamp(20px, 2.5vw, 30px);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.collector-sync {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0 12px;
+}
+
+.collector-sync label { flex: 1 1 180px; }
+.collector-sync select { font: inherit; }
+.collector-sync select:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.collector-notice, .collector-stale { margin: 16px 0; color: var(--accent); font-size: 13px; }
+.collector-table-scroll { overflow-x: auto; margin-top: 24px; }
+
+.collector-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+
+.collector-table-caption { text-align: left; color: var(--muted); padding-bottom: 12px; }
+.collector-table th, .collector-table td { padding: 14px 12px; border-top: 1px solid var(--border); vertical-align: top; }
+.collector-table th { font-weight: 500; }
+.collector-table thead th { color: var(--muted); white-space: nowrap; }
+.collector-table th:first-child { padding-left: 0; }
+.collector-table td:last-child { padding-right: 0; }
+.collector-state { white-space: nowrap; }
+.collector-secondary { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
+.collector-panel h3 { font-size: 13px; font-weight: 500; margin: 24px 0 12px; }
+.collector-errors { list-style: none; padding: 0; margin: 0; }
+.collector-errors li { display: grid; gap: 6px; padding: 12px 0; border-top: 1px solid var(--border); font-size: 12px; overflow-wrap: anywhere; }
+.collector-errors strong { font-weight: 500; }
+.collector-errors small { color: var(--muted); }
+
+@media (max-width: 800px) {
+  .collector-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .collector-panel { padding: 18px; }
+}

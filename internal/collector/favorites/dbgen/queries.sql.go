@@ -9,6 +9,53 @@ import (
 	"context"
 )
 
+const categoryStatistics = `-- name: CategoryStatistics :many
+SELECT c.category, c.name, c.synced_at, count(f.gallery_id) AS favorites
+FROM favorite_categories c LEFT JOIN favorites f ON f.category_id = c.id
+WHERE c.host = ? AND c.account_key = ?
+GROUP BY c.id ORDER BY c.category
+`
+
+type CategoryStatisticsParams struct {
+	Host       string
+	AccountKey string
+}
+
+type CategoryStatisticsRow struct {
+	Category  int64
+	Name      string
+	SyncedAt  int64
+	Favorites int64
+}
+
+func (q *Queries) CategoryStatistics(ctx context.Context, arg CategoryStatisticsParams) ([]CategoryStatisticsRow, error) {
+	rows, err := q.db.QueryContext(ctx, categoryStatistics, arg.Host, arg.AccountKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CategoryStatisticsRow{}
+	for rows.Next() {
+		var i CategoryStatisticsRow
+		if err := rows.Scan(
+			&i.Category,
+			&i.Name,
+			&i.SyncedAt,
+			&i.Favorites,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteFavorites = `-- name: DeleteFavorites :exec
 DELETE FROM favorites WHERE category_id = ?
 `

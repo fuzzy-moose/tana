@@ -27,7 +27,7 @@ func NewClient(baseURL, token string) (*Client, error) {
 	if token == "" || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
 		return nil, fmt.Errorf("collector API token must be nonempty and contain no whitespace")
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/api/metadata/lookup"
+	u.Path = strings.TrimRight(u.Path, "/")
 	u.RawPath = ""
 	return &Client{endpoint: u.String(), token: token, http: &http.Client{
 		Timeout:       30 * time.Second,
@@ -42,7 +42,7 @@ func (c *Client) Lookup(ctx context.Context, ids []int64) (LookupResult, error) 
 	if err != nil {
 		return LookupResult{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/api/metadata/lookup", bytes.NewReader(body))
 	if err != nil {
 		return LookupResult{}, err
 	}

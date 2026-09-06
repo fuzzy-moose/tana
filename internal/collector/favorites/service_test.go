@@ -204,6 +204,90 @@ func TestQueueCoalescesAndUpgrades(t *testing.T) {
 	if len(s.pending) != 1 || !s.pending[0].full {
 		t.Fatal("lost full re-sync behind active incremental run")
 	}
+	if err := s.EnqueueAll(true); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.pending) != 10 {
+		t.Fatalf("all categories: %d queued", len(s.pending))
+	}
+	for _, job := range s.pending {
+		if !job.full {
+			t.Fatal("all-category full re-sync did not upgrade queued work")
+		}
+	}
+}
+
+func TestWorkerReportsStatusWithoutPersistingOutcomes(t *testing.T) {
+	for _, tc := range []struct {
+		name, state, outcome string
+		err                  error
+	}{
+		{"success", "idle", "success", nil},
+		{"failure", "idle", "failed", panda.ErrFavoritesPage},
+		{"cooldown", "waiting_cooldown", "", &panda.BanError{Until: time.Now().Add(time.Hour)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testStore(t)
+			called, release := make(chan struct{}), make(chan struct{})
+			client := pageFunc(func(ctx context.Context, category int, next string) (panda.FavoritesPage, error) {
+				close(called)
+				select {
+				case <-ctx.Done():
+					return panda.FavoritesPage{}, ctx.Err()
+				case <-release:
+					return panda.FavoritesPage{CategoryName: "Manga", Entries: fixtureEntries(1, 1, 1000)}, tc.err
+				}
+			})
+			cfg := panda.FavoritesConfig{URL: s.host, AccountKey: s.accountKey}
+			service := New(t.Context(), s.db, cfg, client, slog.New(slog.DiscardHandler))
+			t.Cleanup(service.Close)
+			if err := service.Enqueue(2, false); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-called:
+			case <-time.After(5 * time.Second):
+				t.Fatal("sync never started")
+			}
+			status, err := service.Status(t.Context())
+			if err != nil || status.Categories[2].State != "running" || status.Categories[2].StartedAt == nil {
+				t.Fatalf("running status: %+v, %v", status, err)
+			}
+			close(release)
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				status, err = service.Status(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				category := status.Categories[2]
+				if category.State == tc.state && category.LastOutcome == tc.outcome {
+					if tc.err != nil && (category.LastError == "" || category.LastErrorAt == nil) {
+						t.Fatalf("missing error: %+v", category)
+					}
+					if tc.outcome != "" && category.FinishedAt == nil || tc.state == "waiting_cooldown" && category.RetryAt == nil {
+						t.Fatalf("missing outcome time: %+v", category)
+					}
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("status never advanced: %+v", category)
+				}
+				time.Sleep(time.Millisecond)
+			}
+			service.Close()
+			restarted := New(t.Context(), s.db, cfg, client, slog.New(slog.DiscardHandler))
+			defer restarted.Close()
+			status, err = restarted.Status(t.Context())
+			category := status.Categories[2]
+			if err != nil || category.State != "idle" || category.LastOutcome != "" || category.LastError != "" || category.RetryAt != nil {
+				t.Fatalf("outcome survived restart: %+v, %v", category, err)
+			}
+			if tc.err == nil && category.LastSyncedAt == nil {
+				t.Fatal("restart lost stored last sync time")
+			}
+		})
+	}
 }
 
 func TestWorkerOnlyCollectsOnDemandAndStopsOnShutdown(t *testing.T) {

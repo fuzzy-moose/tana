@@ -2,6 +2,7 @@ package collectorapi
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"reflect"
@@ -47,6 +48,40 @@ func TestLookupAuthenticatesAndRequiresCompleteDisjointOutcomes(t *testing.T) {
 			result, err := client.Lookup(t.Context(), []int64{1, 2, 3, 4})
 			if (err == nil) != tt.valid {
 				t.Fatalf("result=%+v error=%v", result, err)
+			}
+		})
+	}
+}
+
+func TestStatusReportsConnectionAndProtocolFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, code string
+		status           int
+		reachable        bool
+	}{
+		{"offline", "", "collector_unreachable", 0, false},
+		{"older collector", "", "collector_status_unavailable", 404, true},
+		{"redirect", "", "collector_status_unavailable", 302, true},
+		{"broken", "{", "collector_invalid_response", 200, true},
+		{"health instead of status", `{"status":"ok"}`, "collector_invalid_response", 200, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, err := NewClient("https://collector.test/base/", "secret")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.http.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.Method != "GET" || r.URL.Path != "/base/api/status" || r.Header.Get("Authorization") != "Bearer secret" {
+					t.Fatalf("status request: %s %s", r.Method, r.URL.Path)
+				}
+				if tc.status == 0 {
+					return nil, errors.New("offline")
+				}
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
+			})
+			result := client.Status(t.Context())
+			if result.Error != tc.code || result.Reachable != tc.reachable || result.Status != nil || result.Authenticated != nil {
+				t.Fatalf("status: %+v", result)
 			}
 		})
 	}

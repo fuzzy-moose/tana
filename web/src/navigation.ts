@@ -7,7 +7,7 @@ function subscribe(callback: () => void) {
 
 export type Route =
   | { kind: 'galleries', search: string, page: number }
-  | { kind: 'libraries' | 'not-found' }
+  | { kind: 'libraries' | 'collector' | 'not-found' }
   | { kind: 'detail', id: number, page: number }
   | { kind: 'reader', id: number, page: number, lastPage?: number }
 
@@ -19,6 +19,7 @@ export function useRoute(): Route {
   const page = Number.isSafeInteger(value) && value > 0 ? value : 1
   if (!path || path === '/' || path === '/galleries') return { kind: 'galleries', search: params.get('q') ?? '', page }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
+  if (path === '/collector') return { kind: 'collector' }
   const spread = path.match(/^\/galleries\/(\d+)\/page\/(\d+)(?:-(\d+))?$/)
   if (spread) {
     const id = Number(spread[1])

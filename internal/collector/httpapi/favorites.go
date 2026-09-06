@@ -11,8 +11,9 @@ import (
 
 func HandleSyncFavorites(service *favorites.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		all := r.PathValue("category") == "all"
 		category, err := strconv.Atoi(r.PathValue("category"))
-		if err != nil || category < 0 || category > 9 {
+		if !all && (err != nil || category < 0 || category > 9) {
 			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_category"})
 			return
 		}
@@ -22,7 +23,12 @@ func HandleSyncFavorites(service *favorites.Service) http.Handler {
 		if !server.DecodeJSON(w, r, &input) {
 			return
 		}
-		if err := service.Enqueue(category, input.Full); err != nil {
+		if all {
+			err = service.EnqueueAll(input.Full)
+		} else {
+			err = service.Enqueue(category, input.Full)
+		}
+		if err != nil {
 			status := http.StatusServiceUnavailable
 			if errors.Is(err, favorites.ErrInvalidCategory) {
 				status = http.StatusBadRequest

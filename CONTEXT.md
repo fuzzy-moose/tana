@@ -34,6 +34,10 @@ A supplier of gallery metadata. Different providers may supply different informa
 **Panda**:
 A metadata provider supplying gallery metadata. Its upstream galleries are uniquely identified by gallery ID, independently of galleries in Tana's catalog.
 
+**Collector**:
+The separate service that collects Panda favorite collections, gallery references, and metadata for Tana.
+_Avoid_: Connector
+
 **Panda gallery reference**:
 An upstream Panda gallery's ID together with the token needed to access it. The gallery ID alone determines identity; a gallery's token is assumed immutable.
 
