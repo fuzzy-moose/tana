@@ -1,0 +1,17 @@
+**/*.db
+**/*.db-*
+**/*.log
+**/.env
+**/.env.*
+**/coverage/
+**/dist/
+**/node_modules/
+.agents/
+.codex/
+.git/
+.github/
+.idea/
+.tana-fixtures-*/
+.vscode/
+bin/
+test-galleries/

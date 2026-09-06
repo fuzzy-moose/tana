@@ -5,9 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/httpapi"
@@ -25,6 +27,17 @@ type App struct {
 
 // New opens application storage and starts background availability checks.
 func New(ctx context.Context, logger *slog.Logger) (*App, error) {
+	var web fs.FS
+	if dir := strings.TrimSpace(os.Getenv("TANA_WEB_DIR")); dir != "" {
+		web = os.DirFS(dir)
+		index, err := fs.Stat(web, "index.html")
+		if err != nil {
+			return nil, fmt.Errorf("open web UI: %w", err)
+		}
+		if index.IsDir() {
+			return nil, fmt.Errorf("web UI index.html must be a file")
+		}
+	}
 	dataDir, err := storage.DataDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve local storage: %w", err)
@@ -43,7 +56,7 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		db:        db,
 		libraries: libraries,
 		scans:     scans,
-		handler:   httpapi.NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db)),
+		handler:   httpapi.NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db), web),
 	}, nil
 }
 

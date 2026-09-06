@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"io/fs"
 	"log/slog"
 	"net/http"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func NewHandler(logger *slog.Logger, libraries *library.Service, scans *scan.Service, galleries *gallery.SQLiteRepository) http.Handler {
+func NewHandler(logger *slog.Logger, libraries *library.Service, scans *scan.Service, galleries *gallery.SQLiteRepository, web fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/galleries", HandleListGalleries(galleries))
 	mux.Handle("GET /api/gallery-search/completions", HandleCompleteGallerySearch(galleries))
@@ -35,7 +36,20 @@ func NewHandler(logger *slog.Logger, libraries *library.Service, scans *scan.Ser
 	mux.HandleFunc("/api/libraries/{id}/availability-check", methodNotAllowed("POST"))
 	mux.HandleFunc("GET /healthz", server.Health)
 	mux.HandleFunc("/healthz", server.HealthMethodNotAllowed)
-	mux.HandleFunc("/", server.NotFound)
+	mux.HandleFunc("/api", server.NotFound)
+	mux.HandleFunc("/api/", server.NotFound)
+	if web == nil {
+		mux.HandleFunc("/", server.NotFound)
+	} else {
+		files := http.FileServerFS(web)
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				methodNotAllowed("GET, HEAD")(w, r)
+				return
+			}
+			files.ServeHTTP(w, r)
+		})
+	}
 	var handler http.Handler = mux
 	handler = server.CSRFMiddleware(handler)
 	handler = server.LoggingMiddleware(logger, handler)

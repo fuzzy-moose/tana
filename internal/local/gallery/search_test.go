@@ -38,11 +38,11 @@ func TestSearchMatchingAndBooleanLogic(t *testing.T) {
 		title string
 		tags  []tag.Value
 	}{
-		{"Berry Blue 2010", []tag.Value{{"artist", "artist y"}, {"other", "berry blue"}, {"other", "red"}, {"other", "green"}}},
-		{"Strawberry 2011", []tag.Value{{"artist", "artist y extended"}, {"other", "strawberry"}, {"other", "red"}, {"other", "blue"}, {"other", "yellow"}}},
-		{"Story Arc", []tag.Value{{"artist", "artist y"}, {"character", "char x"}, {"other", "blue"}, {"other", "red"}}},
-		{"Other", []tag.Value{{"series", "story arc"}, {"other", "topic-a extended"}, {"artist", "berry"}, {"custom", "custom one"}}},
-		{`A blue box, literal ~hello "quote" C:\shelf 100% ÉTÉ 🦊`, []tag.Value{{"other", "ai"}, {"other", "x-berry.blue"}, {"other", "topic-a"}}},
+		{"Berry Blue 2010", []tag.Value{{Namespace: "artist", Value: "artist y"}, {Namespace: "other", Value: "berry blue"}, {Namespace: "other", Value: "red"}, {Namespace: "other", Value: "green"}}},
+		{"Strawberry 2011", []tag.Value{{Namespace: "artist", Value: "artist y extended"}, {Namespace: "other", Value: "strawberry"}, {Namespace: "other", Value: "red"}, {Namespace: "other", Value: "blue"}, {Namespace: "other", Value: "yellow"}}},
+		{"Story Arc", []tag.Value{{Namespace: "artist", Value: "artist y"}, {Namespace: "character", Value: "char x"}, {Namespace: "other", Value: "blue"}, {Namespace: "other", Value: "red"}}},
+		{"Other", []tag.Value{{Namespace: "series", Value: "story arc"}, {Namespace: "other", Value: "topic-a extended"}, {Namespace: "artist", Value: "berry"}, {Namespace: "custom", Value: "custom one"}}},
+		{`A blue box, literal ~hello "quote" C:\shelf 100% ÉTÉ 🦊`, []tag.Value{{Namespace: "other", Value: "ai"}, {Namespace: "other", Value: "x-berry.blue"}, {Namespace: "other", Value: "topic-a"}}},
 	}
 	for _, fixture := range fixtures {
 		searchGallery(t, r, fixture.title, fixture.tags...)
@@ -144,9 +144,9 @@ func TestInvalidSearchQueries(t *testing.T) {
 func TestCompletionUsesCatalogRankingAndActiveToken(t *testing.T) {
 	_, _, _, r := openRepositories(t)
 	g := searchGallery(t, r, "deleted gallery",
-		tag.Value{"artist", "artist y"}, tag.Value{"artist", "artist y extended"},
-		tag.Value{"artist", "the artist y"}, tag.Value{"other", "artist y"},
-		tag.Value{"other", "strawberry"}, tag.Value{"other", "red-berry"}, tag.Value{"other", "blue.berry"})
+		tag.Value{Namespace: "artist", Value: "artist y"}, tag.Value{Namespace: "artist", Value: "artist y extended"},
+		tag.Value{Namespace: "artist", Value: "the artist y"}, tag.Value{Namespace: "other", Value: "artist y"},
+		tag.Value{Namespace: "other", Value: "strawberry"}, tag.Value{Namespace: "other", Value: "red-berry"}, tag.Value{Namespace: "other", Value: "blue.berry"})
 	if err := r.Delete(t.Context(), g.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/local"
@@ -88,5 +89,65 @@ func TestNewRejectsInvalidStorage(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("expected storage initialization error")
+	}
+}
+
+func TestAppServesWebAlongsideAPI(t *testing.T) {
+	t.Setenv("TANA_DATA_DIR", t.TempDir())
+	webDir := t.TempDir()
+	t.Setenv("TANA_WEB_DIR", webDir)
+	for name, content := range map[string]string{
+		"index.html": "<!doctype html><title>Tana</title>",
+		"app.js":     "console.log('tana')",
+		"api":        "must not shadow the API",
+	} {
+		if err := os.WriteFile(filepath.Join(webDir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app, err := local.New(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+
+	for _, tt := range []struct {
+		method, path, contentType, body string
+		status                          int
+	}{
+		{http.MethodGet, "/", "text/html", "<title>Tana</title>", http.StatusOK},
+		{http.MethodHead, "/", "text/html", "", http.StatusOK},
+		{http.MethodGet, "/app.js", "text/javascript", "console.log('tana')", http.StatusOK},
+		{http.MethodGet, "/api/libraries", "application/json", "", http.StatusOK},
+		{http.MethodGet, "/api", "application/json", "not_found", http.StatusNotFound},
+		{http.MethodGet, "/api/missing", "application/json", "not_found", http.StatusNotFound},
+		{http.MethodGet, "/healthz", "application/json", `"status":"ok"`, http.StatusOK},
+		{http.MethodPost, "/healthz", "application/json", "method_not_allowed", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/", "application/json", "method_not_allowed", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/missing.js", "text/plain", "404", http.StatusNotFound},
+	} {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			app.Handler().ServeHTTP(w, httptest.NewRequest(tt.method, tt.path, nil))
+			if w.Code != tt.status || !strings.HasPrefix(w.Header().Get("Content-Type"), tt.contentType) || !strings.Contains(w.Body.String(), tt.body) {
+				t.Fatalf("response: %d %s %s", w.Code, w.Header().Get("Content-Type"), w.Body)
+			}
+			if tt.method == http.MethodHead && w.Body.Len() != 0 {
+				t.Fatalf("HEAD returned a body: %s", w.Body)
+			}
+		})
+	}
+}
+
+func TestNewRejectsMissingWebBuild(t *testing.T) {
+	t.Setenv("TANA_DATA_DIR", t.TempDir())
+	t.Setenv("TANA_WEB_DIR", t.TempDir())
+	app, err := local.New(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if app != nil {
+		_ = app.Close()
+		t.Fatal("returned an application without a web build")
+	}
+	if err == nil || !strings.Contains(err.Error(), "open web UI") {
+		t.Fatalf("expected web UI initialization error, got %v", err)
 	}
 }

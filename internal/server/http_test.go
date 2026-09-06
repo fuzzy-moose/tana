@@ -33,7 +33,7 @@ func TestServiceRoutes(t *testing.T) {
 		t.Cleanup(libraries.Close)
 		scans := scan.New(t.Context(), db, libraries, os.DirFS, logger)
 		t.Cleanup(scans.Close)
-		return local.NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db))
+		return local.NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db), nil)
 	}
 	for name, newHandler := range map[string]func(*slog.Logger) http.Handler{"local": localHandler, "collector": collector.NewHandler} {
 		t.Run(name, func(t *testing.T) {
