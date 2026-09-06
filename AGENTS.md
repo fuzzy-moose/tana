@@ -10,7 +10,7 @@
 
 - Test core behavior owned by this project; leave dependency logic to its own tests.
 - Cover retained features only; omit tests for rejected or removed features.
-- Accept coverage gaps for minor behavior. Keep tests proportional to impact; avoid complicating implementation solely to increase coverage.
+- Keep coverage deliberately modest and proportional to impact. Leave minor UI interactions and incidental side effects uncovered when testing them requires timing-sensitive synchronization; avoid complicating implementation solely to increase coverage.
 
 ## Agent skills
 

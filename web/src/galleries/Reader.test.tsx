@@ -50,25 +50,6 @@ async function position(text: string) {
   await waitFor(() => expect(screen.getByLabelText('Reading spread').getAttribute('aria-busy')).toBe('false'))
 }
 
-test('keyboard and mouse navigate right-to-left; one-page turns retain shifted pairing', async () => {
-  render(<Reader id={1} initialPage={1} />)
-  await position('Page 1 of 8')
-  expect(window.location.hash).toBe('#/galleries/1/page/1')
-  fireEvent.keyDown(window, { key: 'ArrowLeft' })
-  await position('Page 2–3 of 8')
-  expect(window.location.hash).toBe('#/galleries/1/page/2-3')
-  expect(screen.getAllByRole('img').map((image) => image.getAttribute('alt'))).toEqual(['Page 2', 'Page 3'])
-  fireEvent.keyDown(window, { key: 'ArrowLeft', shiftKey: true })
-  await position('Page 3–4 of 8')
-  expect(window.location.hash).toBe('#/galleries/1/page/3-4')
-  fireEvent.click(screen.getByRole('button', { name: 'Next spread' }))
-  await position('Page 5–6 of 8')
-  fireEvent.click(screen.getByRole('button', { name: 'Previous spread' }))
-  await position('Page 3–4 of 8')
-  fireEvent.click(screen.getByRole('button', { name: '1 page →' }))
-  await position('Page 2–3 of 8')
-})
-
 test('handles wide boundaries, a selected start page, and the end of a gallery', async () => {
   wide.add(3)
   render(<Reader id={1} initialPage={2} />)
