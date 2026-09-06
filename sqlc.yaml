@@ -1,6 +1,24 @@
 version: "2"
 sql:
   - engine: sqlite
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/favorites/queries.sql
+    gen:
+      go:
+        package: dbgen
+        out: internal/collector/favorites/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+  - engine: sqlite
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/pandaban/queries.sql
+    gen:
+      go:
+        package: dbgen
+        out: internal/collector/pandaban/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+  - engine: sqlite
     schema: internal/local/storage/migrations
     queries: internal/local/enrichment/queries.sql
     gen:

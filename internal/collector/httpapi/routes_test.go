@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/collector"
+	"github.com/fuzzy-moose/tana/internal/collector/favorites"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
@@ -25,7 +26,7 @@ func TestAuthenticationProtectsEveryRouteExceptHealth(t *testing.T) {
 		Logger:   slog.New(slog.NewJSONHandler(&logs, nil)),
 		APIToken: "collector-secret",
 	})
-	for _, path := range []string{"/api/metadata/lookup", "/api/metadata/fetches", "/api/metadata/fetches/job", "/missing", "/healthz/"} {
+	for _, path := range []string{"/api/metadata/lookup", "/api/metadata/fetches", "/api/metadata/fetches/job", "/api/favorites/2/sync", "/missing", "/healthz/"} {
 		for _, auth := range []string{"", "Bearer wrong", "Basic collector-secret", "Bearer", "Bearer  collector-secret"} {
 			r := httptest.NewRequest(http.MethodPost, path+"?token=collector-secret", nil)
 			r.Header.Set("Authorization", auth)
@@ -69,6 +70,39 @@ func TestAuthenticationProtectsEveryRouteExceptHealth(t *testing.T) {
 	NewHandler(&collector.App{Logger: slog.New(slog.DiscardHandler)}).ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatal("empty configured token opened API access")
+	}
+}
+
+type waitingFavoritesClient struct{}
+
+func (waitingFavoritesClient) GetFavoritesPage(ctx context.Context, category int, next string) (panda.FavoritesPage, error) {
+	<-ctx.Done()
+	return panda.FavoritesPage{}, ctx.Err()
+}
+
+func TestFavoritesAPIEnqueuesWithoutJobResponse(t *testing.T) {
+	db, _, err := storage.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	logger := slog.New(slog.DiscardHandler)
+	service := favorites.New(t.Context(), db, panda.FavoritesConfig{URL: "https://panda.test", AccountKey: "42"}, waitingFavoritesClient{}, logger)
+	defer service.Close()
+	handler := NewHandler(&collector.App{Logger: logger, Favorites: service, APIToken: "test-token"})
+	for _, body := range []string{`{}`, `{"full":true}`, `{"full":false}`} {
+		w := apiRequest(handler, http.MethodPost, "/api/favorites/2/sync", body)
+		if w.Code != http.StatusAccepted || w.Body.Len() != 0 || w.Header().Get("Location") != "" {
+			t.Fatalf("response: %d %s", w.Code, w.Body)
+		}
+	}
+	for _, tc := range []struct{ category, body string }{
+		{"10", `{}`}, {"-1", `{}`}, {"bad", `{}`}, {"2", `{"full":"yes"}`}, {"2", `{"unknown":true}`},
+	} {
+		w := apiRequest(handler, http.MethodPost, "/api/favorites/"+tc.category+"/sync", tc.body)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("invalid request accepted: %d %s", w.Code, w.Body)
+		}
 	}
 }
 

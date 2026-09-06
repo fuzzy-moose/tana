@@ -12,6 +12,7 @@ import (
 
 func NewHandler(app *collector.App) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("POST /api/favorites/{category}/sync", HandleSyncFavorites(app.Favorites))
 	mux.Handle("POST /api/metadata/lookup", HandleLookupMetadata(app.Metadata))
 	mux.Handle("POST /api/metadata/fetches", HandleRequestFetch(app.Metadata))
 	mux.Handle("GET /api/metadata/fetches/{id}", HandleGetFetchJob(app.Metadata))

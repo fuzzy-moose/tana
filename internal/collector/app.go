@@ -12,16 +12,19 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/fuzzy-moose/tana/internal/collector/favorites"
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
+	"github.com/fuzzy-moose/tana/internal/collector/pandaban"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
 type App struct {
-	Logger   *slog.Logger
-	Metadata *metadata.Service
-	APIToken string
+	Logger    *slog.Logger
+	Metadata  *metadata.Service
+	Favorites *favorites.Service
+	APIToken  string
 
 	db    *sql.DB
 	feeds *feed.Service
@@ -41,13 +44,11 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	// Collection uses sustained pacing even if other Panda consumers allow bursts.
-	limiter, err := panda.NewRateLimiter(pandaCfg.RateInterval, 1)
+	favoritesCfg, err := panda.LoadFavoritesConfig(os.Getenv)
 	if err != nil {
 		return nil, err
 	}
-	client, err := panda.NewClient(pandaCfg.APIURL, &http.Client{
-		Timeout: time.Minute, Transport: panda.RateLimitedTransport(limiter, nil),
-	})
+	limiter, err := panda.NewRateLimiter(pandaCfg.RateInterval, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -59,17 +60,39 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open collector storage: %w", err)
 	}
+	ban := pandaban.New(db)
+	client, err := panda.NewClient(pandaCfg.APIURL, &http.Client{
+		Timeout: time.Minute, Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, nil)),
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	favoritesLimiter, err := panda.NewRateLimiter(panda.FavoritesRateInterval, 1)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	favoritesClient, err := panda.NewFavoritesClient(favoritesCfg, &http.Client{
+		Timeout: time.Minute, Transport: panda.RateLimitedTransport(favoritesLimiter, panda.BanTransport(ban, nil)),
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &App{
-		Logger:   logger,
-		APIToken: token,
-		db:       db,
-		feeds:    feed.New(ctx, db, cfg, nil, logger),
-		Metadata: metadata.New(ctx, db, client, logger),
+		Logger:    logger,
+		APIToken:  token,
+		db:        db,
+		feeds:     feed.New(ctx, db, cfg, nil, logger),
+		Metadata:  metadata.New(ctx, db, client, logger),
+		Favorites: favorites.New(ctx, db, favoritesCfg, favoritesClient, logger),
 	}, nil
 }
 
 // Close stops background work before releasing its database.
 func (a *App) Close() error {
+	a.Favorites.Close()
 	a.feeds.Close()
 	a.Metadata.Close()
 	return a.db.Close()

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Favorites</title>
+  </head>
+  <body>
+    <h1>Favorites</h1>
+    <div class="nosel">
+      <a class="fp" href="https://example.test/favorites.php?favcat=1">
+        <div>8</div>
+        <div>Weekend reading</div>
+      </a>
+      <a class="fp fps" href="https://example.test/favorites.php?favcat=2">
+        <div>102</div>
+        <div>Reading &amp; later</div>
+      </a>
+    </div>
+    <form action="https://example.test/favorites.php">
+      <input type="hidden" name="favcat" value="2">
+      <input type="text" name="f_search" value="">
+      <input type="submit" value="Search">
+    </form>
+    <div class="searchnav">
+      <div>
+        Sorted by
+        <select>
+          <option value="p">Published Time</option>
+          <option value="f" selected>Favorited Time</option>
+        </select>
+      </div>
+      <span id="uprev">&lt; Prev</span>
+      <a id="unext" href="https://example.test/favorites.php?favcat=2&amp;next=100">Next &gt;</a>
+    </div>
+    <!-- Two representative rows; tests expand them for 100-entry pages. -->
+    <table class="itg gltm">
+      <thead>
+        <tr>
+          <th>Published</th>
+          <th>Title</th>
+          <th>Favorited</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="gl2m">
+            <div id="posted_1">2000-01-01 09:00</div>
+          </td>
+          <td class="gl3m glname">
+            <a href="https://example.test/g/1/123456789a/">
+              <div class="glink">River Walk</div>
+              <div class="glfnote" id="favnote_1">Read next.</div>
+            </a>
+          </td>
+          <td class="glfm glfav">2000-01-03 12:59</td>
+        </tr>
+        <tr>
+          <td class="gl2m">
+            <div id="posted_2">2000-01-02 10:00</div>
+          </td>
+          <td class="gl3m glname">
+            <a href="https://example.test/g/2/abcde12345/">
+              <div class="glink">A Quiet Garden</div>
+              <div class="glfnote" id="favnote_2"></div>
+            </a>
+          </td>
+          <td class="glfm glfav">2000-01-03 12:58</td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>

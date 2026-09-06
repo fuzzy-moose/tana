@@ -40,11 +40,26 @@ An upstream Panda gallery's ID together with the token needed to access it. The 
 **Panda gallery candidate**:
 A possible upstream Panda gallery ID inferred from a source's name. It may be unrelated to that source and does not supply an access token.
 
+**Panda favorite collection**:
+One favorites category belonging to a Panda account on a particular Panda host, whose entries identify upstream galleries through Panda gallery references. Its identity is the host, Panda account key, and category ID; its name may change.
+
+**Panda account key**:
+A stable identifier for a Panda account's collected favorite collections, independent of changes to its authentication and settings cookies.
+
+**Panda favorite**:
+A Panda gallery reference belonging to a favorite collection, together with the time it was favorited. The same upstream gallery may be discovered independently through other collection paths.
+
+**Panda favorite sync**:
+Collection of a favorite collection's newest entries since its previously collected state, treating a changed favorite timestamp as a new occurrence. An initial sync collects the entire collection.
+
+**Panda favorite full re-sync**:
+Collection of an entire favorite collection to replace its stored membership, including removal of favorites no longer present upstream. Removal from a favorite collection does not remove a gallery from the gallery reference inventory.
+
 **Panda enrichment**:
 Automatic application of collected Panda metadata to a source-linked gallery using a Panda gallery candidate. Pending enrichment is an outstanding local intent to obtain and apply that metadata, distinct from a collector metadata fetch job.
 
 **Gallery reference inventory**:
-The distinct Panda gallery references discovered through feeds or Panda metadata, or supplied by Tana and confirmed by Panda. Tana-supplied references enter the inventory only after successful metadata retrieval confirms their tokens; references discovered through feeds or Panda metadata may await retrieval.
+The distinct Panda gallery references discovered through feeds, Panda favorite collections, or Panda metadata, or supplied by Tana and confirmed by Panda. Tana-supplied references enter the inventory only after successful metadata retrieval confirms their tokens; references discovered through feeds, Panda favorite collections, or Panda metadata may await retrieval.
 
 **Collected Panda metadata**:
 The latest successfully retrieved metadata for an upstream Panda gallery, retained indefinitely even if the gallery becomes unavailable upstream.

@@ -32,6 +32,9 @@ func TestAppLifecycle(t *testing.T) {
 	t.Setenv("PANDA_FEED_RETRY_DELAY", "1m")
 	t.Setenv("PANDA_API_URL", upstream.URL)
 	t.Setenv("PANDA_RATE_INTERVAL", "2500ms")
+	t.Setenv("PANDA_FAVORITES_URL", upstream.URL+"/account/saved-items")
+	t.Setenv("PANDA_FAVORITES_COOKIES", `{"ipb_member_id":"1","ipb_pass_hash":"test-hash","sp":"1"}`)
+	t.Setenv("PANDA_FAVORITES_ACCOUNT_KEY", "")
 	app, err := New(t.Context(), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
