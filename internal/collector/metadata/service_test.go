@@ -99,8 +99,7 @@ func TestCollectsRelatedGalleriesAndRetainsMetadataAcrossRestart(t *testing.T) {
 			requested = append(requested, ids...)
 			var entries []panda.Metadata
 			// Upstream order need not match request order.
-			for i := len(ids) - 1; i >= 0; i-- {
-				id := ids[i]
+			for _, id := range slices.Backward(ids) {
 				entry := panda.Metadata{ID: id, Token: fmt.Sprintf("token%d", id), ParentID: 1, ParentToken: "token1"}
 				if id == 1 {
 					entry = want

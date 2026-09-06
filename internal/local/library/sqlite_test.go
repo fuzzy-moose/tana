@@ -2,10 +2,11 @@ package library
 
 import (
 	"errors"
-	"github.com/fuzzy-moose/tana/internal/local/storage"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
 
 func TestConcurrentOverlappingRegistrations(t *testing.T) {

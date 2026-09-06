@@ -155,9 +155,7 @@ func containsPath(parent, child string) bool {
 
 func (s *Service) start(ctx context.Context, interval time.Duration) {
 	for range checkWorkers {
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
+		s.wg.Go(func() {
 			for {
 				select {
 				case <-ctx.Done():
@@ -180,11 +178,9 @@ func (s *Service) start(ctx context.Context, interval time.Duration) {
 					s.mu.Unlock()
 				}
 			}
-		}()
+		})
 	}
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -201,7 +197,7 @@ func (s *Service) start(ctx context.Context, interval time.Duration) {
 			case <-ticker.C:
 			}
 		}
-	}()
+	})
 }
 
 func (s *Service) enqueue(id int64) {

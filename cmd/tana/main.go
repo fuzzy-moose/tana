@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/fuzzy-moose/tana/internal/cleanup"
 	"github.com/fuzzy-moose/tana/internal/local"
 	"github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/server"
@@ -46,7 +47,7 @@ func run(development bool) error {
 		logger.Error("startup_failed", "error", err)
 		return err
 	}
-	defer app.Close()
+	defer cleanup.CloseAndLog(app, logger)
 	if err := server.Run(ctx, cfg, logger, httpapi.NewHandler(app)); err != nil {
 		logger.Error("server_failed", "error", err)
 		return err

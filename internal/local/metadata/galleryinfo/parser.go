@@ -109,7 +109,7 @@ func parseTags(value string) ([]tag.Value, []error) {
 	var tags []tag.Value
 	var diagnostics []error
 	seen := map[tag.Value]bool{}
-	for _, text := range strings.Split(value, ",") {
+	for text := range strings.SplitSeq(value, ",") {
 		namespace, value, namespaced := strings.Cut(text, ":")
 		if !namespaced {
 			namespace, value = "other", text

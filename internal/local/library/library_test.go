@@ -213,7 +213,7 @@ func TestFilesystemProbesBoundWorkAndShareStalledPaths(t *testing.T) {
 		callers.Go(func() {
 			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 			defer cancel()
-			_ = p.check(ctx, string(rune('A'+i)))
+			_ = p.check(ctx, string('A'+rune(i)))
 		})
 	}
 	callers.Wait()
@@ -253,7 +253,7 @@ func TestProbeAdmissionTimeoutPreservesObservation(t *testing.T) {
 	var release sync.Once
 	t.Cleanup(func() { release.Do(func() { close(blocked) }) })
 	for i := range maxFilesystemProbes {
-		go func() { finished <- s.probe.check(t.Context(), string(rune('A'+i))) }()
+		go func() { finished <- s.probe.check(t.Context(), string('A'+rune(i))) }()
 	}
 	for range maxFilesystemProbes {
 		select {

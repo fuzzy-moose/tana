@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fuzzy-moose/tana/internal/cleanup"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/source"
@@ -78,7 +79,7 @@ func writeArchive(t *testing.T, root, name string, entries ...string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer cleanup.CloseAndLog(f, slog.Default())
 	w := zip.NewWriter(f)
 	for _, name := range entries {
 		entry, err := w.Create(name)

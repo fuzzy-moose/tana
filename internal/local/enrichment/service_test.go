@@ -87,8 +87,8 @@ func checkGallery(t *testing.T, s *Service, id int64, title string, values ...st
 		t.Fatal(err)
 	}
 	var got []string
-	for _, tag := range tags {
-		got = append(got, tag.Namespace.Name+":"+tag.Value)
+	for _, value := range tags {
+		got = append(got, value.Namespace.Name+":"+value.Value)
 	}
 	if !reflect.DeepEqual(got, values) {
 		t.Fatalf("tags=%v, want=%v", got, values)

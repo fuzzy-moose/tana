@@ -115,8 +115,8 @@ func parseSearchTerm(raw string, namespaces map[string]bool, partial bool) (sear
 		}
 		term.value = raw
 	}
-	if strings.HasSuffix(term.value, "$") {
-		term.exact, term.value = true, strings.TrimSuffix(term.value, "$")
+	if before, ok := strings.CutSuffix(term.value, "$"); ok {
+		term.exact, term.value = true, before
 		if term.field == "title" {
 			return term, ErrInvalidQuery
 		}

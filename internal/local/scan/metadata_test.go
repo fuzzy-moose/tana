@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fuzzy-moose/tana/internal/cleanup"
 	"github.com/fuzzy-moose/tana/internal/local/tag"
 )
 
@@ -28,7 +29,7 @@ func metadataArchive(t *testing.T, root string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer cleanup.CloseAndLog(f, slog.Default())
 	w := zip.NewWriter(f)
 	for _, entry := range []struct{ name, content string }{
 		{"top/1.jpg", "image"},

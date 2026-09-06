@@ -20,8 +20,7 @@ func (s *store) failed(ctx context.Context, cause error, at time.Time) (time.Dur
 	}
 	// Persist an API-wide cooldown, so new discoveries and restarts cannot bypass it.
 	delay := min(time.Minute<<min(state.Failures, 6), time.Hour)
-	var httpErr *panda.HTTPError
-	if errors.As(cause, &httpErr) {
+	if httpErr, ok := errors.AsType[*panda.HTTPError](cause); ok {
 		value := strings.TrimSpace(httpErr.RetryAfter)
 		if seconds, err := strconv.ParseUint(value, 10, 32); err == nil {
 			delay = max(delay, time.Duration(seconds)*time.Second)

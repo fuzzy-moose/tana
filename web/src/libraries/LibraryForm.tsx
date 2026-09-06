@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { SubmitEvent } from 'react'
 import type { Library } from './api'
 
 interface LibraryFormProps {
@@ -16,7 +16,7 @@ export default function LibraryForm({ library, onSave, onCancel }: LibraryFormPr
   const pathId = useId()
   const title = library ? 'Rename library' : 'Add library'
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (saving) return
     if (!name.trim()) {

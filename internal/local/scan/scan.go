@@ -96,11 +96,9 @@ func (s *Service) Request(ctx context.Context, libraryID int64) error {
 	}
 	now := time.Now().UTC()
 	s.status = Status{Phase: "discovering", LibraryID: libraryID, LibrariesTotal: len(libraries), StartedAt: &now}
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		s.run(libraries)
-	}()
+	})
 	return nil
 }
 
@@ -152,9 +150,7 @@ func (s *Service) importCandidates(ctx context.Context, candidates []candidate) 
 	results := make(chan preparedSource, importWorkers)
 	var workers sync.WaitGroup
 	for worker := range min(importWorkers, len(candidates)) {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			for i := worker; i < len(candidates); i += importWorkers {
 				if ctx.Err() != nil {
 					return
@@ -167,7 +163,7 @@ func (s *Service) importCandidates(ctx context.Context, candidates []candidate) 
 					return
 				}
 			}
-		}()
+		})
 	}
 	go func() {
 		workers.Wait()
