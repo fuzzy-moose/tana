@@ -169,6 +169,18 @@ func (r *SQLiteRepository) Rename(ctx context.Context, id int64, title string) (
 	return fromRow(row), domainError(err)
 }
 
+// ApplyMetadataTx replaces title and tags in the caller's transaction. An empty
+// provider title preserves the gallery's title; empty tags clear assignments.
+func (r *SQLiteRepository) ApplyMetadataTx(ctx context.Context, tx *sql.Tx, id int64, values metadata.Values) error {
+	q := r.queries.WithTx(tx)
+	if title := strings.TrimSpace(values.Title); title != "" {
+		if _, err := q.RenameGallery(ctx, dbgen.RenameGalleryParams{ID: id, Title: title}); err != nil {
+			return domainError(err)
+		}
+	}
+	return tag.NewSQLiteRepository(r.db).ReplaceForGalleryTx(ctx, tx, id, values.Tags)
+}
+
 func (r *SQLiteRepository) ReplacePages(ctx context.Context, id int64, fileIDs []int64) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

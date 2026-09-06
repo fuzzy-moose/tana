@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collector/metadata/dbgen"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
@@ -94,7 +95,7 @@ func TestFetchJobsValidateBeforeAdmissionShareWorkAndPreserveMetadata(t *testing
 		t.Fatalf("related discovery missing: %q, %v", token, err)
 	}
 	result, err := s.Lookup(t.Context(), []int64{2, 1, 3})
-	if err != nil || len(result.Galleries) != 1 || result.Galleries[0].Metadata.Title != "Retained" || !reflect.DeepEqual(result.MissingIDs, []int64{2, 3}) {
+	if err != nil || len(result.Galleries) != 1 || result.Galleries[0].Metadata.Title != "Retained" || !reflect.DeepEqual(result.UnknownIDs, []int64{2, 3}) {
 		t.Fatalf("stored lookup = %+v, %v", result, err)
 	}
 	refresh := fetchJob(t, s, panda.GalleryRef{ID: 1, Token: "token1"})
@@ -156,11 +157,11 @@ func TestThousandReferenceJobResumesInBatchesBeforeFeedWork(t *testing.T) {
 			t.Fatalf("upstream batch size = %d", size)
 		}
 	}
-	ids := make([]int64, MaxLookupSize)
+	ids := make([]int64, collectorapi.MaxLookupSize)
 	for i := range ids {
 		ids[i] = refs[i].ID
 	}
-	if result, err := s.Lookup(t.Context(), ids); err != nil || len(result.Galleries) != MaxLookupSize {
+	if result, err := s.Lookup(t.Context(), ids); err != nil || len(result.Galleries) != collectorapi.MaxLookupSize {
 		t.Fatalf("100-gallery lookup: %+v, %v", result, err)
 	}
 	if err := s.store.maintainJobs(t.Context(), job.CompletedAt.Add(JobRetention)); err != nil {
@@ -190,7 +191,7 @@ func TestInvalidBatchesLeaveNoJobs(t *testing.T) {
 			t.Fatalf("invalid batch accepted: %v", err)
 		}
 	}
-	for _, ids := range [][]int64{nil, {0}, {1, 1}, make([]int64, MaxLookupSize+1)} {
+	for _, ids := range [][]int64{nil, {0}, {1, 1}, make([]int64, collectorapi.MaxLookupSize+1)} {
 		if _, err := s.Lookup(t.Context(), ids); !errors.Is(err, ErrInvalidBatch) {
 			t.Fatalf("invalid lookup accepted: %v", err)
 		}

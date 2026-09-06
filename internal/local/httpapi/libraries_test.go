@@ -39,7 +39,7 @@ func testHandlerWithScanFS(t *testing.T, dirFS func(string) fs.FS) http.Handler 
 		t.Fatal(err)
 	}
 	t.Cleanup(libraries.Close)
-	scans := scan.New(t.Context(), db, libraries, dirFS, logger)
+	scans := scan.New(t.Context(), db, libraries, dirFS, logger, nil)
 	t.Cleanup(scans.Close)
 	return NewHandler(&local.App{
 		Logger:    logger,

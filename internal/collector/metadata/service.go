@@ -13,13 +13,9 @@ import (
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collector/metadata/dbgen"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
-
-type CollectedMetadata struct {
-	Metadata    panda.Metadata `json:"metadata"`
-	RefreshedAt time.Time      `json:"refreshed_at"`
-}
 
 type Service struct {
 	store   *store
@@ -45,16 +41,16 @@ func (s *Service) Close() {
 }
 
 // Get returns retained metadata, or sql.ErrNoRows when none has been collected.
-func (s *Service) Get(ctx context.Context, galleryID int64) (CollectedMetadata, error) {
+func (s *Service) Get(ctx context.Context, galleryID int64) (collectorapi.CollectedMetadata, error) {
 	row, err := s.store.q.GetMetadata(ctx, galleryID)
 	if err != nil {
-		return CollectedMetadata{}, err
+		return collectorapi.CollectedMetadata{}, err
 	}
 	var value panda.Metadata
 	if err := json.Unmarshal(row.Body, &value); err != nil {
-		return CollectedMetadata{}, fmt.Errorf("decode collected metadata: %w", err)
+		return collectorapi.CollectedMetadata{}, fmt.Errorf("decode collected metadata: %w", err)
 	}
-	return CollectedMetadata{Metadata: value, RefreshedAt: time.UnixMilli(row.RefreshedAt).UTC()}, nil
+	return collectorapi.CollectedMetadata{Metadata: value, RefreshedAt: time.UnixMilli(row.RefreshedAt).UTC()}, nil
 }
 
 func (s *Service) run(ctx context.Context) {

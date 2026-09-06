@@ -1,0 +1,7 @@
+# Trust collector metadata for automatic Panda enrichment
+
+Automatic enrichment accepts a collector match for a Panda ID inferred from the trailing bracketed number in a source name, because this naming convention makes false matches sufficiently rare to accept without additional verification. Enrichment depends on IDs already known to the collector because source names supply no access token. Collector metadata takes precedence over `galleryinfo.txt`, a downloaded snapshot of a subset of the same upstream data. Retained metadata is sufficient regardless of age; import proceeds independently of enrichment so collector availability and upstream retrieval do not delay access to local content.
+
+Panda enrichment replaces title and tags without tracking intervening edits, accepting that overwrite to keep the initial design simple. Pending enrichment survives restarts and temporary collector outages because initial imports must not lose their enrichment opportunity when the collector is unavailable.
+
+Collector lookup distinguishes available metadata, pending collection, completed collection failure, and unknown IDs. This lets local enrichment wait for collection already owned by the collector without submitting fetch jobs or obtaining tokens. Lookup remains read-only: local enrichment waits through pending collection and temporary outages, but ends on a completed failure or unknown ID.

@@ -33,7 +33,7 @@ func TestServiceRoutes(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(libraries.Close)
-		scans := scan.New(t.Context(), db, libraries, os.DirFS, logger)
+		scans := scan.New(t.Context(), db, libraries, os.DirFS, logger, nil)
 		t.Cleanup(scans.Close)
 		return localapi.NewHandler(&local.App{
 			Logger:    logger,

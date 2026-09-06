@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,21 +12,16 @@ import (
 	"unicode"
 
 	"github.com/fuzzy-moose/tana/internal/collector/metadata/dbgen"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
 const (
-	MaxLookupSize = 100
-	MaxFetchSize  = 1000
-	JobRetention  = 7 * 24 * time.Hour
+	MaxFetchSize = 1000
+	JobRetention = 7 * 24 * time.Hour
 )
 
 var ErrInvalidBatch = errors.New("invalid metadata batch")
-
-type LookupResult struct {
-	Galleries  []CollectedMetadata `json:"galleries"`
-	MissingIDs []int64             `json:"missing_ids"`
-}
 
 type FetchJob struct {
 	ID          string       `json:"id"`
@@ -57,22 +53,36 @@ func validateIDs(ids []int64, limit int) error {
 }
 
 // Lookup reads retained metadata without scheduling upstream work.
-func (s *Service) Lookup(ctx context.Context, ids []int64) (LookupResult, error) {
-	if err := validateIDs(ids, MaxLookupSize); err != nil {
-		return LookupResult{}, err
+func (s *Service) Lookup(ctx context.Context, ids []int64) (collectorapi.LookupResult, error) {
+	if err := validateIDs(ids, collectorapi.MaxLookupSize); err != nil {
+		return collectorapi.LookupResult{}, err
 	}
-	result := LookupResult{Galleries: []CollectedMetadata{}, MissingIDs: []int64{}}
+	tx, err := s.store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return collectorapi.LookupResult{}, err
+	}
+	defer tx.Rollback()
+	q := s.store.q.WithTx(tx)
+	result := collectorapi.LookupResult{Galleries: []collectorapi.CollectedMetadata{}, PendingIDs: []int64{}, FailedIDs: []int64{}, UnknownIDs: []int64{}}
 	for _, id := range ids {
-		value, err := s.Get(ctx, id)
+		row, err := q.LookupMetadata(ctx, id)
 		if errors.Is(err, sql.ErrNoRows) {
-			result.MissingIDs = append(result.MissingIDs, id)
+			result.UnknownIDs = append(result.UnknownIDs, id)
 		} else if err != nil {
-			return LookupResult{}, err
+			return collectorapi.LookupResult{}, err
+		} else if row.Body != nil {
+			var value panda.Metadata
+			if err := json.Unmarshal(row.Body, &value); err != nil {
+				return collectorapi.LookupResult{}, fmt.Errorf("decode collected metadata: %w", err)
+			}
+			result.Galleries = append(result.Galleries, collectorapi.CollectedMetadata{Metadata: value, RefreshedAt: time.UnixMilli(row.RefreshedAt.Int64).UTC()})
+		} else if !row.MetadataAttemptedAt.Valid || row.PendingFetch != 0 {
+			result.PendingIDs = append(result.PendingIDs, id)
 		} else {
-			result.Galleries = append(result.Galleries, value)
+			result.FailedIDs = append(result.FailedIDs, id)
 		}
 	}
-	return result, nil
+	return result, tx.Commit()
 }
 
 // RequestFetch commits a job that survives subsequent request cancellation.

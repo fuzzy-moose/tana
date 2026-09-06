@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fuzzy-moose/tana/internal/local/enrichment"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/metadata"
@@ -41,28 +42,30 @@ type libraryCatalog interface {
 }
 
 type Service struct {
-	db        *sql.DB
-	libraries libraryCatalog
-	sources   *source.SQLiteRepository
-	galleries *gallery.SQLiteRepository
-	provider  metadata.Provider
-	dirFS     func(string) fs.FS
-	logger    *slog.Logger
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	mu        sync.Mutex
-	status    Status
+	db         *sql.DB
+	libraries  libraryCatalog
+	sources    *source.SQLiteRepository
+	galleries  *gallery.SQLiteRepository
+	provider   metadata.Provider
+	enrichment *enrichment.Service
+	dirFS      func(string) fs.FS
+	logger     *slog.Logger
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	mu         sync.Mutex
+	status     Status
 }
 
 // New owns at most one scan until Close. dirFS supplies library filesystems
 // (os.DirFS in production); archive files must implement io.ReaderAt.
-func New(ctx context.Context, db *sql.DB, libraries libraryCatalog, dirFS func(string) fs.FS, logger *slog.Logger) *Service {
+func New(ctx context.Context, db *sql.DB, libraries libraryCatalog, dirFS func(string) fs.FS, logger *slog.Logger, enrich *enrichment.Service) *Service {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Service{
 		db: db, libraries: libraries, sources: source.NewSQLiteRepository(db),
 		galleries: gallery.NewSQLiteRepository(db), provider: galleryinfo.Provider{}, dirFS: dirFS, logger: logger,
-		ctx: ctx, cancel: cancel, status: Status{Phase: "idle"},
+		enrichment: enrich,
+		ctx:        ctx, cancel: cancel, status: Status{Phase: "idle"},
 	}
 }
 
@@ -206,10 +209,19 @@ func (s *Service) importSource(ctx context.Context, c candidate, files []string,
 	if err != nil {
 		return false, err
 	}
-	_, err = s.galleries.CreateFromSourceTx(ctx, tx, imported.ID, values)
+	g, err := s.galleries.CreateFromSourceTx(ctx, tx, imported.ID, values)
 	createdGallery := err == nil
 	if err != nil && !errors.Is(err, gallery.ErrNoImages) {
 		return false, err
+	}
+	if createdGallery && s.enrichment != nil {
+		name := c.path
+		if name == "." {
+			name = c.rootName
+		}
+		if err := s.enrichment.EnqueueTx(ctx, tx, g.ID, name, c.kind); err != nil {
+			return false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err

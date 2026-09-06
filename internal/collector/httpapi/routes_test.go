@@ -15,6 +15,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collector"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
@@ -102,10 +103,10 @@ func TestBatchAPIStoredLookupSubmissionAndPolling(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := apiRequest(handler, http.MethodPost, "/api/metadata/lookup", `{"gallery_ids":[1,2]}`)
-	var result metadata.LookupResult
+	var result collectorapi.LookupResult
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != http.StatusOK ||
 		len(result.Galleries) != 1 || result.Galleries[0].Metadata.Title != "Saved" || result.Galleries[0].RefreshedAt.UnixMilli() != 1000 ||
-		len(result.MissingIDs) != 1 || result.MissingIDs[0] != 2 {
+		len(result.UnknownIDs) != 1 || result.UnknownIDs[0] != 2 {
 		t.Fatalf("lookup: %d %s, %v", w.Code, w.Body, err)
 	}
 	refs := make([]panda.GalleryRef, metadata.MaxFetchSize)

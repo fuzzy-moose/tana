@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fuzzy-moose/tana/internal/local/enrichment"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
@@ -23,11 +24,16 @@ type App struct {
 	Galleries *gallery.SQLiteRepository
 	Web       fs.FS
 
-	db *sql.DB
+	db         *sql.DB
+	enrichment *enrichment.Service
 }
 
 // New opens application storage and starts background availability checks.
 func New(ctx context.Context, logger *slog.Logger) (*App, error) {
+	collectorClient, err := enrichment.ConfiguredClient(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
 	var web fs.FS
 	if dir := strings.TrimSpace(os.Getenv("TANA_WEB_DIR")); dir != "" {
 		web = os.DirFS(dir)
@@ -52,20 +58,28 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("open libraries: %w", err)
 	}
-	scans := scan.New(ctx, db, libraries, os.DirFS, logger)
+	var enrich *enrichment.Service
+	if collectorClient != nil {
+		enrich = enrichment.New(ctx, db, collectorClient, logger)
+	}
+	scans := scan.New(ctx, db, libraries, os.DirFS, logger, enrich)
 	return &App{
-		Logger:    logger,
-		Libraries: libraries,
-		Scans:     scans,
-		Galleries: gallery.NewSQLiteRepository(db),
-		Web:       web,
-		db:        db,
+		Logger:     logger,
+		Libraries:  libraries,
+		Scans:      scans,
+		Galleries:  gallery.NewSQLiteRepository(db),
+		Web:        web,
+		db:         db,
+		enrichment: enrich,
 	}, nil
 }
 
 // Close stops background work and releases storage after HTTP requests drain.
 func (a *App) Close() error {
 	a.Scans.Close()
+	if a.enrichment != nil {
+		a.enrichment.Close()
+	}
 	a.Libraries.Close()
 	return a.db.Close()
 }

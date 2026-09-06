@@ -14,6 +14,13 @@ UPDATE gallery_refs SET metadata_attempted_at = ?, metadata_error = ? WHERE gall
 -- name: GetMetadata :one
 SELECT body, refreshed_at FROM gallery_metadata WHERE gallery_id = ?;
 
+-- name: LookupMetadata :one
+SELECT m.body, m.refreshed_at, r.metadata_attempted_at,
+    EXISTS (SELECT 1 FROM metadata_fetches f
+            WHERE f.gallery_id = r.gallery_id AND f.token = r.token AND f.status = 'pending') AS pending_fetch
+FROM gallery_refs r LEFT JOIN gallery_metadata m ON m.gallery_id = r.gallery_id
+WHERE r.gallery_id = ?;
+
 -- name: RetryState :one
 SELECT failures, next_attempt_at FROM metadata_retry WHERE id = 1;
 

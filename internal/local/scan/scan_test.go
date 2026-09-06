@@ -43,7 +43,7 @@ func setup(t *testing.T) fixture {
 
 func (f fixture) scanner(t *testing.T, dirFS func(string) fs.FS) *Service {
 	t.Helper()
-	s := New(t.Context(), f.db, f.libraries, dirFS, f.logger)
+	s := New(t.Context(), f.db, f.libraries, dirFS, f.logger, nil)
 	t.Cleanup(s.Close)
 	return s
 }
@@ -415,7 +415,7 @@ func TestShutdownStopsScanAndLeavesUncommittedSourcesForNextScan(t *testing.T) {
 	gate := &archiveGateFS{FS: os.DirFS(l.Path), opened: make(chan string, 1), release: make(chan struct{})}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	s := New(ctx, f.db, f.libraries, func(string) fs.FS { return gate }, f.logger)
+	s := New(ctx, f.db, f.libraries, func(string) fs.FS { return gate }, f.logger, nil)
 	t.Cleanup(s.Close)
 	var release sync.Once
 	defer release.Do(func() { close(gate.release) })

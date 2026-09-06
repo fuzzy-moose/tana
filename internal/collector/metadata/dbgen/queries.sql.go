@@ -232,6 +232,33 @@ func (q *Queries) GetMetadata(ctx context.Context, galleryID int64) (GetMetadata
 	return i, err
 }
 
+const lookupMetadata = `-- name: LookupMetadata :one
+SELECT m.body, m.refreshed_at, r.metadata_attempted_at,
+    EXISTS (SELECT 1 FROM metadata_fetches f
+            WHERE f.gallery_id = r.gallery_id AND f.token = r.token AND f.status = 'pending') AS pending_fetch
+FROM gallery_refs r LEFT JOIN gallery_metadata m ON m.gallery_id = r.gallery_id
+WHERE r.gallery_id = ?
+`
+
+type LookupMetadataRow struct {
+	Body                []byte
+	RefreshedAt         sql.NullInt64
+	MetadataAttemptedAt sql.NullInt64
+	PendingFetch        int64
+}
+
+func (q *Queries) LookupMetadata(ctx context.Context, galleryID int64) (LookupMetadataRow, error) {
+	row := q.db.QueryRowContext(ctx, lookupMetadata, galleryID)
+	var i LookupMetadataRow
+	err := row.Scan(
+		&i.Body,
+		&i.RefreshedAt,
+		&i.MetadataAttemptedAt,
+		&i.PendingFetch,
+	)
+	return i, err
+}
+
 const pendingFetches = `-- name: PendingFetches :many
 SELECT f.gallery_id, f.token FROM metadata_fetches f
 WHERE f.status = 'pending' AND NOT EXISTS (

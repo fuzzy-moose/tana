@@ -37,6 +37,12 @@ A metadata provider supplying gallery metadata. Its upstream galleries are uniqu
 **Panda gallery reference**:
 An upstream Panda gallery's ID together with the token needed to access it. The gallery ID alone determines identity; a gallery's token is assumed immutable.
 
+**Panda gallery candidate**:
+A possible upstream Panda gallery ID inferred from a source's name. It may be unrelated to that source and does not supply an access token.
+
+**Panda enrichment**:
+Automatic application of collected Panda metadata to a source-linked gallery using a Panda gallery candidate. Pending enrichment is an outstanding local intent to obtain and apply that metadata, distinct from a collector metadata fetch job.
+
 **Gallery reference inventory**:
 The distinct Panda gallery references discovered through feeds or Panda metadata, or supplied by Tana and confirmed by Panda. Tana-supplied references enter the inventory only after successful metadata retrieval confirms their tokens; references discovered through feeds or Panda metadata may await retrieval.
 

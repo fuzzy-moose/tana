@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"path/filepath"
 
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/metadata"
@@ -16,6 +17,7 @@ import (
 type candidate struct {
 	libraryID int64
 	root      fs.FS
+	rootName  string
 	path      string
 	kind      source.Kind
 }
@@ -34,7 +36,7 @@ func (s *Service) discover(ctx context.Context, libraries []library.Library) ([]
 		root := s.dirFS(l.Path)
 		add := func(name string, kind source.Kind) {
 			if !known[name] {
-				candidates = append(candidates, candidate{libraryID: l.ID, root: root, path: name, kind: kind})
+				candidates = append(candidates, candidate{libraryID: l.ID, root: root, rootName: filepath.Base(l.Path), path: name, kind: kind})
 				s.mu.Lock()
 				s.status.Discovered++
 				s.mu.Unlock()
