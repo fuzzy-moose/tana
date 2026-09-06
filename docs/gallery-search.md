@@ -5,14 +5,14 @@
 Search terms are separated by spaces or unquoted commas. Commas inside quotes are literal text. Terms without a
 namespace, qualifier, or exact-tag marker search both titles and tags.
 
-| Syntax           | Meaning                                                                                                                                                           |
-|------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `"text here"`    | Search the quoted text as one exact phrase. Quoting also permits spaces in a single term.                                                                         |
-| `term_one`       | Replace underscores with spaces and treat the result as one term. |
-| `-term`          | Exclude galleries matching the term. |
-| `~term`          | Add the term to an OR group. A gallery may contain one or more terms in the group.                                                                                |
-| `namespace:term` | Match a tag in the named namespace.                                                                                                                               |
-| `term$`          | Match the exact tag value. The marker applies to tags only and may also be used on exclusions.                                                                    |
+| Syntax           | Meaning                                                                                        |
+|------------------|------------------------------------------------------------------------------------------------|
+| `"text here"`    | Search the quoted text as one exact phrase. Quoting also permits spaces in a single term.      |
+| `term_one`       | Replace underscores with spaces and treat the result as one term.                              |
+| `-term`          | Exclude galleries matching the term.                                                           |
+| `~term`          | Add the term to an OR group. A gallery may contain one or more terms in the group.             |
+| `namespace:term` | Match a tag in the named namespace.                                                            |
+| `term$`          | Match the exact tag value. The marker applies to tags only and may also be used on exclusions. |
 
 Terms joined by spaces are ANDed unless they are prefixed with `~`. All `~` terms form one OR group; when present, at
 least one MUST match. Ordinary required terms and exclusions always apply. For example, `red ~blue ~green -yellow`
