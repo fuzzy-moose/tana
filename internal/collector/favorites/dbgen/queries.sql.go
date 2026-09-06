@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 const categoryStatistics = `-- name: CategoryStatistics :many
@@ -56,17 +57,89 @@ func (q *Queries) CategoryStatistics(ctx context.Context, arg CategoryStatistics
 	return items, nil
 }
 
-const deleteFavorites = `-- name: DeleteFavorites :exec
-DELETE FROM favorites WHERE category_id = ?
+const clearSeenFavorites = `-- name: ClearSeenFavorites :exec
+DELETE FROM favorite_sync_seen WHERE category_id = ?
 `
 
-func (q *Queries) DeleteFavorites(ctx context.Context, categoryID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteFavorites, categoryID)
+func (q *Queries) ClearSeenFavorites(ctx context.Context, categoryID int64) error {
+	_, err := q.db.ExecContext(ctx, clearSeenFavorites, categoryID)
+	return err
+}
+
+const clearVisitedPages = `-- name: ClearVisitedPages :exec
+DELETE FROM favorite_sync_pages WHERE category_id = ?
+`
+
+func (q *Queries) ClearVisitedPages(ctx context.Context, categoryID int64) error {
+	_, err := q.db.ExecContext(ctx, clearVisitedPages, categoryID)
+	return err
+}
+
+const commitFavorites = `-- name: CommitFavorites :exec
+UPDATE favorites SET committed_added_at = added_at WHERE favorites.category_id = ?1
+    AND gallery_id IN (SELECT gallery_id FROM favorite_sync_seen WHERE favorite_sync_seen.category_id = ?1)
+`
+
+func (q *Queries) CommitFavorites(ctx context.Context, categoryID int64) error {
+	_, err := q.db.ExecContext(ctx, commitFavorites, categoryID)
+	return err
+}
+
+const completeCategory = `-- name: CompleteCategory :exec
+UPDATE favorite_categories SET synced_at = ? WHERE id = ?
+`
+
+type CompleteCategoryParams struct {
+	SyncedAt int64
+	ID       int64
+}
+
+func (q *Queries) CompleteCategory(ctx context.Context, arg CompleteCategoryParams) error {
+	_, err := q.db.ExecContext(ctx, completeCategory, arg.SyncedAt, arg.ID)
+	return err
+}
+
+const failSync = `-- name: FailSync :exec
+UPDATE favorite_syncs SET state = ?, last_error = ?, last_error_at = ?, retry_at = ?, finished_at = ?, failures = failures + 1 WHERE category_id = ?
+`
+
+type FailSyncParams struct {
+	State       string
+	LastError   string
+	LastErrorAt int64
+	RetryAt     int64
+	FinishedAt  int64
+	CategoryID  int64
+}
+
+func (q *Queries) FailSync(ctx context.Context, arg FailSyncParams) error {
+	_, err := q.db.ExecContext(ctx, failSync,
+		arg.State,
+		arg.LastError,
+		arg.LastErrorAt,
+		arg.RetryAt,
+		arg.FinishedAt,
+		arg.CategoryID,
+	)
+	return err
+}
+
+const finishSync = `-- name: FinishSync :exec
+UPDATE favorite_syncs SET state = 'success', finished_at = ?, retry_at = 0 WHERE category_id = ?
+`
+
+type FinishSyncParams struct {
+	FinishedAt int64
+	CategoryID int64
+}
+
+func (q *Queries) FinishSync(ctx context.Context, arg FinishSyncParams) error {
+	_, err := q.db.ExecContext(ctx, finishSync, arg.FinishedAt, arg.CategoryID)
 	return err
 }
 
 const getCategory = `-- name: GetCategory :one
-SELECT id FROM favorite_categories WHERE host = ? AND account_key = ? AND category = ?
+SELECT id, synced_at FROM favorite_categories WHERE host = ? AND account_key = ? AND category = ?
 `
 
 type GetCategoryParams struct {
@@ -75,20 +148,54 @@ type GetCategoryParams struct {
 	Category   int64
 }
 
-func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (int64, error) {
+type GetCategoryRow struct {
+	ID       int64
+	SyncedAt int64
+}
+
+func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (GetCategoryRow, error) {
 	row := q.db.QueryRowContext(ctx, getCategory, arg.Host, arg.AccountKey, arg.Category)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
+	var i GetCategoryRow
+	err := row.Scan(&i.ID, &i.SyncedAt)
+	return i, err
+}
+
+const getSync = `-- name: GetSync :one
+SELECT category_id, state, "full", followup_full, queued_at, next_url, pages_saved, entries_saved, last_saved_at, last_added_at, restarted, started_at, finished_at, last_error, last_error_at, retry_at, failures FROM favorite_syncs WHERE category_id = ?
+`
+
+func (q *Queries) GetSync(ctx context.Context, categoryID int64) (FavoriteSync, error) {
+	row := q.db.QueryRowContext(ctx, getSync, categoryID)
+	var i FavoriteSync
+	err := row.Scan(
+		&i.CategoryID,
+		&i.State,
+		&i.Full,
+		&i.FollowupFull,
+		&i.QueuedAt,
+		&i.NextUrl,
+		&i.PagesSaved,
+		&i.EntriesSaved,
+		&i.LastSavedAt,
+		&i.LastAddedAt,
+		&i.Restarted,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.LastError,
+		&i.LastErrorAt,
+		&i.RetryAt,
+		&i.Failures,
+	)
+	return i, err
 }
 
 const knownFavorites = `-- name: KnownFavorites :many
-SELECT gallery_id, added_at FROM favorites WHERE category_id = ?
+SELECT gallery_id, committed_added_at FROM favorites WHERE category_id = ? AND committed_added_at IS NOT NULL
 `
 
 type KnownFavoritesRow struct {
-	GalleryID int64
-	AddedAt   int64
+	GalleryID        int64
+	CommittedAddedAt sql.NullInt64
 }
 
 func (q *Queries) KnownFavorites(ctx context.Context, categoryID int64) ([]KnownFavoritesRow, error) {
@@ -100,7 +207,7 @@ func (q *Queries) KnownFavorites(ctx context.Context, categoryID int64) ([]Known
 	items := []KnownFavoritesRow{}
 	for rows.Next() {
 		var i KnownFavoritesRow
-		if err := rows.Scan(&i.GalleryID, &i.AddedAt); err != nil {
+		if err := rows.Scan(&i.GalleryID, &i.CommittedAddedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -114,9 +221,179 @@ func (q *Queries) KnownFavorites(ctx context.Context, categoryID int64) ([]Known
 	return items, nil
 }
 
+const listSyncs = `-- name: ListSyncs :many
+SELECT s.category_id, s.state, s."full", s.followup_full, s.queued_at, s.next_url, s.pages_saved, s.entries_saved, s.last_saved_at, s.last_added_at, s.restarted, s.started_at, s.finished_at, s.last_error, s.last_error_at, s.retry_at, s.failures, c.category FROM favorite_syncs s JOIN favorite_categories c ON c.id = s.category_id
+WHERE c.host = ? AND c.account_key = ?
+`
+
+type ListSyncsParams struct {
+	Host       string
+	AccountKey string
+}
+
+type ListSyncsRow struct {
+	FavoriteSync FavoriteSync
+	Category     int64
+}
+
+func (q *Queries) ListSyncs(ctx context.Context, arg ListSyncsParams) ([]ListSyncsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSyncs, arg.Host, arg.AccountKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSyncsRow{}
+	for rows.Next() {
+		var i ListSyncsRow
+		if err := rows.Scan(
+			&i.FavoriteSync.CategoryID,
+			&i.FavoriteSync.State,
+			&i.FavoriteSync.Full,
+			&i.FavoriteSync.FollowupFull,
+			&i.FavoriteSync.QueuedAt,
+			&i.FavoriteSync.NextUrl,
+			&i.FavoriteSync.PagesSaved,
+			&i.FavoriteSync.EntriesSaved,
+			&i.FavoriteSync.LastSavedAt,
+			&i.FavoriteSync.LastAddedAt,
+			&i.FavoriteSync.Restarted,
+			&i.FavoriteSync.StartedAt,
+			&i.FavoriteSync.FinishedAt,
+			&i.FavoriteSync.LastError,
+			&i.FavoriteSync.LastErrorAt,
+			&i.FavoriteSync.RetryAt,
+			&i.FavoriteSync.Failures,
+			&i.Category,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const newSync = `-- name: NewSync :exec
+INSERT INTO favorite_syncs (category_id, state, full, queued_at) VALUES (?, 'queued', ?, ?)
+ON CONFLICT (category_id) DO UPDATE SET state = 'queued', full = excluded.full,
+    followup_full = 0, queued_at = excluded.queued_at, next_url = '', pages_saved = 0,
+    entries_saved = 0, last_saved_at = 0, last_added_at = 0, restarted = 0,
+    started_at = 0, finished_at = 0, last_error = '', last_error_at = 0, retry_at = 0, failures = 0
+`
+
+type NewSyncParams struct {
+	CategoryID int64
+	Full       int64
+	QueuedAt   int64
+}
+
+func (q *Queries) NewSync(ctx context.Context, arg NewSyncParams) error {
+	_, err := q.db.ExecContext(ctx, newSync, arg.CategoryID, arg.Full, arg.QueuedAt)
+	return err
+}
+
+const nextSync = `-- name: NextSync :one
+SELECT s.category_id, s.state, s."full", s.followup_full, s.queued_at, s.next_url, s.pages_saved, s.entries_saved, s.last_saved_at, s.last_added_at, s.restarted, s.started_at, s.finished_at, s.last_error, s.last_error_at, s.retry_at, s.failures, c.category FROM favorite_syncs s JOIN favorite_categories c ON c.id = s.category_id
+WHERE c.host = ? AND c.account_key = ? AND (s.state IN ('queued', 'running') OR s.followup_full = 1)
+ORDER BY s.state = 'running' DESC, s.queued_at, c.category LIMIT 1
+`
+
+type NextSyncParams struct {
+	Host       string
+	AccountKey string
+}
+
+type NextSyncRow struct {
+	FavoriteSync FavoriteSync
+	Category     int64
+}
+
+func (q *Queries) NextSync(ctx context.Context, arg NextSyncParams) (NextSyncRow, error) {
+	row := q.db.QueryRowContext(ctx, nextSync, arg.Host, arg.AccountKey)
+	var i NextSyncRow
+	err := row.Scan(
+		&i.FavoriteSync.CategoryID,
+		&i.FavoriteSync.State,
+		&i.FavoriteSync.Full,
+		&i.FavoriteSync.FollowupFull,
+		&i.FavoriteSync.QueuedAt,
+		&i.FavoriteSync.NextUrl,
+		&i.FavoriteSync.PagesSaved,
+		&i.FavoriteSync.EntriesSaved,
+		&i.FavoriteSync.LastSavedAt,
+		&i.FavoriteSync.LastAddedAt,
+		&i.FavoriteSync.Restarted,
+		&i.FavoriteSync.StartedAt,
+		&i.FavoriteSync.FinishedAt,
+		&i.FavoriteSync.LastError,
+		&i.FavoriteSync.LastErrorAt,
+		&i.FavoriteSync.RetryAt,
+		&i.FavoriteSync.Failures,
+		&i.Category,
+	)
+	return i, err
+}
+
+const queueFullSync = `-- name: QueueFullSync :exec
+UPDATE favorite_syncs SET followup_full = 1 WHERE category_id = ?
+`
+
+func (q *Queries) QueueFullSync(ctx context.Context, categoryID int64) error {
+	_, err := q.db.ExecContext(ctx, queueFullSync, categoryID)
+	return err
+}
+
+const reconcileFavorites = `-- name: ReconcileFavorites :exec
+DELETE FROM favorites WHERE favorites.category_id = ?1 AND gallery_id NOT IN
+    (SELECT gallery_id FROM favorite_sync_seen WHERE favorite_sync_seen.category_id = ?1)
+`
+
+func (q *Queries) ReconcileFavorites(ctx context.Context, categoryID int64) error {
+	_, err := q.db.ExecContext(ctx, reconcileFavorites, categoryID)
+	return err
+}
+
+const renameCategory = `-- name: RenameCategory :exec
+UPDATE favorite_categories SET name = ? WHERE id = ?
+`
+
+type RenameCategoryParams struct {
+	Name string
+	ID   int64
+}
+
+func (q *Queries) RenameCategory(ctx context.Context, arg RenameCategoryParams) error {
+	_, err := q.db.ExecContext(ctx, renameCategory, arg.Name, arg.ID)
+	return err
+}
+
+const restartTraversal = `-- name: RestartTraversal :exec
+UPDATE favorite_syncs SET next_url = '', pages_saved = 0, entries_saved = 0,
+    last_added_at = 0, restarted = 1 WHERE category_id = ?
+`
+
+func (q *Queries) RestartTraversal(ctx context.Context, categoryID int64) error {
+	_, err := q.db.ExecContext(ctx, restartTraversal, categoryID)
+	return err
+}
+
+const resumeSync = `-- name: ResumeSync :exec
+UPDATE favorite_syncs SET state = 'queued', finished_at = 0, retry_at = 0, failures = 0, restarted = 0 WHERE category_id = ?
+`
+
+func (q *Queries) ResumeSync(ctx context.Context, categoryID int64) error {
+	_, err := q.db.ExecContext(ctx, resumeSync, categoryID)
+	return err
+}
+
 const saveCategory = `-- name: SaveCategory :one
-INSERT INTO favorite_categories (host, account_key, category, name, synced_at) VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (host, account_key, category) DO UPDATE SET name = excluded.name, synced_at = excluded.synced_at
+INSERT INTO favorite_categories (host, account_key, category, name, synced_at) VALUES (?, ?, ?, '', 0)
+ON CONFLICT (host, account_key, category) DO UPDATE SET host = excluded.host
 RETURNING id
 `
 
@@ -124,18 +401,10 @@ type SaveCategoryParams struct {
 	Host       string
 	AccountKey string
 	Category   int64
-	Name       string
-	SyncedAt   int64
 }
 
 func (q *Queries) SaveCategory(ctx context.Context, arg SaveCategoryParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, saveCategory,
-		arg.Host,
-		arg.AccountKey,
-		arg.Category,
-		arg.Name,
-		arg.SyncedAt,
-	)
+	row := q.db.QueryRowContext(ctx, saveCategory, arg.Host, arg.AccountKey, arg.Category)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -175,4 +444,123 @@ type SaveGalleryRefParams struct {
 func (q *Queries) SaveGalleryRef(ctx context.Context, arg SaveGalleryRefParams) error {
 	_, err := q.db.ExecContext(ctx, saveGalleryRef, arg.GalleryID, arg.Token)
 	return err
+}
+
+const saveProgress = `-- name: SaveProgress :exec
+UPDATE favorite_syncs SET next_url = ?1, pages_saved = pages_saved + 1,
+    entries_saved = (SELECT count(*) FROM favorite_sync_seen WHERE favorite_sync_seen.category_id = ?2),
+    last_saved_at = ?3, last_added_at = ?4, retry_at = 0, failures = 0 WHERE favorite_syncs.category_id = ?2
+`
+
+type SaveProgressParams struct {
+	NextUrl     string
+	CategoryID  int64
+	LastSavedAt int64
+	LastAddedAt int64
+}
+
+func (q *Queries) SaveProgress(ctx context.Context, arg SaveProgressParams) error {
+	_, err := q.db.ExecContext(ctx, saveProgress,
+		arg.NextUrl,
+		arg.CategoryID,
+		arg.LastSavedAt,
+		arg.LastAddedAt,
+	)
+	return err
+}
+
+const saveSeenFavorite = `-- name: SaveSeenFavorite :exec
+INSERT INTO favorite_sync_seen (category_id, gallery_id) VALUES (?, ?) ON CONFLICT DO NOTHING
+`
+
+type SaveSeenFavoriteParams struct {
+	CategoryID int64
+	GalleryID  int64
+}
+
+func (q *Queries) SaveSeenFavorite(ctx context.Context, arg SaveSeenFavoriteParams) error {
+	_, err := q.db.ExecContext(ctx, saveSeenFavorite, arg.CategoryID, arg.GalleryID)
+	return err
+}
+
+const saveVisitedPage = `-- name: SaveVisitedPage :exec
+INSERT INTO favorite_sync_pages (category_id, url) VALUES (?, ?)
+`
+
+type SaveVisitedPageParams struct {
+	CategoryID int64
+	Url        string
+}
+
+func (q *Queries) SaveVisitedPage(ctx context.Context, arg SaveVisitedPageParams) error {
+	_, err := q.db.ExecContext(ctx, saveVisitedPage, arg.CategoryID, arg.Url)
+	return err
+}
+
+const seenFavorites = `-- name: SeenFavorites :many
+SELECT gallery_id FROM favorite_sync_seen WHERE category_id = ?
+`
+
+func (q *Queries) SeenFavorites(ctx context.Context, categoryID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, seenFavorites, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var gallery_id int64
+		if err := rows.Scan(&gallery_id); err != nil {
+			return nil, err
+		}
+		items = append(items, gallery_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const startSync = `-- name: StartSync :exec
+UPDATE favorite_syncs SET state = 'running', started_at = CASE WHEN started_at = 0 THEN ? ELSE started_at END WHERE category_id = ?
+`
+
+type StartSyncParams struct {
+	StartedAt  int64
+	CategoryID int64
+}
+
+func (q *Queries) StartSync(ctx context.Context, arg StartSyncParams) error {
+	_, err := q.db.ExecContext(ctx, startSync, arg.StartedAt, arg.CategoryID)
+	return err
+}
+
+const visitedPages = `-- name: VisitedPages :many
+SELECT url FROM favorite_sync_pages WHERE category_id = ?
+`
+
+func (q *Queries) VisitedPages(ctx context.Context, categoryID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, visitedPages, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		items = append(items, url)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

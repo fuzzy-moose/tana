@@ -62,3 +62,47 @@ func TestOpenBackfillsFeedSightingsFromRetainedCaptures(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenPreservesCompletedFavoritesAsIncrementalBaseline(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "collector.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	files, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files[:5] {
+		ddl, err := migrations.ReadFile("migrations/" + file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(ddl)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO gallery_refs (gallery_id, token) VALUES (1, '123456789a');
+ INSERT INTO favorite_categories (id, host, account_key, category, name, synced_at) VALUES (1, 'https://panda.test', '42', 2, 'Manga', 1000);
+ INSERT INTO favorites (category_id, gallery_id, token, added_at) VALUES (1, 1, '123456789a', 500);
+ PRAGMA user_version = 5;`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	migrated, _, err := Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	var added, committed, synced, jobs int64
+	if err := migrated.QueryRow(`SELECT f.added_at, f.committed_added_at, c.synced_at, (SELECT count(*) FROM favorite_syncs)
+ FROM favorites f JOIN favorite_categories c ON c.id = f.category_id`).Scan(&added, &committed, &synced, &jobs); err != nil {
+		t.Fatal(err)
+	}
+	if added != 500 || committed != 500 || synced != 1000 || jobs != 0 {
+		t.Fatalf("added=%d committed=%d synced=%d jobs=%d", added, committed, synced, jobs)
+	}
+}

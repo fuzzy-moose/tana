@@ -3,3 +3,23 @@
 //   sqlc v1.30.0
 
 package dbgen
+
+type FavoriteSync struct {
+	CategoryID   int64
+	State        string
+	Full         int64
+	FollowupFull int64
+	QueuedAt     int64
+	NextUrl      string
+	PagesSaved   int64
+	EntriesSaved int64
+	LastSavedAt  int64
+	LastAddedAt  int64
+	Restarted    int64
+	StartedAt    int64
+	FinishedAt   int64
+	LastError    string
+	LastErrorAt  int64
+	RetryAt      int64
+	Failures     int64
+}

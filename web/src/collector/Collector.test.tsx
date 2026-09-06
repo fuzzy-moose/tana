@@ -16,6 +16,7 @@ function connected(): ConnectionStatus {
         categories: Array.from({ length: 10 }, (_, category) => ({
           category, name: category === 2 ? 'Manga' : '', favorites: category === 2 ? 42 : 0,
           state: 'idle', full: false, queued: false, queued_full: false,
+          entries_saved: 0, pages_saved: 0,
           last_synced_at: category === 2 ? '2026-09-06T09:00:00Z' : undefined,
         })),
       },
@@ -65,4 +66,22 @@ test('preserves statistics through connection failures, disables syncing, and re
   await user.click(screen.getByRole('button', { name: 'Refresh' }))
   await waitFor(() => expect(screen.queryByText(/Statistics are stale/)).toBeNull())
   expect((screen.getByRole('button', { name: 'Sync favorites' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+test('shows durable progress and collected favorites before the first sync completes', async () => {
+  const result = connected()
+  Object.assign(result.status!.favorites.categories[2], {
+    state: 'running', favorites: 2000, entries_saved: 2000, pages_saved: 20,
+    started_at: '2026-09-06T09:00:00Z', last_saved_at: '2026-09-06T09:59:00Z', last_synced_at: undefined,
+  })
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => Response.json(result)))
+  window.history.replaceState(null, '', '/#/collector')
+  render(<App />)
+  await screen.findByText('Connected')
+  const row = screen.getByRole('rowheader', { name: /Manga/ }).closest('tr')!
+  expect(within(row).getByText('Running sync')).toBeTruthy()
+  expect(within(row).getByText('2,000 entries saved · 20 pages')).toBeTruthy()
+  expect(within(row).getByText('2,000')).toBeTruthy()
+  expect(within(row).getByText(/Last save/)).toBeTruthy()
+  expect(within(row).getByText('Never synced')).toBeTruthy()
 })

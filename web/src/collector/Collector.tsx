@@ -87,16 +87,20 @@ export default function Collector() {
           <div className="collector-table-scroll">
             <table className="collector-table">
               <caption className="collector-table-caption">Favorite categories for the current account</caption>
-              <thead><tr><th scope="col">Category</th><th scope="col">Favorites</th><th scope="col">Sync state</th><th scope="col">Last successful sync</th></tr></thead>
+              <thead><tr><th scope="col">Category</th><th scope="col">Favorites</th><th scope="col">Sync state</th><th scope="col">Sync progress</th><th scope="col">Last successful sync</th></tr></thead>
               <tbody>{status.favorites.categories.map((item) => (
                 <tr key={item.category}>
                   <th scope="row">{categoryName(item)}{item.name && <span className="collector-secondary">Category {item.category}</span>}</th>
-                  <td>{item.last_synced_at ? item.favorites.toLocaleString() : '—'}</td>
+                  <td>{item.last_synced_at || item.last_saved_at ? item.favorites.toLocaleString() : '—'}</td>
                   <td><span className="collector-state">{stateLabel(item)}</span>
                     {item.retry_at && <span className="collector-secondary">Retry after {date(item.retry_at)}</span>}
                     {item.queued && item.state !== 'queued' && <span className="collector-secondary">{item.queued_full ? 'Full re-sync' : 'Sync'} also queued</span>}
                     {item.state === 'idle' && item.finished_at && <span className="collector-secondary">{date(item.finished_at)}</span>}
                   </td>
+                  <td>{item.started_at ? <>
+                    <span>{(item.entries_saved ?? 0).toLocaleString()} entries saved · {(item.pages_saved ?? 0).toLocaleString()} pages</span>
+                    <span className="collector-secondary">{item.last_saved_at ? `Last save ${date(item.last_saved_at)}` : 'Awaiting first page'}</span>
+                  </> : '—'}</td>
                   <td>{item.last_synced_at ? date(item.last_synced_at) : 'Never synced'}</td>
                 </tr>
               ))}</tbody>

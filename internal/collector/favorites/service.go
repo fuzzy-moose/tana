@@ -1,4 +1,5 @@
-// Package favorites collects Panda favorite categories only on explicit request.
+// Package favorites collects explicitly requested Panda favorite categories,
+// including unfinished requests retained across collector restarts.
 package favorites
 
 import (
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collector/favorites/dbgen"
-	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
@@ -23,11 +23,6 @@ type PageClient interface {
 	GetFavoritesPage(context.Context, int, string) (panda.FavoritesPage, error)
 }
 
-type request struct {
-	category int
-	full     bool
-}
-
 type Service struct {
 	store   *store
 	client  PageClient
@@ -36,10 +31,6 @@ type Service struct {
 	cancel  context.CancelFunc
 	workers sync.WaitGroup
 	wake    chan struct{}
-	mu      sync.Mutex
-	pending []request
-	active  *request
-	runtime [10]collectorapi.FavoriteCategory
 }
 
 func New(ctx context.Context, db *sql.DB, cfg panda.FavoritesConfig, client PageClient, logger *slog.Logger) *Service {
@@ -54,114 +45,74 @@ func New(ctx context.Context, db *sql.DB, cfg panda.FavoritesConfig, client Page
 
 func (s *Service) Close() { s.cancel(); s.workers.Wait() }
 
-// Enqueue coalesces each category. A full re-sync upgrades queued work, or
-// follows an incremental run already in progress. Request cancellation does
-// not cancel accepted work; process shutdown does.
+// Enqueue durably coalesces each category. A full re-sync upgrades queued work,
+// or follows an incremental run in progress. Failed work resumes its checkpoint.
 func (s *Service) Enqueue(category int, full bool) error {
 	if category < 0 || category > 9 {
 		return ErrInvalidCategory
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.ctx.Err() != nil {
-		return ErrClosed
-	}
-	s.enqueueLocked(category, full)
-	return nil
+	return s.enqueue([]int{category}, full)
 }
 
-// EnqueueAll admits all ten categories together, using the same coalescing as
-// individual requests. No upstream calls happen during admission.
+// EnqueueAll admits all ten categories in a single transaction.
 func (s *Service) EnqueueAll(full bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	categories := make([]int, 10)
+	for category := range categories {
+		categories[category] = category
+	}
+	return s.enqueue(categories, full)
+}
+
+func (s *Service) enqueue(categories []int, full bool) error {
 	if s.ctx.Err() != nil {
 		return ErrClosed
 	}
-	for category := range 10 {
-		s.enqueueLocked(category, full)
+	if err := s.store.enqueue(s.ctx, categories, full); err != nil {
+		return err
 	}
-	return nil
-}
-
-func (s *Service) enqueueLocked(category int, full bool) {
-	if s.active != nil && s.active.category == category && (!full || s.active.full) {
-		return
-	}
-	for i := range s.pending {
-		if s.pending[i].category == category {
-			s.pending[i].full = s.pending[i].full || full
-			return
-		}
-	}
-	s.pending = append(s.pending, request{category: category, full: full})
 	select {
 	case s.wake <- struct{}{}:
 	default:
+	}
+	return nil
+}
+
+func (s *Service) wait(ctx context.Context, delay time.Duration) {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	case <-s.wake:
 	}
 }
 
 func (s *Service) run(ctx context.Context) {
 	for ctx.Err() == nil {
-		s.mu.Lock()
-		if len(s.pending) == 0 {
-			s.mu.Unlock()
-			select {
-			case <-ctx.Done():
-				return
-			case <-s.wake:
-			}
+		current, err := s.store.next(ctx)
+		if errors.Is(err, sql.ErrNoRows) {
+			s.wait(ctx, time.Second)
 			continue
 		}
-		job := s.pending[0]
-		s.pending = s.pending[1:]
-		s.active = &job
-		started := time.Now()
-		s.runtime[job.category].StartedAt = &started
-		s.mu.Unlock()
-		for failures := int64(0); ctx.Err() == nil; failures++ {
-			s.mu.Lock()
-			s.runtime[job.category].RetryAt = nil
-			s.mu.Unlock()
-			err := s.collect(ctx, job)
-			at := time.Now()
-			if err == nil {
-				s.mu.Lock()
-				s.runtime[job.category].LastOutcome = "success"
-				s.runtime[job.category].FinishedAt = &at
-				s.mu.Unlock()
-				s.logger.Info("favorites_sync_completed", "category", job.category, "full", job.full)
-				break
-			}
+		if err != nil {
+			s.logger.Error("favorites_queue_failed", "error", err)
+			s.wait(ctx, time.Second)
+			continue
+		}
+		if delay := time.Until(time.UnixMilli(current.RetryAt)); delay > 0 {
+			s.wait(ctx, delay)
+			continue
+		}
+		if err := s.collect(ctx, current); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			s.logger.Error("favorites_sync_failed", "category", job.category, "full", job.full, "error", err)
-			s.mu.Lock()
-			s.runtime[job.category].LastError = err.Error()
-			s.runtime[job.category].LastErrorAt = &at
-			if !retryable(err) {
-				s.runtime[job.category].LastOutcome = "failed"
-				s.runtime[job.category].FinishedAt = &at
-				s.mu.Unlock()
-				break
-			}
-			delay := panda.RetryDelay(failures, err, at)
-			retryAt := at.Add(delay)
-			s.runtime[job.category].RetryAt = &retryAt
-			s.mu.Unlock()
-			s.logger.Info("favorites_sync_retry", "category", job.category, "delay", delay)
-			timer := time.NewTimer(delay)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
+			s.logger.Error("favorites_sync_failed", "category", current.category, "error", err)
+			if recordErr := s.store.failed(ctx, current, err); recordErr != nil {
+				s.logger.Error("favorites_failure_record_failed", "error", recordErr)
+				s.wait(ctx, time.Second)
 			}
 		}
-		s.mu.Lock()
-		s.active = nil
-		s.mu.Unlock()
 	}
 }
 
@@ -175,42 +126,86 @@ func retryable(err error) bool {
 	return true
 }
 
-func (s *Service) collect(ctx context.Context, job request) error {
-	known, initialized, err := s.store.known(ctx, job.category)
+// A rejected continuation gets one fresh traversal. Authentication, bans and
+// transient failures retain the checkpoint; a broken profile must still fail.
+func invalidContinuation(err error) bool {
+	if errors.Is(err, panda.ErrFavoritesPage) {
+		return true
+	}
+	if e, ok := errors.AsType[*panda.HTTPError](err); ok {
+		switch e.StatusCode {
+		case http.StatusBadRequest, http.StatusNotFound, http.StatusGone, http.StatusUnprocessableEntity:
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) collect(ctx context.Context, current job) error {
+	err := s.collectPage(ctx, current)
+	if err != nil && current.NextUrl != "" && current.Restarted == 0 && invalidContinuation(err) {
+		if restartErr := s.store.restart(ctx, current.CategoryID); restartErr != nil {
+			return restartErr
+		}
+		if s.logger != nil {
+			s.logger.Info("favorites_traversal_restarted", "category", current.category, "error", err)
+		}
+		return nil
+	}
+	return err
+}
+
+func (s *Service) collectPage(ctx context.Context, current job) error {
+	known, _, err := s.store.known(ctx, current.category)
 	if err != nil {
 		return err
 	}
-	full := job.full || !initialized
-	var entries []panda.Favorite
-	var name, next string
-	var last time.Time
-	visited := make(map[string]bool)
-	seen := make(map[int64]bool)
-	for {
-		if visited[next] {
+	visited, err := s.store.q.VisitedPages(ctx, current.CategoryID)
+	if err != nil {
+		return err
+	}
+	for _, url := range visited {
+		if url == current.NextUrl {
 			return fmt.Errorf("%w: pagination loop", panda.ErrFavoritesPage)
 		}
-		visited[next] = true
-		page, err := s.client.GetFavoritesPage(ctx, job.category, next)
-		if err != nil {
-			return err
-		}
-		name = page.CategoryName
-		newEntries := 0
-		for _, entry := range page.Entries {
-			if seen[entry.GalleryRef.ID] || (!last.IsZero() && entry.AddedAt.After(last)) {
-				return fmt.Errorf("%w: duplicate or out-of-order favorites across pages", panda.ErrFavoritesPage)
-			}
-			seen[entry.GalleryRef.ID], last = true, entry.AddedAt
-			if at, ok := known[entry.GalleryRef.ID]; !ok || at != entry.AddedAt.Unix() {
-				newEntries++
-			}
-			entries = append(entries, entry)
-		}
-		if page.Next == "" || (!full && newEntries < panda.FavoritesPageSize) {
-			break
-		}
-		next = page.Next
 	}
-	return s.store.complete(ctx, job.category, name, full, entries)
+	seenIDs, err := s.store.q.SeenFavorites(ctx, current.CategoryID)
+	if err != nil {
+		return err
+	}
+	seen := make(map[int64]bool, len(seenIDs))
+	for _, id := range seenIDs {
+		seen[id] = true
+	}
+	page, err := s.client.GetFavoritesPage(ctx, current.category, current.NextUrl)
+	if err != nil {
+		return err
+	}
+	last := current.LastAddedAt
+	reachedKnown := false
+	for _, entry := range page.Entries {
+		id, at := entry.GalleryRef.ID, entry.AddedAt.Unix()
+		if !seen[id] {
+			if last != 0 && at > last {
+				return fmt.Errorf("%w: out-of-order favorites across pages", panda.ErrFavoritesPage)
+			}
+			last = at
+		}
+		seen[id] = true
+		if previous, ok := known[id]; ok && previous == at {
+			reachedKnown = true
+		}
+	}
+	done := page.Next == "" || (current.Full == 0 && reachedKnown)
+	if err := s.store.savePage(ctx, current, page, done, last); err != nil {
+		return err
+	}
+	if s.logger != nil {
+		event := "favorites_page_saved"
+		if done {
+			event = "favorites_sync_completed"
+		}
+		s.logger.Info(event, "category", current.category, "full", current.Full != 0, "entries_saved", len(seen), "pages_saved", current.PagesSaved+1)
+	}
+	return nil
 }

@@ -4,6 +4,9 @@ export interface FavoriteCategory {
   category: number
   name: string
   favorites: number
+  entries_saved: number
+  pages_saved: number
+  last_saved_at?: string
   last_synced_at?: string
   state: 'idle' | 'queued' | 'running' | 'waiting_cooldown'
   full: boolean

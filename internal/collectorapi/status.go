@@ -21,6 +21,9 @@ type FavoriteCategory struct {
 	Category     int        `json:"category"`
 	Name         string     `json:"name"`
 	Favorites    int64      `json:"favorites"`
+	EntriesSaved int64      `json:"entries_saved"`
+	PagesSaved   int64      `json:"pages_saved"`
+	LastSavedAt  *time.Time `json:"last_saved_at,omitempty"`
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 	State        string     `json:"state"`
 	Full         bool       `json:"full"`

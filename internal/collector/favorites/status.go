@@ -8,39 +8,56 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 )
 
+func timestamp(value int64) *time.Time {
+	if value == 0 {
+		return nil
+	}
+	at := time.UnixMilli(value)
+	return &at
+}
+
 func (s *Service) Status(ctx context.Context) (collectorapi.FavoritesStatus, error) {
-	rows, err := s.store.q.CategoryStatistics(ctx, dbgen.CategoryStatisticsParams{
-		Host: s.store.host, AccountKey: s.store.accountKey,
+	categories := make([]collectorapi.FavoriteCategory, 10)
+	for i := range categories {
+		categories[i].Category, categories[i].State = i, "idle"
+	}
+	err := s.store.transaction(ctx, func(q *dbgen.Queries) error {
+		rows, err := q.CategoryStatistics(ctx, dbgen.CategoryStatisticsParams{Host: s.store.host, AccountKey: s.store.accountKey})
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			category := &categories[row.Category]
+			category.Name, category.Favorites = row.Name, row.Favorites
+			category.LastSyncedAt = timestamp(row.SyncedAt)
+		}
+		syncs, err := q.ListSyncs(ctx, dbgen.ListSyncsParams{Host: s.store.host, AccountKey: s.store.accountKey})
+		if err != nil {
+			return err
+		}
+		for _, row := range syncs {
+			current := row.FavoriteSync
+			category := &categories[row.Category]
+			category.State = current.State
+			if current.State == "success" || current.State == "failed" {
+				category.State, category.LastOutcome = "idle", current.State
+			}
+			category.Full = current.Full != 0
+			category.Queued = current.State == "queued" || current.FollowupFull != 0
+			category.QueuedFull = current.FollowupFull != 0 || (current.State == "queued" && current.Full != 0)
+			category.StartedAt, category.FinishedAt = timestamp(current.StartedAt), timestamp(current.FinishedAt)
+			category.LastError, category.LastErrorAt = current.LastError, timestamp(current.LastErrorAt)
+			category.RetryAt = timestamp(current.RetryAt)
+			category.PagesSaved, category.EntriesSaved = current.PagesSaved, current.EntriesSaved
+			category.LastSavedAt = timestamp(current.LastSavedAt)
+			if current.State == "running" && current.RetryAt > time.Now().UnixMilli() {
+				category.State = "waiting_cooldown"
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return collectorapi.FavoritesStatus{}, err
-	}
-	s.mu.Lock()
-	categories := append([]collectorapi.FavoriteCategory(nil), s.runtime[:]...)
-	for category := range categories {
-		categories[category].Category = category
-		categories[category].State = "idle"
-	}
-	for _, job := range s.pending {
-		categories[job.category].State = "queued"
-		categories[job.category].Queued = true
-		categories[job.category].QueuedFull = job.full
-	}
-	if job := s.active; job != nil {
-		category := &categories[job.category]
-		category.State = "running"
-		category.Full = job.full
-		if category.RetryAt != nil && category.RetryAt.After(time.Now()) {
-			category.State = "waiting_cooldown"
-		}
-	}
-	s.mu.Unlock()
-	for _, row := range rows {
-		category := &categories[row.Category]
-		category.Name = row.Name
-		category.Favorites = row.Favorites
-		at := time.UnixMilli(row.SyncedAt)
-		category.LastSyncedAt = &at
 	}
 	return collectorapi.FavoritesStatus{Host: s.store.host, AccountKey: s.store.accountKey, Categories: categories}, nil
 }
