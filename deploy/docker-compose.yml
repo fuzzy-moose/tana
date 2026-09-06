@@ -1,0 +1,24 @@
+name: tana
+
+services:
+  tana:
+    image: ghcr.io/fuzzy-moose/tana:main
+    ports:
+      - "8080:8080"
+    volumes:
+      - tana-data:/data
+      # Register /library in Tana; files must be readable by UID/GID 65532.
+      - ${TANA_LIBRARY_DIR:?Set TANA_LIBRARY_DIR to your comic directory}:/library:ro
+
+  collector:
+    image: ghcr.io/fuzzy-moose/tana-collector:main
+    environment:
+      PANDA_FEED_URL: ${PANDA_FEED_URL:?Set PANDA_FEED_URL to your upstream feed URL}
+    ports:
+      - "8081:8081"
+    volumes:
+      - collector-data:/data
+
+volumes:
+  tana-data:
+  collector-data:
