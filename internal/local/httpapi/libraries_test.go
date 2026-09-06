@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fuzzy-moose/tana/internal/local"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
@@ -40,7 +41,12 @@ func testHandlerWithScanFS(t *testing.T, dirFS func(string) fs.FS) http.Handler 
 	t.Cleanup(libraries.Close)
 	scans := scan.New(t.Context(), db, libraries, dirFS, logger)
 	t.Cleanup(scans.Close)
-	return NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db), nil)
+	return NewHandler(&local.App{
+		Logger:    logger,
+		Libraries: libraries,
+		Scans:     scans,
+		Galleries: gallery.NewSQLiteRepository(db),
+	})
 }
 
 func request(t *testing.T, handler http.Handler, method, path, body string, wantStatus int) *httptest.ResponseRecorder {
@@ -53,6 +59,12 @@ func request(t *testing.T, handler http.Handler, method, path, body string, want
 	handler.ServeHTTP(w, r)
 	if w.Code != wantStatus {
 		t.Fatalf("%s %s: got %d %s, want %d", method, path, w.Code, w.Body, wantStatus)
+	}
+	if w.Code == http.StatusMethodNotAllowed {
+		if w.Header().Get("Allow") == "" {
+			t.Fatal("missing Allow header")
+		}
+		return w
 	}
 	if w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("missing cache policy")
@@ -161,7 +173,6 @@ func TestLibraryAPIValidation(t *testing.T) {
 		{"POST", "/api/libraries", `{"name":"x","extra":1}`, "invalid_json", 400},
 		{"POST", "/api/libraries", `{"name":"` + strings.Repeat("x", 17000) + `"}`, "invalid_json", 400},
 		{"GET", "/api/libraries/missing", "", "not_found", 404},
-		{"PUT", "/api/libraries", "", "method_not_allowed", 405},
 	} {
 		t.Run(tc.method+tc.path+tc.code, func(t *testing.T) {
 			w := request(t, h, tc.method, tc.path, tc.body, tc.status)
@@ -169,10 +180,8 @@ func TestLibraryAPIValidation(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result["error"] != tc.code {
 				t.Fatalf("unexpected error: %s, %v", w.Body, err)
 			}
-			if tc.status == 405 && w.Header().Get("Allow") == "" {
-				t.Fatal("missing Allow header")
-			}
 		})
 	}
+	request(t, h, "PUT", "/api/libraries", "", 405)
 	request(t, h, "POST", "/api/libraries", registrationJSON(t, "Missing", filepath.Join(t.TempDir(), "missing")), 422)
 }

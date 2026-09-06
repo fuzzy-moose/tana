@@ -37,18 +37,13 @@ func TestAppLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer app.Close()
-	w := httptest.NewRecorder()
-	app.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("health: %d", w.Code)
-	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var n int
 		if err := app.db.QueryRow("SELECT count(*) FROM raw_feeds WHERE processed_at IS NOT NULL").Scan(&n); err != nil {
 			t.Fatal(err)
 		}
-		collected, err := app.metadata.Get(t.Context(), 42)
+		collected, err := app.Metadata.Get(t.Context(), 42)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			t.Fatal(err)
 		}

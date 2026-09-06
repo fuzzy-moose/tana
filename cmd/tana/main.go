@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/fuzzy-moose/tana/internal/local"
+	"github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
@@ -46,7 +47,7 @@ func run(development bool) error {
 		return err
 	}
 	defer app.Close()
-	if err := server.Run(ctx, cfg, logger, app.Handler()); err != nil {
+	if err := server.Run(ctx, cfg, logger, httpapi.NewHandler(app)); err != nil {
 		logger.Error("server_failed", "error", err)
 		return err
 	}

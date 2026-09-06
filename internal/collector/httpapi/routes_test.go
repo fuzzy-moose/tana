@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fuzzy-moose/tana/internal/collector"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/panda"
@@ -19,7 +20,10 @@ import (
 
 func TestAuthenticationProtectsEveryRouteExceptHealth(t *testing.T) {
 	var logs bytes.Buffer
-	handler := NewHandler(slog.New(slog.NewJSONHandler(&logs, nil)), nil, "collector-secret")
+	handler := NewHandler(&collector.App{
+		Logger:   slog.New(slog.NewJSONHandler(&logs, nil)),
+		APIToken: "collector-secret",
+	})
 	for _, path := range []string{"/api/metadata/lookup", "/api/metadata/fetches", "/api/metadata/fetches/job", "/missing", "/healthz/"} {
 		for _, auth := range []string{"", "Bearer wrong", "Basic collector-secret", "Bearer", "Bearer  collector-secret"} {
 			r := httptest.NewRequest(http.MethodPost, path+"?token=collector-secret", nil)
@@ -61,7 +65,7 @@ func TestAuthenticationProtectsEveryRouteExceptHealth(t *testing.T) {
 	r = httptest.NewRequest(http.MethodGet, "/missing", nil)
 	r.Header.Set("Authorization", "Bearer ")
 	w = httptest.NewRecorder()
-	NewHandler(slog.New(slog.DiscardHandler), nil, "").ServeHTTP(w, r)
+	NewHandler(&collector.App{Logger: slog.New(slog.DiscardHandler)}).ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatal("empty configured token opened API access")
 	}
@@ -79,7 +83,7 @@ func pausedHandler(t *testing.T) (http.Handler, *sql.DB) {
 	logger := slog.New(slog.DiscardHandler)
 	service := metadata.New(ctx, db, nil, logger)
 	t.Cleanup(service.Close)
-	return NewHandler(logger, service, "test-token"), db
+	return NewHandler(&collector.App{Logger: logger, Metadata: service, APIToken: "test-token"}), db
 }
 
 func apiRequest(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {

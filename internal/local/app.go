@@ -7,22 +7,23 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
 
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
-	"github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
 
 type App struct {
-	db        *sql.DB
-	libraries *library.Service
-	scans     *scan.Service
-	handler   http.Handler
+	Logger    *slog.Logger
+	Libraries *library.Service
+	Scans     *scan.Service
+	Galleries *gallery.SQLiteRepository
+	Web       fs.FS
+
+	db *sql.DB
 }
 
 // New opens application storage and starts background availability checks.
@@ -53,20 +54,18 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 	}
 	scans := scan.New(ctx, db, libraries, os.DirFS, logger)
 	return &App{
+		Logger:    logger,
+		Libraries: libraries,
+		Scans:     scans,
+		Galleries: gallery.NewSQLiteRepository(db),
+		Web:       web,
 		db:        db,
-		libraries: libraries,
-		scans:     scans,
-		handler:   httpapi.NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db), web),
 	}, nil
-}
-
-func (a *App) Handler() http.Handler {
-	return a.handler
 }
 
 // Close stops background work and releases storage after HTTP requests drain.
 func (a *App) Close() error {
-	a.scans.Close()
-	a.libraries.Close()
+	a.Scans.Close()
+	a.Libraries.Close()
 	return a.db.Close()
 }

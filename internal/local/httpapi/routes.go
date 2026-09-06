@@ -1,58 +1,40 @@
 package httpapi
 
 import (
-	"io/fs"
-	"log/slog"
 	"net/http"
 
-	"github.com/fuzzy-moose/tana/internal/local/gallery"
-	"github.com/fuzzy-moose/tana/internal/local/library"
-	"github.com/fuzzy-moose/tana/internal/local/scan"
+	"github.com/fuzzy-moose/tana/internal/local"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func NewHandler(logger *slog.Logger, libraries *library.Service, scans *scan.Service, galleries *gallery.SQLiteRepository, web fs.FS) http.Handler {
+func NewHandler(app *local.App) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /api/galleries", HandleListGalleries(galleries))
-	mux.Handle("GET /api/gallery-search/completions", HandleCompleteGallerySearch(galleries))
-	mux.HandleFunc("/api/gallery-search/completions", methodNotAllowed("GET, HEAD"))
-	mux.Handle("GET /api/galleries/{id}", HandleGetGallery(galleries))
-	mux.Handle("GET /api/galleries/{id}/pages/{number}/image", HandleGalleryImage(galleries))
-	mux.HandleFunc("/api/galleries", methodNotAllowed("GET, HEAD"))
-	mux.HandleFunc("/api/galleries/{id}", methodNotAllowed("GET, HEAD"))
-	mux.HandleFunc("/api/galleries/{id}/pages/{number}/image", methodNotAllowed("GET, HEAD"))
-	mux.Handle("POST /api/scans", HandleRequestScan(scans))
-	mux.Handle("GET /api/scans/status", HandleScanStatus(scans))
-	mux.HandleFunc("/api/scans", methodNotAllowed("POST"))
-	mux.HandleFunc("/api/scans/status", methodNotAllowed("GET, HEAD"))
-	mux.Handle("POST /api/libraries", HandleCreateLibrary(libraries))
-	mux.Handle("GET /api/libraries", HandleListLibraries(libraries))
-	mux.Handle("GET /api/libraries/{id}", HandleGetLibrary(libraries))
-	mux.Handle("PATCH /api/libraries/{id}", HandleRenameLibrary(libraries))
-	mux.Handle("DELETE /api/libraries/{id}", HandleDeleteLibrary(libraries))
-	mux.Handle("POST /api/libraries/{id}/availability-check", HandleCheckLibraryAvailability(libraries))
-	mux.HandleFunc("/api/libraries", methodNotAllowed("GET, HEAD, POST"))
-	mux.HandleFunc("/api/libraries/{id}", methodNotAllowed("GET, HEAD, PATCH, DELETE"))
-	mux.HandleFunc("/api/libraries/{id}/availability-check", methodNotAllowed("POST"))
+	mux.Handle("GET /api/galleries", HandleListGalleries(app.Galleries))
+	mux.Handle("GET /api/gallery-search/completions", HandleCompleteGallerySearch(app.Galleries))
+	mux.Handle("GET /api/galleries/{id}", HandleGetGallery(app.Galleries))
+	mux.Handle("GET /api/galleries/{id}/pages/{number}/image", HandleGalleryImage(app.Galleries))
+	mux.Handle("POST /api/scans", HandleRequestScan(app.Scans))
+	mux.Handle("GET /api/scans/status", HandleScanStatus(app.Scans))
+	mux.Handle("POST /api/libraries", HandleCreateLibrary(app.Libraries))
+	mux.Handle("GET /api/libraries", HandleListLibraries(app.Libraries))
+	mux.Handle("GET /api/libraries/{id}", HandleGetLibrary(app.Libraries))
+	mux.Handle("PATCH /api/libraries/{id}", HandleRenameLibrary(app.Libraries))
+	mux.Handle("DELETE /api/libraries/{id}", HandleDeleteLibrary(app.Libraries))
+	mux.Handle("POST /api/libraries/{id}/availability-check", HandleCheckLibraryAvailability(app.Libraries))
 	mux.HandleFunc("GET /healthz", server.Health)
-	mux.HandleFunc("/healthz", server.HealthMethodNotAllowed)
-	mux.HandleFunc("/api", server.NotFound)
-	mux.HandleFunc("/api/", server.NotFound)
-	if web == nil {
-		mux.HandleFunc("/", server.NotFound)
-	} else {
-		files := http.FileServerFS(web)
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodGet && r.Method != http.MethodHead {
-				methodNotAllowed("GET, HEAD")(w, r)
-				return
-			}
-			files.ServeHTTP(w, r)
-		})
+
+	root := http.NewServeMux()
+	root.Handle("/api", mux)
+	root.Handle("/api/", mux)
+	root.Handle("/healthz", mux)
+	if app.Web != nil {
+		files := http.NewServeMux()
+		files.Handle("GET /", http.FileServerFS(app.Web))
+		root.Handle("/", files)
 	}
-	var handler http.Handler = mux
+	var handler http.Handler = root
 	handler = server.CSRFMiddleware(handler)
-	handler = server.LoggingMiddleware(logger, handler)
+	handler = server.LoggingMiddleware(app.Logger, handler)
 	handler = server.HTTPContextMiddleware(handler)
 	return handler
 }

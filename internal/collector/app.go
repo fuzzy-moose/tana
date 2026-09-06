@@ -13,17 +13,18 @@ import (
 	"unicode"
 
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
-	"github.com/fuzzy-moose/tana/internal/collector/httpapi"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
 type App struct {
-	db       *sql.DB
-	feeds    *feed.Service
-	metadata *metadata.Service
-	handler  http.Handler
+	Logger   *slog.Logger
+	Metadata *metadata.Service
+	APIToken string
+
+	db    *sql.DB
+	feeds *feed.Service
 }
 
 func New(ctx context.Context, logger *slog.Logger) (*App, error) {
@@ -58,18 +59,18 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open collector storage: %w", err)
 	}
-	app := &App{db: db, feeds: feed.New(ctx, db, cfg, nil, logger), metadata: metadata.New(ctx, db, client, logger)}
-	app.handler = httpapi.NewHandler(logger, app.metadata, token)
-	return app, nil
-}
-
-func (a *App) Handler() http.Handler {
-	return a.handler
+	return &App{
+		Logger:   logger,
+		APIToken: token,
+		db:       db,
+		feeds:    feed.New(ctx, db, cfg, nil, logger),
+		Metadata: metadata.New(ctx, db, client, logger),
+	}, nil
 }
 
 // Close stops background work before releasing its database.
 func (a *App) Close() error {
 	a.feeds.Close()
-	a.metadata.Close()
+	a.Metadata.Close()
 	return a.db.Close()
 }

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/local"
+	"github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 )
 
@@ -28,6 +29,7 @@ func TestAppLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = app.Close() })
+	handler := httpapi.NewHandler(app)
 
 	body, err := json.Marshal(map[string]string{"name": "Manga", "path": t.TempDir()})
 	if err != nil {
@@ -36,7 +38,7 @@ func TestAppLifecycle(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/libraries", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	app.Handler().ServeHTTP(w, req)
+	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create library: %d %s", w.Code, w.Body)
 	}
@@ -49,7 +51,7 @@ func TestAppLifecycle(t *testing.T) {
 	// the HTTP server drains requests, until the application is closed.
 	cancel()
 	w = httptest.NewRecorder()
-	app.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/libraries/"+strconv.FormatInt(created.ID, 10), nil))
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/libraries/"+strconv.FormatInt(created.ID, 10), nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("request during shutdown: %d %s", w.Code, w.Body)
 	}
@@ -63,7 +65,7 @@ func TestAppLifecycle(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
 	w = httptest.NewRecorder()
-	reopened.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/libraries/"+strconv.FormatInt(created.ID, 10), nil))
+	httpapi.NewHandler(reopened).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/libraries/"+strconv.FormatInt(created.ID, 10), nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("persisted library: %d %s", w.Code, w.Body)
 	}
@@ -110,6 +112,7 @@ func TestAppServesWebAlongsideAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = app.Close() })
+	handler := httpapi.NewHandler(app)
 
 	for _, tt := range []struct {
 		method, path, contentType, body string
@@ -119,21 +122,28 @@ func TestAppServesWebAlongsideAPI(t *testing.T) {
 		{http.MethodHead, "/", "text/html", "", http.StatusOK},
 		{http.MethodGet, "/app.js", "text/javascript", "console.log('tana')", http.StatusOK},
 		{http.MethodGet, "/api/libraries", "application/json", "", http.StatusOK},
-		{http.MethodGet, "/api", "application/json", "not_found", http.StatusNotFound},
-		{http.MethodGet, "/api/missing", "application/json", "not_found", http.StatusNotFound},
+		{http.MethodGet, "/api", "", "", http.StatusNotFound},
+		{http.MethodGet, "/api/", "", "", http.StatusNotFound},
+		{http.MethodGet, "/api/missing", "", "", http.StatusNotFound},
+		{http.MethodPost, "/api/missing", "", "", http.StatusNotFound},
+		{http.MethodPut, "/api/libraries", "", "", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/api/scans", "", "", http.StatusMethodNotAllowed},
 		{http.MethodGet, "/healthz", "application/json", `"status":"ok"`, http.StatusOK},
-		{http.MethodPost, "/healthz", "application/json", "method_not_allowed", http.StatusMethodNotAllowed},
-		{http.MethodPost, "/", "application/json", "method_not_allowed", http.StatusMethodNotAllowed},
-		{http.MethodGet, "/missing.js", "text/plain", "404", http.StatusNotFound},
+		{http.MethodPost, "/healthz", "", "", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/", "", "", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/missing.js", "", "", http.StatusNotFound},
 	} {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			app.Handler().ServeHTTP(w, httptest.NewRequest(tt.method, tt.path, nil))
+			handler.ServeHTTP(w, httptest.NewRequest(tt.method, tt.path, nil))
 			if w.Code != tt.status || !strings.HasPrefix(w.Header().Get("Content-Type"), tt.contentType) || !strings.Contains(w.Body.String(), tt.body) {
 				t.Fatalf("response: %d %s %s", w.Code, w.Header().Get("Content-Type"), w.Body)
 			}
 			if tt.method == http.MethodHead && w.Body.Len() != 0 {
 				t.Fatalf("HEAD returned a body: %s", w.Body)
+			}
+			if tt.status == http.StatusMethodNotAllowed && w.Header().Get("Allow") == "" {
+				t.Fatal("missing Allow header")
 			}
 		})
 	}

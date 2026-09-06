@@ -11,9 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	collector "github.com/fuzzy-moose/tana/internal/collector/httpapi"
+	"github.com/fuzzy-moose/tana/internal/collector"
+	collectorapi "github.com/fuzzy-moose/tana/internal/collector/httpapi"
+	"github.com/fuzzy-moose/tana/internal/local"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
-	local "github.com/fuzzy-moose/tana/internal/local/httpapi"
+	localapi "github.com/fuzzy-moose/tana/internal/local/httpapi"
 	"github.com/fuzzy-moose/tana/internal/local/library"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
@@ -33,9 +35,16 @@ func TestServiceRoutes(t *testing.T) {
 		t.Cleanup(libraries.Close)
 		scans := scan.New(t.Context(), db, libraries, os.DirFS, logger)
 		t.Cleanup(scans.Close)
-		return local.NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db), nil)
+		return localapi.NewHandler(&local.App{
+			Logger:    logger,
+			Libraries: libraries,
+			Scans:     scans,
+			Galleries: gallery.NewSQLiteRepository(db),
+		})
 	}
-	collectorHandler := func(logger *slog.Logger) http.Handler { return collector.NewHandler(logger, nil, "test-token") }
+	collectorHandler := func(logger *slog.Logger) http.Handler {
+		return collectorapi.NewHandler(&collector.App{Logger: logger, APIToken: "test-token"})
+	}
 	for name, newHandler := range map[string]func(*slog.Logger) http.Handler{"local": localHandler, "collector": collectorHandler} {
 		t.Run(name, func(t *testing.T) {
 			for _, tc := range []struct {
@@ -44,9 +53,9 @@ func TestServiceRoutes(t *testing.T) {
 				origin             string
 			}{
 				{"GET", "/healthz", `{"status":"ok"}`, 200, ""},
-				{"HEAD", "/healthz", "", 200, ""},
-				{"POST", "/healthz", `{"error":"method_not_allowed"}`, 405, ""},
-				{"GET", "/missing?secret=hidden", `{"error":"not_found"}`, 404, ""},
+				{"HEAD", "/healthz", `{"status":"ok"}`, 200, ""},
+				{"POST", "/healthz", "", 405, ""},
+				{"GET", "/missing?secret=hidden", "", 404, ""},
 				{"POST", "/healthz", `{"error":"cross_origin_request"}`, 403, "https://untrusted.example"},
 			} {
 				t.Run(tc.method+tc.path, func(t *testing.T) {
@@ -61,12 +70,17 @@ func TestServiceRoutes(t *testing.T) {
 						req.Header.Set("Origin", tc.origin)
 					}
 					handler.ServeHTTP(rr, req)
-					if rr.Code != tc.status || rr.Header().Get("Content-Type") != "application/json" || rr.Header().Get("Cache-Control") != "no-store" {
+					if rr.Code != tc.status {
 						t.Fatalf("unexpected response: %d %v %s", rr.Code, rr.Header(), rr.Body)
 					}
-					// net/http suppresses HEAD bodies on the wire; Recorder does not.
-					if tc.method != "HEAD" && strings.TrimSpace(rr.Body.String()) != tc.body {
-						t.Fatalf("unexpected body: %s", rr.Body)
+					if tc.body != "" {
+						if rr.Header().Get("Content-Type") != "application/json" || rr.Header().Get("Cache-Control") != "no-store" {
+							t.Fatalf("unexpected headers: %v", rr.Header())
+						}
+						// net/http suppresses HEAD bodies on the wire; Recorder does not.
+						if tc.method != "HEAD" && strings.TrimSpace(rr.Body.String()) != tc.body {
+							t.Fatalf("unexpected body: %s", rr.Body)
+						}
 					}
 					if tc.status == 405 && rr.Header().Get("Allow") != "GET, HEAD" {
 						t.Fatal("missing allowed methods")

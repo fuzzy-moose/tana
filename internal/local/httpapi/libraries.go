@@ -133,10 +133,3 @@ func writeLibraryError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	server.WriteJSON(w, status, map[string]string{"error": code})
 }
-
-func methodNotAllowed(allow string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Allow", allow)
-		server.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
-	}
-}

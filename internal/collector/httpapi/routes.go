@@ -3,29 +3,23 @@ package httpapi
 import (
 	"crypto/sha256"
 	"crypto/subtle"
-	"log/slog"
 	"net/http"
 	"strings"
 
-	"github.com/fuzzy-moose/tana/internal/collector/metadata"
+	"github.com/fuzzy-moose/tana/internal/collector"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func NewHandler(logger *slog.Logger, service *metadata.Service, token string) http.Handler {
+func NewHandler(app *collector.App) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/metadata/lookup", lookup(service))
-	mux.HandleFunc("/api/metadata/lookup", methodNotAllowed("POST"))
-	mux.HandleFunc("POST /api/metadata/fetches", requestFetch(service))
-	mux.HandleFunc("/api/metadata/fetches", methodNotAllowed("POST"))
-	mux.HandleFunc("GET /api/metadata/fetches/{id}", getFetchJob(service))
-	mux.HandleFunc("/api/metadata/fetches/{id}", methodNotAllowed("GET, HEAD"))
+	mux.Handle("POST /api/metadata/lookup", HandleLookupMetadata(app.Metadata))
+	mux.Handle("POST /api/metadata/fetches", HandleRequestFetch(app.Metadata))
+	mux.Handle("GET /api/metadata/fetches/{id}", HandleGetFetchJob(app.Metadata))
 	mux.HandleFunc("GET /healthz", server.Health)
-	mux.HandleFunc("/healthz", server.HealthMethodNotAllowed)
-	mux.HandleFunc("/", server.NotFound)
 	var handler http.Handler = mux
 	handler = server.CSRFMiddleware(handler)
-	handler = authenticate(token, handler)
-	handler = server.LoggingMiddleware(logger, handler)
+	handler = authenticate(app.APIToken, handler)
+	handler = server.LoggingMiddleware(app.Logger, handler)
 	handler = server.HTTPContextMiddleware(handler)
 	return handler
 }
@@ -48,11 +42,4 @@ func authenticate(token string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func methodNotAllowed(allow string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Allow", allow)
-		server.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
-	}
 }
