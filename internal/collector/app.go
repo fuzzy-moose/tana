@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
 	"github.com/fuzzy-moose/tana/internal/collector/httpapi"
@@ -25,6 +27,10 @@ type App struct {
 }
 
 func New(ctx context.Context, logger *slog.Logger) (*App, error) {
+	token := strings.TrimSpace(os.Getenv("TANA_COLLECTOR_API_TOKEN"))
+	if token == "" || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
+		return nil, fmt.Errorf("TANA_COLLECTOR_API_TOKEN must be nonempty and contain no whitespace")
+	}
 	cfg, err := feed.LoadConfig(os.Getenv)
 	if err != nil {
 		return nil, err
@@ -52,10 +58,9 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open collector storage: %w", err)
 	}
-	return &App{
-		db: db, feeds: feed.New(ctx, db, cfg, nil, logger), handler: httpapi.NewHandler(logger),
-		metadata: metadata.New(ctx, db, client, logger),
-	}, nil
+	app := &App{db: db, feeds: feed.New(ctx, db, cfg, nil, logger), metadata: metadata.New(ctx, db, client, logger)}
+	app.handler = httpapi.NewHandler(logger, app.metadata, token)
+	return app, nil
 }
 
 func (a *App) Handler() http.Handler {

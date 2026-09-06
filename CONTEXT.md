@@ -38,13 +38,16 @@ A metadata provider supplying gallery metadata. Its upstream galleries are uniqu
 An upstream Panda gallery's ID together with the token needed to access it. The gallery ID alone determines identity; a gallery's token is assumed immutable.
 
 **Gallery reference inventory**:
-The distinct Panda gallery references discovered through feeds or Panda metadata. A gallery belongs to the inventory whether or not its metadata has been retrieved successfully.
+The distinct Panda gallery references discovered through feeds or Panda metadata, or supplied by Tana and confirmed by Panda. Tana-supplied references enter the inventory only after successful metadata retrieval confirms their tokens; references discovered through feeds or Panda metadata may await retrieval.
 
 **Collected Panda metadata**:
 The latest successfully retrieved metadata for an upstream Panda gallery, retained indefinitely even if the gallery becomes unavailable upstream.
 
 **Metadata refresh time**:
 The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.
+
+**Metadata fetch job**:
+A durable request from Tana to retrieve fresh Panda metadata for supplied gallery references, with a pending, successful, or failed outcome for each reference. Queued references are not evidence of valid tokens or membership in the gallery reference inventory.
 
 **Raw feed**:
 A captured upstream feed in its original form, retained independently of its parsed entries. Panda feed entries identify upstream galleries for later metadata retrieval.

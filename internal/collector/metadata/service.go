@@ -5,8 +5,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -15,8 +17,8 @@ import (
 )
 
 type CollectedMetadata struct {
-	Metadata    panda.Metadata
-	RefreshedAt time.Time
+	Metadata    panda.Metadata `json:"metadata"`
+	RefreshedAt time.Time      `json:"refreshed_at"`
 }
 
 type Service struct {
@@ -25,13 +27,14 @@ type Service struct {
 	logger  *slog.Logger
 	cancel  context.CancelFunc
 	workers sync.WaitGroup
+	wake    chan struct{}
 }
 
 // New starts a single collector that also drains work persisted before startup.
 // The caller owns db and the client's timeout and rate limiting.
 func New(ctx context.Context, db *sql.DB, client *panda.Client, logger *slog.Logger) *Service {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Service{store: &store{db: db, q: dbgen.New(db)}, client: client, logger: logger, cancel: cancel}
+	s := &Service{store: &store{db: db, q: dbgen.New(db)}, client: client, logger: logger, cancel: cancel, wake: make(chan struct{}, 1)}
 	s.workers.Go(func() { s.run(ctx) })
 	return s
 }
@@ -75,11 +78,16 @@ func (s *Service) run(ctx context.Context) {
 			timer.Stop()
 			return
 		case <-timer.C:
+		case <-s.wake:
+			timer.Stop()
 		}
 	}
 }
 
 func (s *Service) collect(ctx context.Context) (time.Duration, error) {
+	if err := s.store.maintainJobs(ctx, time.Now()); err != nil {
+		return 0, err
+	}
 	retry, err := s.store.q.RetryState(ctx)
 	if err != nil {
 		return 0, err
@@ -87,33 +95,43 @@ func (s *Service) collect(ctx context.Context) (time.Duration, error) {
 	if delay := time.Until(time.UnixMilli(retry.NextAttemptAt)); delay > 0 {
 		return delay, nil
 	}
-	rows, err := s.store.q.PendingRefs(ctx, panda.MaxBatchSize)
-	if err != nil || len(rows) == 0 {
+	refs, err := s.store.pendingRefs(ctx)
+	if err != nil || len(refs) == 0 {
 		return time.Second, err
-	}
-	refs := make([]panda.GalleryRef, len(rows))
-	for i, row := range rows {
-		refs[i] = panda.GalleryRef{ID: row.GalleryID, Token: row.Token}
 	}
 	entries, err := s.client.GetMetadata(ctx, refs)
 	if err != nil {
-		return 0, err
+		var httpErr *panda.HTTPError
+		if !errors.As(err, &httpErr) || httpErr.StatusCode < 400 || httpErr.StatusCode >= 500 ||
+			httpErr.StatusCode == http.StatusRequestTimeout || httpErr.StatusCode == http.StatusTooManyRequests {
+			return 0, err
+		}
+		// Permanent request rejection finishes these entries instead of retrying
+		// forever. Transport errors, throttling and server failures share backoff.
+		entries = make([]panda.Metadata, len(refs))
+		for i, ref := range refs {
+			entries[i] = panda.Metadata{ID: ref.ID, Error: err.Error()}
+		}
 	}
 	// Match by ID, not response position. Reject incomplete or unrelated batches.
-	wanted := make(map[int64]bool, len(refs))
+	wanted := make(map[int64]string, len(refs))
 	for _, ref := range refs {
-		wanted[ref.ID] = true
+		wanted[ref.ID] = ref.Token
 	}
-	for _, entry := range entries {
-		if !wanted[entry.ID] {
+	for i, entry := range entries {
+		token, ok := wanted[entry.ID]
+		if !ok {
 			return 0, fmt.Errorf("unexpected or duplicate Panda gallery %d", entry.ID)
+		}
+		if entry.Error == "" && entry.Token != token {
+			entries[i] = panda.Metadata{ID: entry.ID, Error: "token_mismatch"}
 		}
 		delete(wanted, entry.ID)
 	}
 	if len(wanted) != 0 {
 		return 0, fmt.Errorf("Panda response omitted %d galleries", len(wanted))
 	}
-	if err := s.store.complete(ctx, entries, time.Now()); err != nil {
+	if err := s.store.complete(ctx, refs, entries, time.Now()); err != nil {
 		return 0, err
 	}
 	collected := 0

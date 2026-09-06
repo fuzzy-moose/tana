@@ -31,8 +31,8 @@ func NewClient(apiURL string, httpClient *http.Client) (*Client, error) {
 
 // GalleryRef identifies an upstream gallery independently of Tana's catalog.
 type GalleryRef struct {
-	ID    int64
-	Token string
+	ID    int64  `json:"gid"`
+	Token string `json:"token"`
 }
 
 // HTTPError exposes the upstream status and raw Retry-After header to callers.

@@ -10,6 +10,212 @@ import (
 	"database/sql"
 )
 
+const attachFetch = `-- name: AttachFetch :exec
+INSERT INTO metadata_fetch_job_entries (job_id, position, fetch_id) VALUES (?, ?, ?)
+`
+
+type AttachFetchParams struct {
+	JobID    string
+	Position int64
+	FetchID  int64
+}
+
+func (q *Queries) AttachFetch(ctx context.Context, arg AttachFetchParams) error {
+	_, err := q.db.ExecContext(ctx, attachFetch, arg.JobID, arg.Position, arg.FetchID)
+	return err
+}
+
+const completeFetch = `-- name: CompleteFetch :exec
+UPDATE metadata_fetches SET status = ?, error = ?, refreshed_at = ?
+WHERE gallery_id = ? AND token = ? AND status = 'pending'
+`
+
+type CompleteFetchParams struct {
+	Status      string
+	Error       string
+	RefreshedAt sql.NullInt64
+	GalleryID   int64
+	Token       string
+}
+
+func (q *Queries) CompleteFetch(ctx context.Context, arg CompleteFetchParams) error {
+	_, err := q.db.ExecContext(ctx, completeFetch,
+		arg.Status,
+		arg.Error,
+		arg.RefreshedAt,
+		arg.GalleryID,
+		arg.Token,
+	)
+	return err
+}
+
+const completeFetchJobs = `-- name: CompleteFetchJobs :exec
+UPDATE metadata_fetch_jobs SET completed_at = ?
+WHERE completed_at IS NULL AND NOT EXISTS (
+    SELECT 1 FROM metadata_fetch_job_entries e JOIN metadata_fetches f ON f.id = e.fetch_id
+    WHERE e.job_id = metadata_fetch_jobs.id AND f.status = 'pending'
+)
+`
+
+func (q *Queries) CompleteFetchJobs(ctx context.Context, completedAt sql.NullInt64) error {
+	_, err := q.db.ExecContext(ctx, completeFetchJobs, completedAt)
+	return err
+}
+
+const createFetch = `-- name: CreateFetch :one
+INSERT INTO metadata_fetches (gallery_id, token, status, error) VALUES (?, ?, ?, ?) RETURNING id
+`
+
+type CreateFetchParams struct {
+	GalleryID int64
+	Token     string
+	Status    string
+	Error     string
+}
+
+func (q *Queries) CreateFetch(ctx context.Context, arg CreateFetchParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createFetch,
+		arg.GalleryID,
+		arg.Token,
+		arg.Status,
+		arg.Error,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createFetchJob = `-- name: CreateFetchJob :exec
+INSERT INTO metadata_fetch_jobs (id, created_at) VALUES (?, ?)
+`
+
+type CreateFetchJobParams struct {
+	ID        string
+	CreatedAt int64
+}
+
+func (q *Queries) CreateFetchJob(ctx context.Context, arg CreateFetchJobParams) error {
+	_, err := q.db.ExecContext(ctx, createFetchJob, arg.ID, arg.CreatedAt)
+	return err
+}
+
+const deleteExpiredFetchJobs = `-- name: DeleteExpiredFetchJobs :exec
+DELETE FROM metadata_fetch_jobs WHERE completed_at <= ?
+`
+
+func (q *Queries) DeleteExpiredFetchJobs(ctx context.Context, completedAt sql.NullInt64) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredFetchJobs, completedAt)
+	return err
+}
+
+const deleteOrphanFetches = `-- name: DeleteOrphanFetches :exec
+DELETE FROM metadata_fetches WHERE status != 'pending' AND NOT EXISTS (
+    SELECT 1 FROM metadata_fetch_job_entries e WHERE e.fetch_id = metadata_fetches.id
+)
+`
+
+func (q *Queries) DeleteOrphanFetches(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteOrphanFetches)
+	return err
+}
+
+const failConflictingFetches = `-- name: FailConflictingFetches :exec
+UPDATE metadata_fetches SET status = 'failed', error = 'token_conflict'
+WHERE status = 'pending' AND EXISTS (
+    SELECT 1 FROM gallery_refs r WHERE r.gallery_id = metadata_fetches.gallery_id AND r.token != metadata_fetches.token
+)
+`
+
+func (q *Queries) FailConflictingFetches(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, failConflictingFetches)
+	return err
+}
+
+const fetchJobEntries = `-- name: FetchJobEntries :many
+SELECT f.gallery_id, f.status, f.error, f.refreshed_at
+FROM metadata_fetch_job_entries e JOIN metadata_fetches f ON f.id = e.fetch_id
+WHERE e.job_id = ? ORDER BY e.position
+`
+
+type FetchJobEntriesRow struct {
+	GalleryID   int64
+	Status      string
+	Error       string
+	RefreshedAt sql.NullInt64
+}
+
+func (q *Queries) FetchJobEntries(ctx context.Context, jobID string) ([]FetchJobEntriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, fetchJobEntries, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FetchJobEntriesRow{}
+	for rows.Next() {
+		var i FetchJobEntriesRow
+		if err := rows.Scan(
+			&i.GalleryID,
+			&i.Status,
+			&i.Error,
+			&i.RefreshedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findPendingFetch = `-- name: FindPendingFetch :one
+SELECT id FROM metadata_fetches WHERE gallery_id = ? AND token = ? AND status = 'pending'
+`
+
+type FindPendingFetchParams struct {
+	GalleryID int64
+	Token     string
+}
+
+func (q *Queries) FindPendingFetch(ctx context.Context, arg FindPendingFetchParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, findPendingFetch, arg.GalleryID, arg.Token)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getFetchJob = `-- name: GetFetchJob :one
+SELECT id, created_at, completed_at FROM metadata_fetch_jobs
+WHERE id = ? AND (completed_at IS NULL OR completed_at > ?2)
+`
+
+type GetFetchJobParams struct {
+	ID     string
+	Cutoff sql.NullInt64
+}
+
+func (q *Queries) GetFetchJob(ctx context.Context, arg GetFetchJobParams) (MetadataFetchJob, error) {
+	row := q.db.QueryRowContext(ctx, getFetchJob, arg.ID, arg.Cutoff)
+	var i MetadataFetchJob
+	err := row.Scan(&i.ID, &i.CreatedAt, &i.CompletedAt)
+	return i, err
+}
+
+const getGalleryToken = `-- name: GetGalleryToken :one
+SELECT token FROM gallery_refs WHERE gallery_id = ?
+`
+
+func (q *Queries) GetGalleryToken(ctx context.Context, galleryID int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, getGalleryToken, galleryID)
+	var token string
+	err := row.Scan(&token)
+	return token, err
+}
+
 const getMetadata = `-- name: GetMetadata :one
 SELECT body, refreshed_at FROM gallery_metadata WHERE gallery_id = ?
 `
@@ -24,6 +230,42 @@ func (q *Queries) GetMetadata(ctx context.Context, galleryID int64) (GetMetadata
 	var i GetMetadataRow
 	err := row.Scan(&i.Body, &i.RefreshedAt)
 	return i, err
+}
+
+const pendingFetches = `-- name: PendingFetches :many
+SELECT f.gallery_id, f.token FROM metadata_fetches f
+WHERE f.status = 'pending' AND NOT EXISTS (
+    SELECT 1 FROM metadata_fetches older
+    WHERE older.gallery_id = f.gallery_id AND older.status = 'pending' AND older.id < f.id
+) ORDER BY f.id LIMIT ?
+`
+
+type PendingFetchesRow struct {
+	GalleryID int64
+	Token     string
+}
+
+func (q *Queries) PendingFetches(ctx context.Context, limit int64) ([]PendingFetchesRow, error) {
+	rows, err := q.db.QueryContext(ctx, pendingFetches, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PendingFetchesRow{}
+	for rows.Next() {
+		var i PendingFetchesRow
+		if err := rows.Scan(&i.GalleryID, &i.Token); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const pendingRefs = `-- name: PendingRefs :many
@@ -59,17 +301,23 @@ func (q *Queries) PendingRefs(ctx context.Context, limit int64) ([]PendingRefsRo
 }
 
 const recordAttempt = `-- name: RecordAttempt :exec
-UPDATE gallery_refs SET metadata_attempted_at = ?, metadata_error = ? WHERE gallery_id = ?
+UPDATE gallery_refs SET metadata_attempted_at = ?, metadata_error = ? WHERE gallery_id = ? AND token = ?
 `
 
 type RecordAttemptParams struct {
 	MetadataAttemptedAt sql.NullInt64
 	MetadataError       sql.NullString
 	GalleryID           int64
+	Token               string
 }
 
 func (q *Queries) RecordAttempt(ctx context.Context, arg RecordAttemptParams) error {
-	_, err := q.db.ExecContext(ctx, recordAttempt, arg.MetadataAttemptedAt, arg.MetadataError, arg.GalleryID)
+	_, err := q.db.ExecContext(ctx, recordAttempt,
+		arg.MetadataAttemptedAt,
+		arg.MetadataError,
+		arg.GalleryID,
+		arg.Token,
+	)
 	return err
 }
 

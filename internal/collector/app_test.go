@@ -26,6 +26,7 @@ func TestAppLifecycle(t *testing.T) {
 	defer upstream.Close()
 	dir := t.TempDir()
 	t.Setenv("TANA_COLLECTOR_DATA_DIR", dir)
+	t.Setenv("TANA_COLLECTOR_API_TOKEN", "test-token")
 	t.Setenv("PANDA_FEED_URL", upstream.URL)
 	t.Setenv("PANDA_FEED_INTERVAL", "1h")
 	t.Setenv("PANDA_FEED_RETRY_DELAY", "1m")
@@ -79,6 +80,7 @@ func TestAppLifecycle(t *testing.T) {
 }
 
 func TestMissingFeedURLPreventsStartup(t *testing.T) {
+	t.Setenv("TANA_COLLECTOR_API_TOKEN", "test-token")
 	t.Setenv("PANDA_FEED_URL", "")
 	app, err := New(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if app != nil {
@@ -87,5 +89,17 @@ func TestMissingFeedURLPreventsStartup(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("missing feed URL accepted")
+	}
+}
+
+func TestMissingAPITokenPreventsStartup(t *testing.T) {
+	t.Setenv("TANA_COLLECTOR_API_TOKEN", "")
+	app, err := New(t.Context(), slog.New(slog.DiscardHandler))
+	if app != nil {
+		_ = app.Close()
+		t.Fatal("started collector without an API token")
+	}
+	if err == nil {
+		t.Fatal("missing API token accepted")
 	}
 }

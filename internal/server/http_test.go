@@ -35,7 +35,8 @@ func TestServiceRoutes(t *testing.T) {
 		t.Cleanup(scans.Close)
 		return local.NewHandler(logger, libraries, scans, gallery.NewSQLiteRepository(db), nil)
 	}
-	for name, newHandler := range map[string]func(*slog.Logger) http.Handler{"local": localHandler, "collector": collector.NewHandler} {
+	collectorHandler := func(logger *slog.Logger) http.Handler { return collector.NewHandler(logger, nil, "test-token") }
+	for name, newHandler := range map[string]func(*slog.Logger) http.Handler{"local": localHandler, "collector": collectorHandler} {
 		t.Run(name, func(t *testing.T) {
 			for _, tc := range []struct {
 				method, path, body string
@@ -53,6 +54,9 @@ func TestServiceRoutes(t *testing.T) {
 					handler := newHandler(slog.New(slog.NewJSONHandler(&logs, nil)))
 					rr := httptest.NewRecorder()
 					req := httptest.NewRequest(tc.method, tc.path, nil)
+					if name == "collector" {
+						req.Header.Set("Authorization", "Bearer test-token")
+					}
 					if tc.origin != "" {
 						req.Header.Set("Origin", tc.origin)
 					}

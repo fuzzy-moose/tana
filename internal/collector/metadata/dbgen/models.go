@@ -3,3 +3,13 @@
 //   sqlc v1.30.0
 
 package dbgen
+
+import (
+	"database/sql"
+)
+
+type MetadataFetchJob struct {
+	ID          string
+	CreatedAt   int64
+	CompletedAt sql.NullInt64
+}
