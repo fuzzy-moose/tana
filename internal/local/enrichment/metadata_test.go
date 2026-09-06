@@ -51,3 +51,23 @@ func TestMetadataMapping(t *testing.T) {
 		t.Fatalf("empty metadata: %+v", values)
 	}
 }
+
+func TestMetadataTitleDecoding(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		value panda.Metadata
+		want  string
+	}{
+		{"English title", panda.Metadata{Title: " &quot;Artist&#039;s&quot; &amp; &lt;Story&gt; ", TitleJapanese: "原題"}, `"Artist's" & <Story>`},
+		{"Japanese fallback", panda.Metadata{Title: " &nbsp; ", TitleJapanese: " 原題 &amp; 続編 "}, "原題 & 続編"},
+		{"literal punctuation", panda.Metadata{Title: `"Artist's" & <Story>`}, `"Artist's" & <Story>`},
+		{"decode once", panda.Metadata{Title: "&amp;quot;Story&amp;quot;"}, "&quot;Story&quot;"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _ := metadataValues(tt.value)
+			if values.Title != tt.want {
+				t.Fatalf("title = %q, want %q", values.Title, tt.want)
+			}
+		})
+	}
+}

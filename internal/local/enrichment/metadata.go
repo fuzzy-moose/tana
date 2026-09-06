@@ -2,6 +2,7 @@ package enrichment
 
 import (
 	"fmt"
+	"html"
 	"path"
 	"regexp"
 	"strconv"
@@ -32,9 +33,9 @@ func candidateID(name string, kind source.Kind) int64 {
 }
 
 func metadataValues(value panda.Metadata) (metadata.Values, []error) {
-	result := metadata.Values{Title: strings.TrimSpace(value.Title)}
+	result := metadata.Values{Title: strings.TrimSpace(html.UnescapeString(value.Title))}
 	if result.Title == "" {
-		result.Title = strings.TrimSpace(value.TitleJapanese)
+		result.Title = strings.TrimSpace(html.UnescapeString(value.TitleJapanese))
 	}
 	var diagnostics []error
 	seen := map[tag.Value]bool{}
