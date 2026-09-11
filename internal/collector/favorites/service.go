@@ -89,6 +89,14 @@ func (s *Service) wait(ctx context.Context, delay time.Duration) {
 
 func (s *Service) run(ctx context.Context) {
 	for ctx.Err() == nil {
+		if err := s.store.q.ResumeFailedBaselineSyncs(ctx, dbgen.ResumeFailedBaselineSyncsParams{Host: s.store.host, AccountKey: s.store.accountKey}); err != nil {
+			s.logger.Error("favorites_baseline_recovery_failed", "error", err)
+			s.wait(ctx, time.Second)
+			continue
+		}
+		break
+	}
+	for ctx.Err() == nil {
 		current, err := s.store.next(ctx)
 		if errors.Is(err, sql.ErrNoRows) {
 			s.wait(ctx, time.Second)

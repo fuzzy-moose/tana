@@ -90,6 +90,12 @@ func TestFavoritesAPIEnqueuesWithoutJobResponse(t *testing.T) {
 	service := favorites.New(t.Context(), db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "42"}, waitingAuthenticatedClient{}, logger)
 	defer service.Close()
 	handler := NewHandler(&collector.App{Logger: logger, Favorites: service, APIToken: "test-token"})
+	for _, body := range []string{`{}`, `{"categories":[10]}`, `{"categories":[2,2]}`} {
+		w := apiRequest(handler, http.MethodPut, "/api/favorites/download-settings", body)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("invalid download settings accepted: %d %s", w.Code, w.Body)
+		}
+	}
 	for _, body := range []string{`{}`, `{"full":true}`, `{"full":false}`} {
 		w := apiRequest(handler, http.MethodPost, "/api/favorites/2/sync", body)
 		if w.Code != http.StatusAccepted || w.Body.Len() != 0 || w.Header().Get("Location") != "" {

@@ -82,6 +82,28 @@ func TestLocalCollectorStatusAndSync(t *testing.T) {
 			t.Fatalf("invalid sync accepted: %d %s", w.Code, w.Body)
 		}
 	}
+	w = request("GET", "/api/collector/favorites/download-settings", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"categories":[]`) {
+		t.Fatalf("download defaults: %d %s", w.Code, w.Body)
+	}
+	w = request("PUT", "/api/collector/favorites/download-settings", `{"categories":[9,2]}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"categories":[2,9]`) {
+		t.Fatalf("save download settings: %d %s", w.Code, w.Body)
+	}
+	for _, body := range []string{`{}`, `{"categories":null}`, `{"categories":[-1]}`, `{"categories":[10]}`, `{"categories":[2,2]}`, `{"categories":["2"]}`, `{"categories":[],"unknown":true}`} {
+		w = request("PUT", "/api/collector/favorites/download-settings", body)
+		if w.Code != 400 {
+			t.Fatalf("invalid settings accepted: %d %s", w.Code, w.Body)
+		}
+	}
+	w = request("GET", "/api/collector/favorites/download-settings", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"categories":[2,9]`) {
+		t.Fatalf("invalid request changed settings: %d %s", w.Code, w.Body)
+	}
+	w = request("GET", "/api/collector/status", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"baseline_state":"collecting"`) || !strings.Contains(w.Body.String(), `"categories":[2,9]`) {
+		t.Fatalf("settings missing from status: %d %s", w.Code, w.Body)
+	}
 	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
 	if err != nil {
 		t.Fatal(err)
@@ -97,6 +119,10 @@ func TestLocalCollectorStatusAndSync(t *testing.T) {
 	if w.Code != 502 || !strings.Contains(w.Body.String(), "collector_unauthorized") {
 		t.Fatalf("rejected sync: %d %s", w.Code, w.Body)
 	}
+	w = request("PUT", "/api/collector/favorites/download-settings", `{"categories":[]}`)
+	if w.Code != 502 || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("rejected settings: %d %s", w.Code, w.Body)
+	}
 	handler = NewHandler(&local.App{Logger: logger})
 	w = request("GET", "/api/collector/status", "")
 	connection = collectorapi.ConnectionStatus{}
@@ -106,5 +132,9 @@ func TestLocalCollectorStatusAndSync(t *testing.T) {
 	w = request("POST", "/api/collector/favorites/all/sync", `{}`)
 	if w.Code != 503 {
 		t.Fatalf("unconfigured sync: %d", w.Code)
+	}
+	w = request("GET", "/api/collector/favorites/download-settings", "")
+	if w.Code != 503 {
+		t.Fatalf("unconfigured settings: %d", w.Code)
 	}
 }

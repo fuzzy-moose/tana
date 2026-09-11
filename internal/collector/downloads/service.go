@@ -109,14 +109,25 @@ func (s *Service) update(ctx context.Context, row dbgen.PandaDownload) error {
 		UpdatedAt: time.Now().UnixMilli(), RetryAt: row.RetryAt, Failures: row.Failures, SizeBytes: row.SizeBytes, LastError: row.LastError})
 }
 
-func (s *Service) Submit(ctx context.Context, ref panda.GalleryRef) (Job, error) {
+// EnqueueInTransaction admits a download atomically with a favorite discovery.
+// Existing jobs, including cancelled and failed jobs, retain their state.
+// The worker polls for committed work, so no wakeup is required.
+func EnqueueInTransaction(ctx context.Context, tx *sql.Tx, ref panda.GalleryRef) error {
+	return enqueue(ctx, dbgen.New(tx), ref)
+}
+
+func enqueue(ctx context.Context, q *dbgen.Queries, ref panda.GalleryRef) error {
 	if ref.ID <= 0 || strings.TrimSpace(ref.Token) == "" || len(ref.Token) > 256 {
-		return Job{}, ErrInvalidReference
+		return ErrInvalidReference
 	}
+	at := time.Now().UnixMilli()
+	return q.EnqueueDownload(ctx, dbgen.EnqueueDownloadParams{GalleryID: ref.ID, Token: ref.Token, CreatedAt: at, UpdatedAt: at})
+}
+
+func (s *Service) Submit(ctx context.Context, ref panda.GalleryRef) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	at := time.Now().UnixMilli()
-	if err := s.q.EnqueueDownload(ctx, dbgen.EnqueueDownloadParams{GalleryID: ref.ID, Token: ref.Token, CreatedAt: at, UpdatedAt: at}); err != nil {
+	if err := enqueue(ctx, s.q, ref); err != nil {
 		return Job{}, err
 	}
 	row, err := s.q.GetDownload(ctx, ref.ID)

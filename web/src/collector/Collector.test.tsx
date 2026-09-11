@@ -13,6 +13,7 @@ function connected(): ConnectionStatus {
     status: {
       favorites: {
         host: 'https://panda.test', account_key: 'current',
+        downloads: { categories: [], baseline_state: 'ready', baseline_categories: 10 },
         categories: Array.from({ length: 10 }, (_, category) => ({
           category, name: category === 2 ? 'Manga' : '', favorites: category === 2 ? 42 : 0,
           state: 'idle', full: false, queued: false, queued_full: false,
@@ -47,6 +48,37 @@ test('Collector route shows statistics and submits all-category sync and a selec
   await user.click(screen.getByRole('button', { name: 'Full re-sync favorites' }))
   expect(await screen.findByText('Full re-sync requested for category 2.')).toBeTruthy()
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/favorites/2/sync', expect.objectContaining({ method: 'POST', body: '{"full":true}' }))
+})
+
+test('configures favorite downloads and shows baseline progress', async () => {
+  const result = connected()
+  result.status!.favorites.downloads = { categories: [], baseline_state: 'not_started', baseline_categories: 0 }
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    if (String(input).startsWith('/api/collector/downloads')) return Response.json({ jobs: [] })
+    if (init?.method === 'PUT') {
+      const settings = JSON.parse(String(init.body)) as { categories: number[] }
+      result.status!.favorites.downloads!.categories = settings.categories
+      return Response.json(settings)
+    }
+    return Response.json(result)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  window.history.replaceState(null, '', '/#/collector')
+  const user = userEvent.setup()
+  render(<App />)
+  await screen.findByText(/Your first sync will establish a baseline/)
+  const manga = screen.getByRole('checkbox', { name: '2 · Manga' }) as HTMLInputElement
+  expect(manga.checked).toBe(false)
+  await user.click(manga)
+  await user.click(screen.getByRole('button', { name: 'Save download categories' }))
+  expect(await screen.findByText('Download categories saved.')).toBeTruthy()
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/favorites/download-settings', expect.objectContaining({ method: 'PUT', body: '{"categories":[2]}' }))
+  cleanup()
+  result.status!.favorites.downloads!.baseline_state = 'collecting'
+  result.status!.favorites.downloads!.baseline_categories = 4
+  render(<App />)
+  await screen.findByText(/Establishing baseline: 4 of 10/)
+  expect((screen.getByRole('checkbox', { name: '2 · Manga' }) as HTMLInputElement).checked).toBe(true)
 })
 
 test('preserves statistics through connection failures, disables syncing, and recovers on refresh', async () => {

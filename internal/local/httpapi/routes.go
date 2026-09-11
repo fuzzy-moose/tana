@@ -11,6 +11,8 @@ func NewHandler(app *local.App) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/collector/status", HandleCollectorStatus(app.Collector))
 	mux.Handle("POST /api/collector/favorites/{category}/sync", HandleCollectorSyncFavorites(app.Collector))
+	mux.Handle("GET /api/collector/favorites/download-settings", HandleCollectorFavoriteDownloadSettings(app.Collector))
+	mux.Handle("PUT /api/collector/favorites/download-settings", HandleCollectorFavoriteDownloadSettings(app.Collector))
 	downloads := HandleCollectorDownloads(app.Collector)
 	mux.Handle("/api/collector/downloads", downloads)
 	mux.Handle("/api/collector/downloads/", downloads)

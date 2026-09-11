@@ -12,9 +12,16 @@ type Status struct {
 }
 
 type FavoritesStatus struct {
-	Host       string             `json:"host"`
-	AccountKey string             `json:"account_key"`
-	Categories []FavoriteCategory `json:"categories"`
+	Host       string                  `json:"host"`
+	AccountKey string                  `json:"account_key"`
+	Categories []FavoriteCategory      `json:"categories"`
+	Downloads  FavoriteDownloadsStatus `json:"downloads"`
+}
+
+type FavoriteDownloadsStatus struct {
+	FavoriteDownloadSettings
+	BaselineState      string `json:"baseline_state"`
+	BaselineCategories int    `json:"baseline_categories"`
 }
 
 type FavoriteCategory struct {

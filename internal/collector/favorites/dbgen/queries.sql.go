@@ -10,6 +10,33 @@ import (
 	"database/sql"
 )
 
+const baselineCategories = `-- name: BaselineCategories :many
+SELECT category FROM favorite_download_baseline ORDER BY category
+`
+
+func (q *Queries) BaselineCategories(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, baselineCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var category int64
+		if err := rows.Scan(&category); err != nil {
+			return nil, err
+		}
+		items = append(items, category)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const categoryStatistics = `-- name: CategoryStatistics :many
 SELECT c.category, c.name, c.synced_at, count(f.gallery_id) AS favorites
 FROM favorite_categories c LEFT JOIN favorites f ON f.category_id = c.id
@@ -57,6 +84,15 @@ func (q *Queries) CategoryStatistics(ctx context.Context, arg CategoryStatistics
 	return items, nil
 }
 
+const clearDownloadCategories = `-- name: ClearDownloadCategories :exec
+DELETE FROM favorite_download_categories
+`
+
+func (q *Queries) ClearDownloadCategories(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearDownloadCategories)
+	return err
+}
+
 const clearSeenFavorites = `-- name: ClearSeenFavorites :exec
 DELETE FROM favorite_sync_seen WHERE category_id = ?
 `
@@ -85,6 +121,15 @@ func (q *Queries) CommitFavorites(ctx context.Context, categoryID int64) error {
 	return err
 }
 
+const completeBaselineCategory = `-- name: CompleteBaselineCategory :exec
+INSERT INTO favorite_download_baseline (category) VALUES (?) ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) CompleteBaselineCategory(ctx context.Context, category int64) error {
+	_, err := q.db.ExecContext(ctx, completeBaselineCategory, category)
+	return err
+}
+
 const completeCategory = `-- name: CompleteCategory :exec
 UPDATE favorite_categories SET synced_at = ? WHERE id = ?
 `
@@ -96,6 +141,53 @@ type CompleteCategoryParams struct {
 
 func (q *Queries) CompleteCategory(ctx context.Context, arg CompleteCategoryParams) error {
 	_, err := q.db.ExecContext(ctx, completeCategory, arg.SyncedAt, arg.ID)
+	return err
+}
+
+const downloadBaselineState = `-- name: DownloadBaselineState :one
+SELECT baseline_state FROM favorite_download_settings WHERE id = 1
+`
+
+func (q *Queries) DownloadBaselineState(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, downloadBaselineState)
+	var baseline_state string
+	err := row.Scan(&baseline_state)
+	return baseline_state, err
+}
+
+const downloadCategories = `-- name: DownloadCategories :many
+SELECT category FROM favorite_download_categories ORDER BY category
+`
+
+func (q *Queries) DownloadCategories(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, downloadCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var category int64
+		if err := rows.Scan(&category); err != nil {
+			return nil, err
+		}
+		items = append(items, category)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const enableDownloadCategory = `-- name: EnableDownloadCategory :exec
+INSERT INTO favorite_download_categories (category) VALUES (?) ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) EnableDownloadCategory(ctx context.Context, category int64) error {
+	_, err := q.db.ExecContext(ctx, enableDownloadCategory, category)
 	return err
 }
 
@@ -121,6 +213,16 @@ func (q *Queries) FailSync(ctx context.Context, arg FailSyncParams) error {
 		arg.FinishedAt,
 		arg.CategoryID,
 	)
+	return err
+}
+
+const finishDownloadBaseline = `-- name: FinishDownloadBaseline :exec
+UPDATE favorite_download_settings SET baseline_state = 'ready'
+WHERE id = 1 AND baseline_state = 'collecting' AND (SELECT count(*) FROM favorite_download_baseline) = 10
+`
+
+func (q *Queries) FinishDownloadBaseline(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, finishDownloadBaseline)
 	return err
 }
 
@@ -339,6 +441,18 @@ func (q *Queries) NextSync(ctx context.Context, arg NextSyncParams) (NextSyncRow
 	return i, err
 }
 
+const observeFavorite = `-- name: ObserveFavorite :execrows
+INSERT INTO favorite_observations (gallery_id) VALUES (?) ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) ObserveFavorite(ctx context.Context, galleryID int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, observeFavorite, galleryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const queueFullSync = `-- name: QueueFullSync :exec
 UPDATE favorite_syncs SET followup_full = 1 WHERE category_id = ?
 `
@@ -379,6 +493,22 @@ UPDATE favorite_syncs SET next_url = '', pages_saved = 0, entries_saved = 0,
 
 func (q *Queries) RestartTraversal(ctx context.Context, categoryID int64) error {
 	_, err := q.db.ExecContext(ctx, restartTraversal, categoryID)
+	return err
+}
+
+const resumeFailedBaselineSyncs = `-- name: ResumeFailedBaselineSyncs :exec
+UPDATE favorite_syncs SET state = 'queued', finished_at = 0, retry_at = 0, failures = 0, restarted = 0
+WHERE state = 'failed' AND (SELECT baseline_state FROM favorite_download_settings WHERE id = 1) = 'collecting'
+    AND category_id IN (SELECT id FROM favorite_categories WHERE host = ? AND account_key = ?)
+`
+
+type ResumeFailedBaselineSyncsParams struct {
+	Host       string
+	AccountKey string
+}
+
+func (q *Queries) ResumeFailedBaselineSyncs(ctx context.Context, arg ResumeFailedBaselineSyncsParams) error {
+	_, err := q.db.ExecContext(ctx, resumeFailedBaselineSyncs, arg.Host, arg.AccountKey)
 	return err
 }
 
@@ -497,6 +627,15 @@ func (q *Queries) SaveVisitedPage(ctx context.Context, arg SaveVisitedPageParams
 	return err
 }
 
+const seedFavoriteObservations = `-- name: SeedFavoriteObservations :exec
+INSERT INTO favorite_observations (gallery_id) SELECT DISTINCT gallery_id FROM favorites WHERE true ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) SeedFavoriteObservations(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, seedFavoriteObservations)
+	return err
+}
+
 const seenFavorites = `-- name: SeenFavorites :many
 SELECT gallery_id FROM favorite_sync_seen WHERE category_id = ?
 `
@@ -522,6 +661,15 @@ func (q *Queries) SeenFavorites(ctx context.Context, categoryID int64) ([]int64,
 		return nil, err
 	}
 	return items, nil
+}
+
+const startDownloadBaseline = `-- name: StartDownloadBaseline :exec
+UPDATE favorite_download_settings SET baseline_state = 'collecting' WHERE id = 1
+`
+
+func (q *Queries) StartDownloadBaseline(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, startDownloadBaseline)
+	return err
 }
 
 const startSync = `-- name: StartSync :exec

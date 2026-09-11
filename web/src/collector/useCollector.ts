@@ -41,6 +41,7 @@ export function useCollector() {
 
   async function sync(category: string, full: boolean) {
     if (mutation.current) return
+    const baseline = snapshot?.status.favorites.downloads?.baseline_state
     const controller = new AbortController()
     mutation.current = controller
     setPending(true)
@@ -48,7 +49,9 @@ export function useCollector() {
     setNotice('')
     try {
       await syncFavorites(category, full, controller.signal)
-      if (!controller.signal.aborted) setNotice(`${full ? 'Full re-sync' : 'Sync'} requested for ${category === 'all' ? 'all categories' : `category ${category}`}.`)
+      if (!controller.signal.aborted) setNotice(baseline && baseline !== 'ready'
+        ? 'Baseline sync requested for all ten categories.'
+        : `${full ? 'Full re-sync' : 'Sync'} requested for ${category === 'all' ? 'all categories' : `category ${category}`}.`)
     } catch (error) {
       if (!controller.signal.aborted) setRequestError((error as Error).message)
     } finally {
@@ -67,6 +70,15 @@ export function useCollector() {
     connectionUnknown: !!statusError,
     disabled: pending || !!error || !connection?.status,
     refresh: () => setRevision((value) => value + 1),
+    downloadSettingsSaved: (categories: number[]) => {
+      setSnapshot((current) => {
+        if (!current?.status.favorites.downloads) return current
+        return { ...current, status: { ...current.status, favorites: { ...current.status.favorites,
+          downloads: { ...current.status.favorites.downloads, categories },
+        } } }
+      })
+      setRevision((value) => value + 1)
+    },
     sync,
   }
 }

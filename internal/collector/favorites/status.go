@@ -17,11 +17,29 @@ func timestamp(value int64) *time.Time {
 }
 
 func (s *Service) Status(ctx context.Context) (collectorapi.FavoritesStatus, error) {
+	downloads := collectorapi.FavoriteDownloadsStatus{FavoriteDownloadSettings: collectorapi.FavoriteDownloadSettings{Categories: []int{}}}
 	categories := make([]collectorapi.FavoriteCategory, 10)
 	for i := range categories {
 		categories[i].Category, categories[i].State = i, "idle"
 	}
 	err := s.store.transaction(ctx, func(q *dbgen.Queries) error {
+		state, err := q.DownloadBaselineState(ctx)
+		if err != nil {
+			return err
+		}
+		downloads.BaselineState = state
+		completed, err := q.BaselineCategories(ctx)
+		if err != nil {
+			return err
+		}
+		downloads.BaselineCategories = len(completed)
+		enabled, err := q.DownloadCategories(ctx)
+		if err != nil {
+			return err
+		}
+		for _, category := range enabled {
+			downloads.Categories = append(downloads.Categories, int(category))
+		}
 		rows, err := q.CategoryStatistics(ctx, dbgen.CategoryStatisticsParams{Host: s.store.host, AccountKey: s.store.accountKey})
 		if err != nil {
 			return err
@@ -59,5 +77,5 @@ func (s *Service) Status(ctx context.Context) (collectorapi.FavoritesStatus, err
 	if err != nil {
 		return collectorapi.FavoritesStatus{}, err
 	}
-	return collectorapi.FavoritesStatus{Host: s.store.host, AccountKey: s.store.accountKey, Categories: categories}, nil
+	return collectorapi.FavoritesStatus{Host: s.store.host, AccountKey: s.store.accountKey, Categories: categories, Downloads: downloads}, nil
 }

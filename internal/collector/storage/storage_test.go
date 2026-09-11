@@ -105,4 +105,9 @@ func TestOpenPreservesCompletedFavoritesAsIncrementalBaseline(t *testing.T) {
 	if added != 500 || committed != 500 || synced != 1000 || jobs != 0 {
 		t.Fatalf("added=%d committed=%d synced=%d jobs=%d", added, committed, synced, jobs)
 	}
+	var observed int
+	var baseline string
+	if err := migrated.QueryRow(`SELECT (SELECT count(*) FROM favorite_observations WHERE gallery_id = 1), baseline_state FROM favorite_download_settings`).Scan(&observed, &baseline); err != nil || observed != 1 || baseline != "not_started" {
+		t.Fatalf("download history=%d baseline=%q %v", observed, baseline, err)
+	}
 }

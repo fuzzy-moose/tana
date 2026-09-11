@@ -59,11 +59,20 @@ Collection of a favorite collection's newest entries since its previously collec
 **Panda favorite full re-sync**:
 Collection of an entire favorite collection to replace its stored membership, including removal of favorites no longer present upstream. Removal from a favorite collection does not remove a gallery from the gallery reference inventory.
 
+**Panda favorite baseline**:
+The favorites across all categories observed during automatic initialization and excluded from automatic downloading. The baseline is established only when every category has been successfully collected, including any retries.
+
+**New Panda favorite**:
+A gallery first observed as a favorite after the baseline is established, regardless of its upstream favorite timestamp. Re-favoriting or moving a previously observed gallery between categories does not make it new.
+
+**Panda automatic download category**:
+A favorite category configured to trigger collector downloads for new Panda favorites discovered during a manually started collection run. Enabling a category does not make previously observed favorites eligible.
+
 **Missing Panda favorite**:
 A Panda favorite with no corresponding source in the local Tana library. A download retained by the collector does not make the favorite locally present.
 
 **Panda download job**:
-A durable, explicit request for the collector to obtain an upstream Panda gallery's original archive, identified by gallery ID. Repeated requests reuse the existing job or retained archive; failed jobs require explicit retry after bounded automatic retries are exhausted.
+A durable request for the collector to obtain an upstream Panda gallery's original archive, identified by gallery ID. Repeated requests reuse the existing job or retained archive; failed jobs require explicit retry after bounded automatic retries are exhausted.
 
 **Retained Panda archive**:
 A completed original archive owned and stored by the collector across restarts until explicitly deleted; retrieval does not remove it. Its presence does not establish a source in a Tana library.

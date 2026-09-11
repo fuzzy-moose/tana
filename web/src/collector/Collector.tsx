@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FavoriteCategory } from './api'
 import { useCollector } from './useCollector'
 import Downloads from './Downloads'
+import FavoriteDownloads from './FavoriteDownloads'
 import './Collector.css'
 
 function date(value?: string) { return value ? new Date(value).toLocaleString() : '—' }
@@ -83,9 +84,12 @@ export default function Collector() {
             </label>
             <button className="button button-primary" type="submit" disabled={collector.disabled}>{collector.pending ? 'Requesting…' : full ? 'Full re-sync favorites' : 'Sync favorites'}</button>
           </form>
-          <p className="field-help">{full ? 'Full re-sync reconciles removed favorites. Collected gallery references and metadata are retained.' : 'Collect newest favorites. The first sync of a category collects all its favorites.'}</p>
+          <p className="field-help">{status.favorites.downloads && status.favorites.downloads.baseline_state !== 'ready'
+            ? 'Until the baseline is complete, sync collects all ten categories without downloading favorites.'
+            : full ? 'Full re-sync reconciles removed favorites. Collected gallery references and metadata are retained.' : 'Collect newest favorites.'}</p>
           {collector.notice && <p className="collector-notice" role="status">{collector.notice}</p>}
           {collector.requestError && <p className="error-message" role="alert">{collector.requestError}</p>}
+          {status.favorites.downloads && <FavoriteDownloads status={status.favorites.downloads} categories={status.favorites.categories} available={connected} onSaved={collector.downloadSettingsSaved} />}
           <div className="collector-table-scroll">
             <table className="collector-table">
               <caption className="collector-table-caption">Favorite categories for the current account</caption>

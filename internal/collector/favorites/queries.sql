@@ -96,3 +96,39 @@ INSERT INTO favorite_sync_pages (category_id, url) VALUES (?, ?);
 
 -- name: ClearVisitedPages :exec
 DELETE FROM favorite_sync_pages WHERE category_id = ?;
+
+-- name: DownloadBaselineState :one
+SELECT baseline_state FROM favorite_download_settings WHERE id = 1;
+
+-- name: StartDownloadBaseline :exec
+UPDATE favorite_download_settings SET baseline_state = 'collecting' WHERE id = 1;
+
+-- name: BaselineCategories :many
+SELECT category FROM favorite_download_baseline ORDER BY category;
+
+-- name: CompleteBaselineCategory :exec
+INSERT INTO favorite_download_baseline (category) VALUES (?) ON CONFLICT DO NOTHING;
+
+-- name: FinishDownloadBaseline :exec
+UPDATE favorite_download_settings SET baseline_state = 'ready'
+WHERE id = 1 AND baseline_state = 'collecting' AND (SELECT count(*) FROM favorite_download_baseline) = 10;
+
+-- name: DownloadCategories :many
+SELECT category FROM favorite_download_categories ORDER BY category;
+
+-- name: ClearDownloadCategories :exec
+DELETE FROM favorite_download_categories;
+
+-- name: EnableDownloadCategory :exec
+INSERT INTO favorite_download_categories (category) VALUES (?) ON CONFLICT DO NOTHING;
+
+-- name: ObserveFavorite :execrows
+INSERT INTO favorite_observations (gallery_id) VALUES (?) ON CONFLICT DO NOTHING;
+
+-- name: SeedFavoriteObservations :exec
+INSERT INTO favorite_observations (gallery_id) SELECT DISTINCT gallery_id FROM favorites WHERE true ON CONFLICT DO NOTHING;
+
+-- name: ResumeFailedBaselineSyncs :exec
+UPDATE favorite_syncs SET state = 'queued', finished_at = 0, retry_at = 0, failures = 0, restarted = 0
+WHERE state = 'failed' AND (SELECT baseline_state FROM favorite_download_settings WHERE id = 1) = 'collecting'
+    AND category_id IN (SELECT id FROM favorite_categories WHERE host = ? AND account_key = ?);

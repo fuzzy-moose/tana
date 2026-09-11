@@ -98,6 +98,11 @@
 .collector-state { white-space: nowrap; }
 .collector-secondary { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
 .collector-panel h3 { font-size: 13px; font-weight: 500; margin: 24px 0 12px; }
+.favorite-download-settings { margin-top: 24px; border-top: 1px solid var(--border); }
+.favorite-download-categories { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 12px 0; border: 0; font-size: 13px; }
+.favorite-download-categories legend { padding: 0 0 8px; color: var(--muted); }
+.favorite-download-categories label { display: flex; align-items: center; gap: 8px; }
+.favorite-download-categories input { accent-color: var(--accent); }
 .collector-errors { list-style: none; padding: 0; margin: 0; }
 .collector-errors li { display: grid; gap: 6px; padding: 12px 0; border-top: 1px solid var(--border); font-size: 12px; overflow-wrap: anywhere; }
 .collector-errors strong { font-weight: 500; }

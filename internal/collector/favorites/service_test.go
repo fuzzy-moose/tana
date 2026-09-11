@@ -49,9 +49,13 @@ func counts(t *testing.T, db *sql.DB) (int, int) {
 	return favorites, inventory
 }
 
+func enqueueCategories(ctx context.Context, s *store, categories []int, full bool) error {
+	return s.transaction(ctx, func(q *dbgen.Queries) error { return s.enqueueCategories(ctx, q, categories, full) })
+}
+
 func admit(t *testing.T, s *store, category int, full bool) job {
 	t.Helper()
-	if err := s.enqueue(t.Context(), []int{category}, full); err != nil {
+	if err := enqueueCategories(t.Context(), s, []int{category}, full); err != nil {
 		t.Fatal(err)
 	}
 	current, err := s.next(t.Context())
@@ -220,6 +224,9 @@ func TestRestartAutomaticallyResumesSavedCursorAndQueue(t *testing.T) {
 	cfg := panda.AuthenticatedConfig{FavoritesURL: s.host + "/favorites", AccountKey: s.accountKey}
 	second := make(chan struct{})
 	first := New(t.Context(), db, cfg, pageFunc(func(ctx context.Context, category int, next string) (panda.FavoritesPage, error) {
+		if category != 2 {
+			return panda.FavoritesPage{}, nil
+		}
 		if next == "" {
 			return panda.FavoritesPage{CategoryName: "Manga", Entries: fixtureEntries(1, 100, 2000), Next: "second"}, nil
 		}
@@ -255,7 +262,12 @@ func TestRestartAutomaticallyResumesSavedCursorAndQueue(t *testing.T) {
 	s.db, s.q = db, dbgen.New(db)
 	requested := make(chan string, 2)
 	resumed := New(t.Context(), db, cfg, pageFunc(func(_ context.Context, category int, next string) (panda.FavoritesPage, error) {
-		requested <- next
+		if category == 2 || category == 3 {
+			requested <- next
+		}
+		if category != 2 {
+			return panda.FavoritesPage{}, nil
+		}
 		return panda.FavoritesPage{CategoryName: "Manga", Entries: fixtureEntries(101, 1, 1000)}, nil
 	}), slog.New(slog.DiscardHandler))
 	defer resumed.Close()
@@ -339,7 +351,7 @@ func TestQueueCoalescesUpgradesAndRetainsFollowup(t *testing.T) {
 	s := testStore(t)
 	seed(t, s, fixtureEntries(1, 1, 1000))
 	for _, full := range []bool{false, true, false} {
-		if err := s.enqueue(t.Context(), []int{2}, full); err != nil {
+		if err := enqueueCategories(t.Context(), s, []int{2}, full); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -352,7 +364,7 @@ func TestQueueCoalescesUpgradesAndRetainsFollowup(t *testing.T) {
 	}
 	current = admit(t, s, 2, false)
 	for _, full := range []bool{false, true, true} {
-		if err := s.enqueue(t.Context(), []int{2}, full); err != nil {
+		if err := enqueueCategories(t.Context(), s, []int{2}, full); err != nil {
 			t.Fatal(err)
 		}
 	}

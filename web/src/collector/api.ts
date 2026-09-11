@@ -21,7 +21,7 @@ export interface FavoriteCategory {
 }
 
 export interface CollectorStatus {
-  favorites: { host: string, account_key: string, categories: FavoriteCategory[] }
+  favorites: { host: string, account_key: string, categories: FavoriteCategory[], downloads?: FavoriteDownloadsStatus }
   inventory: {
     gallery_references: number
     metadata_available: number
@@ -34,6 +34,12 @@ export interface CollectorStatus {
   metadata_last_error?: string
   metadata_retry_at?: string
   upstream_cooldown_until?: string
+}
+
+export interface FavoriteDownloadsStatus {
+  categories: number[]
+  baseline_state: 'not_started' | 'collecting' | 'ready'
+  baseline_categories: number
 }
 
 export interface ConnectionStatus {
@@ -51,7 +57,8 @@ export const collectorMessages: Record<string, string> = {
   collector_unauthorized: 'The collector rejected Tana’s credentials. Check the configured API token.',
   collector_status_unavailable: 'The collector is reachable, but its status API is unavailable.',
   collector_invalid_response: 'The collector returned an unexpected status response.',
-  collector_unavailable: 'The sync request could not be confirmed. Check collector status and try again.',
+  collector_unavailable: 'The request could not be confirmed. Check collector status and try again.',
+  invalid_download_categories: 'Select distinct favorite categories from 0 to 9.',
 }
 
 export const getCollectorStatus = (signal: AbortSignal) => request<ConnectionStatus>('/api/collector/status', { signal })
@@ -60,5 +67,12 @@ export const syncFavorites = (category: string, full: boolean, signal: AbortSign
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ full }),
+  signal,
+}, collectorMessages)
+
+export const saveFavoriteDownloadSettings = (categories: number[], signal: AbortSignal) => request<{ categories: number[] }>('/api/collector/favorites/download-settings', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ categories }),
   signal,
 }, collectorMessages)
