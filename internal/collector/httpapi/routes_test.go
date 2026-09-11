@@ -26,7 +26,7 @@ func TestAuthenticationProtectsEveryRouteExceptHealth(t *testing.T) {
 		Logger:   slog.New(slog.NewJSONHandler(&logs, nil)),
 		APIToken: "collector-secret",
 	})
-	for _, path := range []string{"/api/status", "/api/metadata/lookup", "/api/metadata/fetches", "/api/metadata/fetches/job", "/api/favorites/2/sync", "/api/favorites/all/sync", "/missing", "/healthz/"} {
+	for _, path := range []string{"/api/status", "/api/metadata/lookup", "/api/metadata/fetches", "/api/metadata/fetches/job", "/api/favorites/2/sync", "/api/favorites/all/sync", "/api/downloads", "/api/downloads/1", "/api/downloads/1/file", "/api/downloads/1/retry", "/api/downloads/1/cancel", "/missing", "/healthz/"} {
 		for _, auth := range []string{"", "Bearer wrong", "Basic collector-secret", "Bearer", "Bearer  collector-secret"} {
 			r := httptest.NewRequest(http.MethodPost, path+"?token=collector-secret", nil)
 			r.Header.Set("Authorization", auth)
@@ -73,9 +73,9 @@ func TestAuthenticationProtectsEveryRouteExceptHealth(t *testing.T) {
 	}
 }
 
-type waitingFavoritesClient struct{}
+type waitingAuthenticatedClient struct{}
 
-func (waitingFavoritesClient) GetFavoritesPage(ctx context.Context, category int, next string) (panda.FavoritesPage, error) {
+func (waitingAuthenticatedClient) GetFavoritesPage(ctx context.Context, category int, next string) (panda.FavoritesPage, error) {
 	<-ctx.Done()
 	return panda.FavoritesPage{}, ctx.Err()
 }
@@ -87,7 +87,7 @@ func TestFavoritesAPIEnqueuesWithoutJobResponse(t *testing.T) {
 	}
 	defer db.Close()
 	logger := slog.New(slog.DiscardHandler)
-	service := favorites.New(t.Context(), db, panda.FavoritesConfig{URL: "https://panda.test", AccountKey: "42"}, waitingFavoritesClient{}, logger)
+	service := favorites.New(t.Context(), db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "42"}, waitingAuthenticatedClient{}, logger)
 	defer service.Close()
 	handler := NewHandler(&collector.App{Logger: logger, Favorites: service, APIToken: "test-token"})
 	for _, body := range []string{`{}`, `{"full":true}`, `{"full":false}`} {

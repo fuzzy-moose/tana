@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strconv"
 	"time"
-
-	"golang.org/x/net/publicsuffix"
 )
 
 const FavoritesPageSize = 100
@@ -29,49 +26,11 @@ type FavoritesPage struct {
 	Next         string
 }
 
-type FavoritesClient struct {
-	httpClient *http.Client
-	endpoint   *url.URL
-}
-
-// NewFavoritesClient seeds a private, in-memory jar; server Set-Cookie values
-// subsequently take precedence. The caller supplies pacing and ban coordination.
-func NewFavoritesClient(cfg FavoritesConfig, httpClient *http.Client) (*FavoritesClient, error) {
-	if err := cfg.validate(); err != nil {
-		return nil, err
-	}
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: time.Minute}
-	}
-	copyClient := *httpClient
-	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
-	if err != nil {
-		return nil, err
-	}
-	endpoint, _ := url.Parse(cfg.URL)
-	cookies := make([]*http.Cookie, 0, len(cfg.Cookies))
-	for name, value := range cfg.Cookies {
-		cookies = append(cookies, &http.Cookie{Name: name, Value: value, Path: "/", Secure: endpoint.Scheme == "https"})
-	}
-	jar.SetCookies(endpoint, cookies)
-	copyClient.Jar = jar
-	copyClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 || !sameFavoritesEndpoint(endpoint, req.URL) {
-			return fmt.Errorf("%w: unexpected redirect", ErrFavoritesPage)
-		}
-		if req.URL.Query().Get("favcat") != via[0].URL.Query().Get("favcat") {
-			return fmt.Errorf("%w: redirected to another category", ErrFavoritesPage)
-		}
-		return nil
-	}
-	return &FavoritesClient{httpClient: &copyClient, endpoint: endpoint}, nil
-}
-
 func sameFavoritesEndpoint(a, b *url.URL) bool {
 	return a.Scheme == b.Scheme && a.Host == b.Host && a.EscapedPath() == b.EscapedPath() && b.User == nil && b.Fragment == ""
 }
 
-func (c *FavoritesClient) nextURL(base *url.URL, next string, category int) (*url.URL, error) {
+func (c *AuthenticatedClient) nextURL(base *url.URL, next string, category int) (*url.URL, error) {
 	u, err := base.Parse(next)
 	if err != nil || !sameFavoritesEndpoint(c.endpoint, u) {
 		return nil, fmt.Errorf("%w: pagination left the configured favorites endpoint", ErrFavoritesPage)
@@ -93,7 +52,7 @@ func (c *FavoritesClient) nextURL(base *url.URL, next string, category int) (*ur
 	return u, nil
 }
 
-func (c *FavoritesClient) GetFavoritesPage(ctx context.Context, category int, next string) (FavoritesPage, error) {
+func (c *AuthenticatedClient) GetFavoritesPage(ctx context.Context, category int, next string) (FavoritesPage, error) {
 	if category < 0 || category > 9 {
 		return FavoritesPage{}, fmt.Errorf("%w: category must be 0–9", ErrFavoritesPage)
 	}

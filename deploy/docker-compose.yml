@@ -15,12 +15,18 @@ services:
     environment:
       PANDA_FEED_URL: ${PANDA_FEED_URL:?Set PANDA_FEED_URL to your upstream feed URL}
       PANDA_API_URL: ${PANDA_API_URL:?Set PANDA_API_URL to your upstream metadata API URL}
+      PANDA_FAVORITES_URL: ${PANDA_FAVORITES_URL:?Set PANDA_FAVORITES_URL to your upstream favorites URL}
+      PANDA_FAVORITES_COOKIES: ${PANDA_FAVORITES_COOKIES:?Set PANDA_FAVORITES_COOKIES to your account cookies as JSON}
+      PANDA_FAVORITES_ACCOUNT_KEY: ${PANDA_FAVORITES_ACCOUNT_KEY:-}
+      PANDA_ARCHIVER_URL: ${PANDA_ARCHIVER_URL:?Set PANDA_ARCHIVER_URL to your complete upstream archive preparation URL}
       TANA_COLLECTOR_API_TOKEN: ${TANA_COLLECTOR_API_TOKEN:?Set TANA_COLLECTOR_API_TOKEN for collector API authentication}
     ports:
       - "8081:8080"
     volumes:
       - collector-data:/data
+      - collector-downloads:/downloads
 
 volumes:
   tana-data:
   collector-data:
+  collector-downloads:

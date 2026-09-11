@@ -35,7 +35,7 @@ A supplier of gallery metadata. Different providers may supply different informa
 A metadata provider supplying gallery metadata. Its upstream galleries are uniquely identified by gallery ID, independently of galleries in Tana's catalog.
 
 **Collector**:
-The separate service that collects Panda favorite collections, gallery references, and metadata for Tana.
+The separate service that collects Panda favorite collections, gallery references, and metadata for Tana, and owns Panda downloads and their retained files.
 _Avoid_: Connector
 
 **Panda gallery reference**:
@@ -58,6 +58,18 @@ Collection of a favorite collection's newest entries since its previously collec
 
 **Panda favorite full re-sync**:
 Collection of an entire favorite collection to replace its stored membership, including removal of favorites no longer present upstream. Removal from a favorite collection does not remove a gallery from the gallery reference inventory.
+
+**Missing Panda favorite**:
+A Panda favorite with no corresponding source in the local Tana library. A download retained by the collector does not make the favorite locally present.
+
+**Panda download job**:
+A durable, explicit request for the collector to obtain an upstream Panda gallery's original archive, identified by gallery ID. Repeated requests reuse the existing job or retained archive; failed jobs require explicit retry after bounded automatic retries are exhausted.
+
+**Retained Panda archive**:
+A completed original archive owned and stored by the collector across restarts until explicitly deleted; retrieval does not remove it. Its presence does not establish a source in a Tana library.
+
+**Cancelled Panda download job**:
+A Panda download job stopped by explicit request, with its partial archive removed. The job remains available for explicit retry.
 
 **Panda enrichment**:
 Automatic application of collected Panda metadata to a source-linked gallery using a Panda gallery candidate. Pending enrichment is an outstanding local intent to obtain and apply that metadata, distinct from a collector metadata fetch job.

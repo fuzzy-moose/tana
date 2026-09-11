@@ -8,10 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/fuzzy-moose/tana/internal/collector/downloads"
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
@@ -25,6 +27,7 @@ type App struct {
 	Logger    *slog.Logger
 	Metadata  *metadata.Service
 	Favorites *favorites.Service
+	Downloads *downloads.Service
 	Status    *status.Service
 	APIToken  string
 
@@ -46,7 +49,7 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	// Collection uses sustained pacing even if other Panda consumers allow bursts.
-	favoritesCfg, err := panda.LoadFavoritesConfig(os.Getenv)
+	authCfg, err := panda.LoadAuthenticatedConfig(os.Getenv)
 	if err != nil {
 		return nil, err
 	}
@@ -70,19 +73,29 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		db.Close()
 		return nil, err
 	}
-	favoritesLimiter, err := panda.NewRateLimiter(panda.FavoritesRateInterval, 1)
+	authLimiter, err := panda.NewRateLimiter(panda.AuthenticatedRateInterval, 1)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	favoritesClient, err := panda.NewFavoritesClient(favoritesCfg, &http.Client{
-		Timeout: time.Minute, Transport: panda.RateLimitedTransport(favoritesLimiter, panda.BanTransport(ban, nil)),
+	authClient, err := panda.NewAuthenticatedClient(authCfg, &http.Client{
+		Timeout: time.Minute, Transport: panda.RateLimitedTransport(authLimiter, panda.BanTransport(ban, nil)),
 	})
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	favoritesService := favorites.New(ctx, db, favoritesCfg, favoritesClient, logger)
+	downloadDir := os.Getenv("TANA_COLLECTOR_DOWNLOAD_DIR")
+	if downloadDir == "" {
+		downloadDir = filepath.Join(dir, "downloads")
+	}
+	downloadService, err := downloads.New(ctx, db, downloadDir, authClient,
+		downloads.NewHTTPTransfer(&http.Client{Timeout: 30 * time.Minute, Transport: panda.BanTransport(ban, nil)}), logger)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	favoritesService := favorites.New(ctx, db, authCfg, authClient, logger)
 	return &App{
 		Logger:    logger,
 		APIToken:  token,
@@ -90,12 +103,14 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		feeds:     feed.New(ctx, db, cfg, nil, logger),
 		Metadata:  metadata.New(ctx, db, client, logger),
 		Favorites: favoritesService,
+		Downloads: downloadService,
 		Status:    status.New(db, favoritesService, ban),
 	}, nil
 }
 
 // Close stops background work before releasing its database.
 func (a *App) Close() error {
+	a.Downloads.Close()
 	a.Favorites.Close()
 	a.feeds.Close()
 	a.Metadata.Close()

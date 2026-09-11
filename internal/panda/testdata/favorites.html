@@ -7,16 +7,16 @@
   <body>
     <h1>Favorites</h1>
     <div class="nosel">
-      <a class="fp" href="https://example.test/favorites.php?favcat=1">
+      <a class="fp" href="https://example.test/account/saved-items?favcat=1">
         <div>8</div>
         <div>Weekend reading</div>
       </a>
-      <a class="fp fps" href="https://example.test/favorites.php?favcat=2">
+      <a class="fp fps" href="https://example.test/account/saved-items?favcat=2">
         <div>102</div>
         <div>Reading &amp; later</div>
       </a>
     </div>
-    <form action="https://example.test/favorites.php">
+    <form action="https://example.test/account/saved-items">
       <input type="hidden" name="favcat" value="2">
       <input type="text" name="f_search" value="">
       <input type="submit" value="Search">
@@ -30,7 +30,7 @@
         </select>
       </div>
       <span id="uprev">&lt; Prev</span>
-      <a id="unext" href="https://example.test/favorites.php?favcat=2&amp;next=100">Next &gt;</a>
+      <a id="unext" href="https://example.test/account/saved-items?favcat=2&amp;next=100">Next &gt;</a>
     </div>
     <!-- Two representative rows; tests expand them for 100-entry pages. -->
     <table class="itg gltm">

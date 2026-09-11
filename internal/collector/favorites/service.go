@@ -33,7 +33,7 @@ type Service struct {
 	wake    chan struct{}
 }
 
-func New(ctx context.Context, db *sql.DB, cfg panda.FavoritesConfig, client PageClient, logger *slog.Logger) *Service {
+func New(ctx context.Context, db *sql.DB, cfg panda.AuthenticatedConfig, client PageClient, logger *slog.Logger) *Service {
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Service{
 		store:  &store{db: db, q: dbgen.New(db), host: cfg.Origin(), accountKey: cfg.AccountKey},

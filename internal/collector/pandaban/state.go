@@ -1,4 +1,4 @@
-// Package pandaban persists the cooldown shared by metadata and favorites.
+// Package pandaban persists the cooldown shared by Panda metadata, favorites, and downloads.
 package pandaban
 
 import (

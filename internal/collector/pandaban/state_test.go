@@ -32,7 +32,7 @@ func TestBanBlocksBothClientsAndSurvivesReopen(t *testing.T) {
 			defer upstream.Close()
 			state := pandaban.New(db)
 			httpClient := &http.Client{Transport: panda.BanTransport(state, nil)}
-			favorites, err := panda.NewFavoritesClient(panda.FavoritesConfig{URL: upstream.URL, Cookies: map[string]string{"ipb_member_id": "42", "ipb_pass_hash": "hash", "sp": "3"}}, httpClient)
+			favorites, err := panda.NewAuthenticatedClient(panda.AuthenticatedConfig{ArchiverURL: upstream.URL + "/account/prepare-archive", FavoritesURL: upstream.URL, Cookies: map[string]string{"ipb_member_id": "42", "ipb_pass_hash": "hash", "sp": "3"}}, httpClient)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -48,6 +48,10 @@ func TestBanBlocksBothClientsAndSurvivesReopen(t *testing.T) {
 			_, err = metadata.GetMetadata(t.Context(), []panda.GalleryRef{{ID: 1, Token: "123456789a"}})
 			if !errors.As(err, &ban) || calls.Load() != 1 {
 				t.Fatalf("metadata bypassed ban: %v, calls=%d", err, calls.Load())
+			}
+			_, err = favorites.GetArchiveURL(t.Context(), panda.GalleryRef{ID: 1, Token: "123456789a"})
+			if !errors.As(err, &ban) || calls.Load() != 1 {
+				t.Fatalf("archive preparation bypassed ban: %v, calls=%d", err, calls.Load())
 			}
 			until, err := state.Until(t.Context())
 			if err != nil || time.Until(until) < 58*time.Minute {

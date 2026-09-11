@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -o /out/tana ./cmd/tana \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -o /out/collector ./cmd/collector \
-    && mkdir -p /out/data /out/tmp
+    && mkdir -p /out/data /out/tmp /out/downloads
 
 FROM scratch AS runtime
 USER 65532:65532
@@ -27,9 +27,12 @@ COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certif
 VOLUME ["/data"]
 
 FROM runtime AS collector
+COPY --from=go-build --chown=65532:65532 /out/downloads /downloads
+VOLUME ["/downloads"]
 ENV TANA_COLLECTOR_HOST=0.0.0.0
 ENV TANA_COLLECTOR_PORT=8080
 ENV TANA_COLLECTOR_DATA_DIR=/data
+ENV TANA_COLLECTOR_DOWNLOAD_DIR=/downloads
 EXPOSE 8080
 COPY --from=go-build /out/collector /collector
 ENTRYPOINT ["/collector"]

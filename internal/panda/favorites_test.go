@@ -38,13 +38,13 @@ func favoriteHTML(count int, next string) string {
 	if next != "" {
 		navigation = fmt.Sprintf(`<a id="unext" href="%s">Next &gt;</a>`, next)
 	}
-	return strings.Replace(body, `<a id="unext" href="https://example.test/favorites.php?favcat=2&amp;next=100">Next &gt;</a>`, navigation, 1)
+	return strings.Replace(body, `<a id="unext" href="https://example.test/account/saved-items?favcat=2&amp;next=100">Next &gt;</a>`, navigation, 1)
 }
 
 func TestFavoritesParser(t *testing.T) {
-	body := favoriteHTML(100, `/favorites.php?favcat=2&amp;next=100`)
+	body := favoriteHTML(100, `/account/saved-items?favcat=2&amp;next=100`)
 	page, err := ParseFavoritesPage([]byte(body), 2)
-	if err != nil || page.CategoryName != "Reading & later" || len(page.Entries) != 100 || page.Next != "/favorites.php?favcat=2&next=100" {
+	if err != nil || page.CategoryName != "Reading & later" || len(page.Entries) != 100 || page.Next != "/account/saved-items?favcat=2&next=100" {
 		t.Fatalf("page: %+v, %v", page, err)
 	}
 	if page.Entries[0].GalleryRef != (GalleryRef{ID: 1, Token: "123456789a"}) || page.Entries[0].AddedAt.Format("2006-01-02 15:04") != "2000-01-03 12:59" {
@@ -57,7 +57,7 @@ func TestFavoritesParser(t *testing.T) {
 	for name, body := range map[string]string{
 		"login":                `<html>Please log in</html>`,
 		"unexpected empty":     strings.Replace(favoriteHTML(0, ""), "No hits found", "Unexpected response", 1),
-		"short non-final page": favoriteHTML(25, "/favorites.php?next=25"),
+		"short non-final page": favoriteHTML(25, "/account/saved-items?next=25"),
 		"timestamp missing":    strings.Replace(favoriteHTML(1, ""), "2000-01-03 12:59", "unknown", 1),
 		"wrong ordering":       strings.Replace(favoriteHTML(3, ""), "2000-01-03 12:58", "2000-01-03 13:00", 1),
 		"wrong profile":        strings.Replace(favoriteHTML(1, ""), "<body>", `<body><select name="f_perpage"><option value="25" selected>25</option></select>`, 1),
@@ -72,7 +72,7 @@ func TestFavoritesParser(t *testing.T) {
 	}
 }
 
-func TestFavoritesClientCookiesAndPagination(t *testing.T) {
+func TestAuthenticatedClientCookiesAndPagination(t *testing.T) {
 	requests := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -97,7 +97,7 @@ func TestFavoritesClientCookiesAndPagination(t *testing.T) {
 		}
 	}))
 	defer upstream.Close()
-	client, err := NewFavoritesClient(FavoritesConfig{URL: upstream.URL + "/account/saved-items?view=table", Cookies: map[string]string{"ipb_member_id": "42", "ipb_pass_hash": "hash", "sp": "3", "igneous": "extra"}}, upstream.Client())
+	client, err := NewAuthenticatedClient(AuthenticatedConfig{ArchiverURL: upstream.URL + "/account/prepare-archive", FavoritesURL: upstream.URL + "/account/saved-items?view=table", Cookies: map[string]string{"ipb_member_id": "42", "ipb_pass_hash": "hash", "sp": "3", "igneous": "extra"}}, upstream.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,16 +121,16 @@ func TestFavoritesClientCookiesAndPagination(t *testing.T) {
 	}
 }
 
-func TestFavoritesConfig(t *testing.T) {
-	env := map[string]string{"PANDA_FAVORITES_URL": " https://EXAMPLE.test/account/saved-items?view=table ", "PANDA_FAVORITES_COOKIES": `{"ipb_member_id":"42","custom":"a=b"}`}
-	load := func() (FavoritesConfig, error) {
-		return LoadFavoritesConfig(func(key string) string { return env[key] })
+func TestAuthenticatedConfig(t *testing.T) {
+	env := map[string]string{"PANDA_ARCHIVER_URL": "https://example.test/account/prepare-archive", "PANDA_FAVORITES_URL": " https://EXAMPLE.test/account/saved-items?view=table ", "PANDA_FAVORITES_COOKIES": `{"ipb_member_id":"42","custom":"a=b"}`}
+	load := func() (AuthenticatedConfig, error) {
+		return LoadAuthenticatedConfig(func(key string) string { return env[key] })
 	}
 	cfg, err := load()
-	if err != nil || cfg.URL != "https://example.test/account/saved-items?view=table" || cfg.Origin() != "https://example.test" || cfg.AccountKey != "42" || cfg.Cookies["custom"] != "a=b" {
+	if err != nil || cfg.FavoritesURL != "https://example.test/account/saved-items?view=table" || cfg.Origin() != "https://example.test" || cfg.AccountKey != "42" || cfg.Cookies["custom"] != "a=b" {
 		t.Fatalf("config: %+v, %v", cfg, err)
 	}
-	for _, key := range []string{"PANDA_FAVORITES_URL", "PANDA_FAVORITES_COOKIES"} {
+	for _, key := range []string{"PANDA_FAVORITES_URL", "PANDA_FAVORITES_COOKIES", "PANDA_ARCHIVER_URL"} {
 		saved := env[key]
 		env[key] = ""
 		if _, err := load(); err == nil || !strings.Contains(err.Error(), key) {
@@ -146,6 +146,14 @@ func TestFavoritesConfig(t *testing.T) {
 		}
 	}
 	env["PANDA_FAVORITES_URL"] = savedURL
+	savedArchiverURL := env["PANDA_ARCHIVER_URL"]
+	for _, value := range []string{"/prepare-archive", "https://other.test/prepare-archive", "http://example.test/prepare-archive", "https://user:pass@example.test/prepare-archive", "https://example.test/prepare-archive?x=1", "https://example.test/prepare-archive#section"} {
+		env["PANDA_ARCHIVER_URL"] = value
+		if _, err := load(); err == nil || !strings.Contains(err.Error(), "PANDA_ARCHIVER_URL") {
+			t.Fatalf("invalid archiver URL accepted: %v", err)
+		}
+	}
+	env["PANDA_ARCHIVER_URL"] = savedArchiverURL
 	env["PANDA_FAVORITES_ACCOUNT_KEY"] = "personal"
 	for _, value := range []string{`[]`, `null`, `{"x":null}`, `{"invalid name":"x"}`, `{"x":"a;b"}`, `{"x":1}`} {
 		env["PANDA_FAVORITES_COOKIES"] = value
@@ -165,8 +173,8 @@ func TestFavoritesAccountKeyFallback(t *testing.T) {
 		{"empty member cookie", "", `{"ipb_member_id":""}`, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			env := map[string]string{"PANDA_FAVORITES_URL": "https://example.test/saved", "PANDA_FAVORITES_ACCOUNT_KEY": tc.key, "PANDA_FAVORITES_COOKIES": tc.cookies}
-			cfg, err := LoadFavoritesConfig(func(key string) string { return env[key] })
+			env := map[string]string{"PANDA_ARCHIVER_URL": "https://example.test/account/prepare-archive", "PANDA_FAVORITES_URL": "https://example.test/saved", "PANDA_FAVORITES_ACCOUNT_KEY": tc.key, "PANDA_FAVORITES_COOKIES": tc.cookies}
+			cfg, err := LoadAuthenticatedConfig(func(key string) string { return env[key] })
 			if tc.want == "" {
 				if err == nil || !strings.Contains(err.Error(), "ipb_member_id") {
 					t.Fatalf("missing account identity accepted: %v", err)

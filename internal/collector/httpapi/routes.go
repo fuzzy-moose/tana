@@ -17,6 +17,13 @@ func NewHandler(app *collector.App) http.Handler {
 	mux.Handle("POST /api/metadata/lookup", HandleLookupMetadata(app.Metadata))
 	mux.Handle("POST /api/metadata/fetches", HandleRequestFetch(app.Metadata))
 	mux.Handle("GET /api/metadata/fetches/{id}", HandleGetFetchJob(app.Metadata))
+	mux.Handle("POST /api/downloads", HandleSubmitDownload(app.Downloads))
+	mux.Handle("GET /api/downloads", HandleListDownloads(app.Downloads))
+	mux.Handle("GET /api/downloads/{id}", HandleGetDownload(app.Downloads))
+	mux.Handle("POST /api/downloads/{id}/retry", HandleRetryDownload(app.Downloads))
+	mux.Handle("POST /api/downloads/{id}/cancel", HandleCancelDownload(app.Downloads))
+	mux.Handle("DELETE /api/downloads/{id}", HandleDeleteDownload(app.Downloads))
+	mux.Handle("GET /api/downloads/{id}/file", HandleGetDownloadFile(app.Downloads))
 	mux.HandleFunc("GET /healthz", server.Health)
 	var handler http.Handler = mux
 	handler = server.CSRFMiddleware(handler)

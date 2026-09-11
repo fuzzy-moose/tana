@@ -217,7 +217,7 @@ func TestRestartAutomaticallyResumesSavedCursorAndQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &store{db: db, q: dbgen.New(db), host: "https://panda.test", accountKey: "42"}
-	cfg := panda.FavoritesConfig{URL: s.host + "/favorites", AccountKey: s.accountKey}
+	cfg := panda.AuthenticatedConfig{FavoritesURL: s.host + "/favorites", AccountKey: s.accountKey}
 	second := make(chan struct{})
 	first := New(t.Context(), db, cfg, pageFunc(func(ctx context.Context, category int, next string) (panda.FavoritesPage, error) {
 		if next == "" {
@@ -394,7 +394,7 @@ func TestCooldownAndFailureSurviveRestart(t *testing.T) {
 			}
 			before := categoryStatus(t, s)
 			called := make(chan struct{}, 1)
-			service := New(t.Context(), s.db, panda.FavoritesConfig{URL: s.host, AccountKey: s.accountKey}, pageFunc(func(context.Context, int, string) (panda.FavoritesPage, error) {
+			service := New(t.Context(), s.db, panda.AuthenticatedConfig{FavoritesURL: s.host, AccountKey: s.accountKey}, pageFunc(func(context.Context, int, string) (panda.FavoritesPage, error) {
 				called <- struct{}{}
 				return panda.FavoritesPage{}, failure
 			}), slog.New(slog.DiscardHandler))

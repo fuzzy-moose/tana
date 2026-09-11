@@ -21,7 +21,7 @@ func TestStatusScopesFavoritesAndPartitionsInventory(t *testing.T) {
 	defer db.Close()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	favorites := favorites.New(ctx, db, panda.FavoritesConfig{URL: "https://panda.test", AccountKey: "current"}, nil, slog.New(slog.DiscardHandler))
+	favorites := favorites.New(ctx, db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "current"}, nil, slog.New(slog.DiscardHandler))
 	defer favorites.Close()
 	ban := pandaban.New(db)
 	service := New(db, favorites, ban)
