@@ -6,13 +6,13 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,7 +62,7 @@ func NewReferenceImports(ctx context.Context, db *sql.DB, dir string, logger *sl
 
 func (s *ReferenceImports) Close() { s.cancel(); s.workers.Wait() }
 
-func (s *ReferenceImports) path(id string) string { return filepath.Join(s.dir, id+".jsonl") }
+func (s *ReferenceImports) path(id string) string { return filepath.Join(s.dir, id+".txt") }
 
 func (s *ReferenceImports) signal() {
 	select {
@@ -282,9 +282,9 @@ func (s *ReferenceImports) recover(ctx context.Context) error {
 		}
 		name := file.Name()
 		remove := strings.HasPrefix(name, "upload-") && strings.HasSuffix(name, ".part")
-		if strings.HasSuffix(name, ".jsonl") {
+		if strings.HasSuffix(name, ".txt") {
 			var owned int
-			err := s.db.QueryRowContext(ctx, `SELECT 1 FROM reference_imports WHERE id = ?`, strings.TrimSuffix(name, ".jsonl")).Scan(&owned)
+			err := s.db.QueryRowContext(ctx, `SELECT 1 FROM reference_imports WHERE id = ?`, strings.TrimSuffix(name, ".txt")).Scan(&owned)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
@@ -402,15 +402,13 @@ func readImportBatch(input io.Reader) (referenceImportBatch, error) {
 		batch.bytes += int64(len(line))
 		line = bytes.TrimSpace(line)
 		if len(line) != 0 {
-			var entry struct {
-				ID    int64  `json:"gid"`
-				Token string `json:"token"`
-			}
-			if !utf8.Valid(line) || json.Unmarshal(line, &entry) != nil || entry.ID <= 0 ||
-				entry.Token == "" || strings.IndexFunc(entry.Token, unicode.IsSpace) >= 0 {
+			idText, token, found := strings.Cut(string(line), ",")
+			id, parseErr := strconv.ParseInt(idText, 10, 64)
+			if !utf8.Valid(line) || !found || parseErr != nil || id <= 0 ||
+				token == "" || strings.Contains(token, ",") || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
 				batch.invalid++
 			} else {
-				batch.refs = append(batch.refs, panda.GalleryRef{ID: entry.ID, Token: entry.Token})
+				batch.refs = append(batch.refs, panda.GalleryRef{ID: id, Token: token})
 			}
 		}
 		if errors.Is(err, io.EOF) {

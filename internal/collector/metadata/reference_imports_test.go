@@ -32,7 +32,7 @@ func batchImports(t *testing.T, db *sql.DB, dir string) *ReferenceImports {
 
 func acceptImport(t *testing.T, imports *ReferenceImports, input string) collectorapi.ReferenceImport {
 	t.Helper()
-	item, err := imports.Accept(t.Context(), "references.jsonl", strings.NewReader(input))
+	item, err := imports.Accept(t.Context(), "references.txt", strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +61,47 @@ func parseImports(t *testing.T, imports *ReferenceImports) {
 	}
 }
 
+func TestReadImportBatch(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		input   string
+		refs    []panda.GalleryRef
+		invalid int64
+	}{
+		{
+			name:  "lines and blanks",
+			input: "123,abc\n\n \t\n456,def\n",
+			refs:  []panda.GalleryRef{{ID: 123, Token: "abc"}, {ID: 456, Token: "def"}},
+		},
+		{
+			name:  "windows line endings",
+			input: "123,abc\r\n\r\n456,def\r\n",
+			refs:  []panda.GalleryRef{{ID: 123, Token: "abc"}, {ID: 456, Token: "def"}},
+		},
+		{
+			name:  "final line without newline",
+			input: "123,abc",
+			refs:  []panda.GalleryRef{{ID: 123, Token: "abc"}},
+		},
+		{
+			name:    "invalid records leave following references usable",
+			input:   "broken\n0,zero\n-1,negative\n,missing\n2,\n3,space token\n4,two,fields\n5,\xff\n6,valid\n",
+			refs:    []panda.GalleryRef{{ID: 6, Token: "valid"}},
+			invalid: 8,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := readImportBatch(strings.NewReader(tc.input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got.refs, tc.refs) || got.invalid != tc.invalid || got.bytes != int64(len(tc.input)) || !got.done {
+				t.Fatalf("batch = %+v; want references %v, invalid %d, bytes %d, done true", got, tc.refs, tc.invalid, len(tc.input))
+			}
+		})
+	}
+}
+
 func TestReferenceImportParsingCheckpointsAndCountersSurviveRestart(t *testing.T) {
 	dir := t.TempDir()
 	db := openDB(t, dir)
@@ -71,13 +112,13 @@ func TestReferenceImportParsingCheckpointsAndCountersSurviveRestart(t *testing.T
 	}
 	var input strings.Builder
 	for id := 1; id <= importBatchRecords; id++ {
-		fmt.Fprintf(&input, "{\"gid\":%d,\"token\":\"token%d\"}\n", id, id)
+		fmt.Fprintf(&input, "%d,token%d\n", id, id)
 	}
-	input.WriteString("\n{\"gid\":1,\"token\":\"token1\"}\n{\"gid\":2,\"token\":\"token2\"}\n")
-	input.WriteString("broken\n{\"gid\":0,\"token\":\"bad\"}\n{\"gid\":4,\"token\":\"space token\"}\n")
-	input.WriteString("{\"gid\":7,\"token\":\"\xff\"}\n")
+	input.WriteString("\n1,token1\n2,token2\n")
+	input.WriteString("broken\n0,bad\n4,space token\n")
+	input.WriteString("7,\xff\n")
 	// Long records and a final line without a newline remain valid.
-	fmt.Fprintf(&input, "{\"gid\":257,\"token\":\"token257\",\"ignored\":\"%s\"}", strings.Repeat("x", 80<<10))
+	fmt.Fprintf(&input, "257,%s", strings.Repeat("x", 80<<10))
 	item := acceptImport(t, imports, input.String())
 	if item.Status != "processing" || item.References != 0 || item.ProcessedBytes != 0 {
 		t.Fatalf("acceptance started parsing synchronously: %+v", item)
@@ -120,7 +161,7 @@ func TestReferenceImportParsingCheckpointsAndCountersSurviveRestart(t *testing.T
 func TestReferenceImportCheckpointAndAdmissionRollbackTogether(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	imports := batchImports(t, db, t.TempDir())
-	item := acceptImport(t, imports, "{\"gid\":1,\"token\":\"token1\"}\n")
+	item := acceptImport(t, imports, "1,token1\n")
 	if _, err := db.Exec(`CREATE TRIGGER reject_import_checkpoint BEFORE UPDATE OF processed_bytes ON reference_imports
 		BEGIN SELECT RAISE(FAIL, 'storage failure'); END`); err != nil {
 		t.Fatal(err)
@@ -167,12 +208,12 @@ func TestReferenceImportsTryTokensSequentiallyAndReuseInventory(t *testing.T) {
 	if _, err := db.Exec(`UPDATE gallery_refs SET metadata_attempted_at = 1, metadata_error = 'failed'`); err != nil {
 		t.Fatal(err)
 	}
-	item := acceptImport(t, imports, `{"gid":1,"token":"wrong"}
-{"gid":1,"token":"token1"}
-{"gid":1,"token":"later"}
-{"gid":10,"token":"token10"}
-{"gid":10,"token":"conflict"}
-{"gid":1,"token":"wrong"}
+	item := acceptImport(t, imports, `1,wrong
+1,token1
+1,later
+10,token10
+10,conflict
+1,wrong
 `)
 	parseImports(t, imports)
 	if got := readImport(t, imports, item.ID); got.References != 5 || got.Known != 1 || got.Failed != 1 || got.Pending != 3 || got.Duplicates != 1 {
@@ -206,8 +247,8 @@ func TestReferenceImportsTryTokensSequentiallyAndReuseInventory(t *testing.T) {
 func TestReferenceImportsRunAfterOtherWorkOldestFirstAndShareExplicitFetch(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	imports := batchImports(t, db, t.TempDir())
-	first := acceptImport(t, imports, "{\"gid\":1,\"token\":\"token1\"}\n{\"gid\":9,\"token\":\"token9\"}\n")
-	second := acceptImport(t, imports, "{\"gid\":2,\"token\":\"token2\"}\n")
+	first := acceptImport(t, imports, "1,token1\n9,token9\n")
+	second := acceptImport(t, imports, "2,token2\n")
 	parseImports(t, imports)
 	seedRefs(t, db, 3, 4)
 	if _, err := db.Exec(`UPDATE gallery_refs SET metadata_priority = 1 WHERE gallery_id = 3`); err != nil {
@@ -241,7 +282,7 @@ func TestReferenceImportsRunAfterOtherWorkOldestFirstAndShareExplicitFetch(t *te
 func TestReferenceImportReusesInventoryDiscoveredWhileQueued(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	imports := batchImports(t, db, t.TempDir())
-	item := acceptImport(t, imports, "{\"gid\":1,\"token\":\"token1\"}\n{\"gid\":2,\"token\":\"conflict\"}\n{\"gid\":3,\"token\":\"token3\"}\n")
+	item := acceptImport(t, imports, "1,token1\n2,conflict\n3,token3\n")
 	parseImports(t, imports)
 	seedRefs(t, db, 1, 2)
 	var calls int
@@ -262,7 +303,7 @@ func TestReferenceImportReusesInventoryDiscoveredWhileQueued(t *testing.T) {
 func TestReferenceImportReusesRelatedDiscoveryFromSameBatch(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	imports := batchImports(t, db, t.TempDir())
-	item := acceptImport(t, imports, "{\"gid\":1,\"token\":\"token1\"}\n{\"gid\":2,\"token\":\"token2\"}\n")
+	item := acceptImport(t, imports, "1,token1\n2,token2\n")
 	parseImports(t, imports)
 	s := batchService(t, db, roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		// Failure precedes the response that discovers its authoritative token.
@@ -280,7 +321,7 @@ func TestReferenceImportValidationSharesPersistentRequestBackoff(t *testing.T) {
 		dir := t.TempDir()
 		db := openDB(t, dir)
 		imports := batchImports(t, db, filepath.Join(dir, "imports"))
-		item := acceptImport(t, imports, "{\"gid\":1,\"token\":\"token1\"}\n")
+		item := acceptImport(t, imports, "1,token1\n")
 		parseImports(t, imports)
 		var requests int
 		transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -319,7 +360,7 @@ func TestReferenceImportValidationSharesPersistentRequestBackoff(t *testing.T) {
 func TestReferenceImportCancellationAndRetryPreserveOtherOwners(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	imports := batchImports(t, db, t.TempDir())
-	input := "{\"gid\":1,\"token\":\"token1\"}\n{\"gid\":2,\"token\":\"token2\"}\n"
+	input := "1,token1\n2,token2\n"
 	first := acceptImport(t, imports, input)
 	second := acceptImport(t, imports, input)
 	third := acceptImport(t, imports, input)
@@ -377,8 +418,8 @@ func TestReferenceImportRetentionKeepsActiveWorkAndInventory(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	imports := batchImports(t, db, t.TempDir())
 	seedRefs(t, db, 1)
-	completed := acceptImport(t, imports, "{\"gid\":1,\"token\":\"token1\"}\n")
-	active := acceptImport(t, imports, "{\"gid\":2,\"token\":\"token2\"}\n")
+	completed := acceptImport(t, imports, "1,token1\n")
+	active := acceptImport(t, imports, "2,token2\n")
 	parseImports(t, imports)
 	expired := time.Now().Add(-JobRetention - time.Second).UnixMilli()
 	if _, err := db.Exec(`UPDATE reference_imports SET created_at = ?`, expired); err != nil {
@@ -423,12 +464,12 @@ func (failedImportReader) Read([]byte) (int, error) { return 0, io.ErrUnexpected
 func TestReferenceImportAcceptanceLimitsAndUnownedFileRecovery(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	imports := batchImports(t, db, t.TempDir())
-	if _, err := imports.Accept(t.Context(), "partial.jsonl", io.MultiReader(
-		strings.NewReader("{\"gid\":1,\"token\":\"token1\"}\n"), failedImportReader{},
+	if _, err := imports.Accept(t.Context(), "partial.txt", io.MultiReader(
+		strings.NewReader("1,token1\n"), failedImportReader{},
 	)); !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("interrupted upload accepted: %v", err)
 	}
-	if _, err := imports.Accept(t.Context(), "too-big.jsonl", repeatedImportByte(' ')); !errors.Is(err, ErrImportTooLarge) {
+	if _, err := imports.Accept(t.Context(), "too-big.txt", repeatedImportByte(' ')); !errors.Is(err, ErrImportTooLarge) {
 		t.Fatalf("oversized upload accepted: %v", err)
 	}
 	if got, err := imports.List(t.Context(), 100, 0); err != nil || len(got) != 0 {
@@ -437,7 +478,7 @@ func TestReferenceImportAcceptanceLimitsAndUnownedFileRecovery(t *testing.T) {
 	if files, err := os.ReadDir(imports.dir); err != nil || len(files) != 0 {
 		t.Fatalf("unaccepted uploads retained: %v, %v", files, err)
 	}
-	item, err := imports.Accept(t.Context(), "limit.jsonl", io.LimitReader(repeatedImportByte(' '), collectorapi.MaxReferenceImportBytes))
+	item, err := imports.Accept(t.Context(), "limit.txt", io.LimitReader(repeatedImportByte(' '), collectorapi.MaxReferenceImportBytes))
 	if err != nil || item.SizeBytes != collectorapi.MaxReferenceImportBytes {
 		t.Fatalf("maximum-size file rejected: %+v, %v", item, err)
 	}
@@ -448,7 +489,7 @@ func TestReferenceImportAcceptanceLimitsAndUnownedFileRecovery(t *testing.T) {
 	if refs, err := batchService(t, db, nil).store.pendingRefs(t.Context()); err != nil || len(refs) != 0 {
 		t.Fatalf("cancelled upload scheduled validation: %v, %v", refs, err)
 	}
-	for _, name := range []string{"upload-interrupted.part", "unowned.jsonl"} {
+	for _, name := range []string{"upload-interrupted.part", "unowned.txt"} {
 		if err := os.WriteFile(filepath.Join(imports.dir, name), []byte("unfinished"), 0o600); err != nil {
 			t.Fatal(err)
 		}

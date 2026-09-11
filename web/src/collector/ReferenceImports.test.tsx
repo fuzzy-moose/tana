@@ -14,7 +14,7 @@ vi.mock('./referenceImports', async (importOriginal) => ({
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
 const validating: ReferenceImport = {
-  id: 'first', filename: 'favorites.jsonl', status: 'validating', created_at: '2026-09-11T10:00:00Z',
+  id: 'first', filename: 'favorites.txt', status: 'validating', created_at: '2026-09-11T10:00:00Z',
   size_bytes: 1024, processed_bytes: 1024, references: 100, duplicates: 3, invalid: 2,
   known: 10, imported: 20, failed: 5, pending: 65, cancelled: 0,
 }
@@ -22,7 +22,7 @@ const validating: ReferenceImport = {
 test('shows independent processing and validation progress, with cancellation and failed-reference retry', async () => {
   let imports: ReferenceImport[] = [
     validating,
-    { ...validating, id: 'second', filename: 'failed.jsonl', status: 'completed', failed: 70, pending: 0 },
+    { ...validating, id: 'second', filename: 'failed.txt', status: 'completed', failed: 70, pending: 0 },
   ]
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     if (init?.method === 'POST') {
@@ -38,9 +38,9 @@ test('shows independent processing and validation progress, with cancellation an
   vi.stubGlobal('fetch', fetchMock)
   const user = userEvent.setup()
   render(<ReferenceImports available refreshKey={0} />)
-  const active = await screen.findByRole('article', { name: 'Import favorites.jsonl' })
-  const processing = within(active).getByRole('progressbar', { name: 'File processing for favorites.jsonl' }) as HTMLProgressElement
-  const validation = within(active).getByRole('progressbar', { name: 'Reference validation for favorites.jsonl' }) as HTMLProgressElement
+  const active = await screen.findByRole('article', { name: 'Import favorites.txt' })
+  const processing = within(active).getByRole('progressbar', { name: 'File processing for favorites.txt' }) as HTMLProgressElement
+  const validation = within(active).getByRole('progressbar', { name: 'Reference validation for favorites.txt' }) as HTMLProgressElement
   expect(processing.value).toBe(processing.max)
   expect(validation.value).toBe(35)
   expect(validation.max).toBe(100)
@@ -48,7 +48,7 @@ test('shows independent processing and validation progress, with cancellation an
   await user.click(within(active).getByRole('button', { name: 'Cancel' }))
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/first/cancel', expect.objectContaining({ method: 'POST' }))
   expect(within(active).queryByRole('button', { name: 'Cancel' })).toBeNull()
-  const failed = screen.getByRole('article', { name: 'Import failed.jsonl' })
+  const failed = screen.getByRole('article', { name: 'Import failed.txt' })
   await user.click(within(failed).getByRole('button', { name: 'Retry failed' }))
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/second/retry', expect.objectContaining({ method: 'POST' }))
   expect(await within(failed).findByText('Validating')).toBeTruthy()
@@ -67,13 +67,13 @@ test('uploads every selected file independently and continues after a failed upl
   })
   const user = userEvent.setup()
   render(<ReferenceImports available refreshKey={0} />)
-  const oversized = new File(['x'], 'large.jsonl')
-  const valid = new File(['{"gid":123,"token":"abc"}\n'], 'small.jsonl')
+  const oversized = new File(['x'], 'large.txt')
+  const valid = new File(['123,abc\n'], 'small.txt')
   await user.upload(screen.getByLabelText('Reference files'), [oversized, valid])
   await user.click(screen.getByRole('button', { name: 'Upload files' }))
   expect(await screen.findByText('1 file accepted. Imports continue on the collector.')).toBeTruthy()
-  expect(screen.getByRole('alert').textContent).toContain('large.jsonl: Each reference file must be 100 MiB or smaller.')
+  expect(screen.getByRole('alert').textContent).toContain('large.txt: Each reference file must be 100 MiB or smaller.')
   expect(upload).toHaveBeenCalledTimes(2)
   expect(upload.mock.calls.map(([file]) => file)).toEqual([oversized, valid])
-  expect(await screen.findByRole('article', { name: 'Import small.jsonl' })).toBeTruthy()
+  expect(await screen.findByRole('article', { name: 'Import small.txt' })).toBeTruthy()
 })

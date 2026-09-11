@@ -22,11 +22,11 @@ export default function ReferenceImports({ available, refreshKey }: { available:
         void history.submit(files)
       }}>
         <label className="form-field">Reference files
-          <input className="text-input" type="file" multiple accept=".jsonl,.ndjson,application/x-ndjson" disabled={!available || history.uploading} onChange={(event) => setFiles(Array.from(event.target.files ?? []))} aria-describedby="reference-import-format" />
+          <input className="text-input" type="file" multiple accept=".txt,.csv,text/plain,text/csv" disabled={!available || history.uploading} onChange={(event) => setFiles(Array.from(event.target.files ?? []))} aria-describedby="reference-import-format" />
         </label>
         <button className="button button-primary" type="submit" disabled={!available || history.uploading || files.length === 0}>{history.uploading ? 'Uploading…' : 'Upload files'}</button>
       </form>
-      <p id="reference-import-format" className="field-help">UTF-8 JSONL · 100 MiB maximum per file · One reference per line, such as <code>{'{"gid":123,"token":"abc"}'}</code>. Blank lines are ignored.</p>
+      <p id="reference-import-format" className="field-help">UTF-8 text · 100 MiB maximum per file · One <code>id,token</code> per line, such as <code>123,abc</code>. No header. Blank lines are ignored.</p>
       <p className="field-help">Keep this page open until uploads are accepted. Interrupted uploads restart from the beginning. Each upload creates a new import; accepted imports continue on the collector.</p>
       {history.transfer && <div className="reference-import-transfer" role="status">
         <p>{history.transfer.bytes === history.transfer.size ? 'Awaiting acceptance' : 'Uploading'}: {history.transfer.filename} · {size(history.transfer.bytes)} / {size(history.transfer.size)}</p>

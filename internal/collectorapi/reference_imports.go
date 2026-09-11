@@ -34,7 +34,7 @@ type ReferenceImportList struct {
 	Imports []ReferenceImport `json:"imports"`
 }
 
-// SubmitReferenceImport streams a complete JSONL file before the collector accepts
+// SubmitReferenceImport streams a complete reference file before the collector accepts
 // it. Uploads have no total transfer timeout; cancellation follows the caller.
 func (c *Client) SubmitReferenceImport(ctx context.Context, filename string, body io.Reader) (ReferenceImport, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/api/reference-imports?filename="+url.QueryEscape(filename), body)
@@ -42,7 +42,7 @@ func (c *Client) SubmitReferenceImport(ctx context.Context, filename string, bod
 		return ReferenceImport{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/x-ndjson")
+	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
 	req.Header.Set("Accept", "application/json")
 	response, err := c.files.Do(req)
 	if err != nil {

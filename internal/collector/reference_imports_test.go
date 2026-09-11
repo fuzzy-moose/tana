@@ -111,7 +111,7 @@ func TestReferenceImportThroughTanaSurvivesRestart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		req.Header.Set("Content-Type", "application/x-ndjson")
+		req.Header.Set("Content-Type", "text/plain; charset=utf-8")
 		response, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -128,9 +128,9 @@ func TestReferenceImportThroughTanaSurvivesRestart(t *testing.T) {
 		return result
 	}
 	const path = "/api/collector/reference-imports"
-	input := "{\"gid\":41,\"token\":\"good\"}\n{\"gid\":41,\"token\":\"good\"}\ninvalid\n{\"gid\":42,\"token\":\"bad\"}\n{\"gid\":42,\"token\":\"right\"}\n"
-	accepted := request(http.MethodPost, path+"?filename=references.jsonl", input, http.StatusAccepted)
-	if accepted.ID == "" || accepted.Filename != "references.jsonl" || accepted.SizeBytes != int64(len(input)) {
+	input := "41,good\n41,good\ninvalid\n42,bad\n42,right\n"
+	accepted := request(http.MethodPost, path+"?filename=references.txt", input, http.StatusAccepted)
+	if accepted.ID == "" || accepted.Filename != "references.txt" || accepted.SizeBytes != int64(len(input)) {
 		t.Fatalf("acceptance: %+v", accepted)
 	}
 	select {

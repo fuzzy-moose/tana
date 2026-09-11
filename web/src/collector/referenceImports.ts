@@ -52,7 +52,7 @@ export function uploadReferenceImport(file: File, signal: AbortSignal, onProgres
     }
     xhr.open('POST', `${base}?filename=${encodeURIComponent(file.name)}`)
     xhr.setRequestHeader('Accept', 'application/json')
-    xhr.setRequestHeader('Content-Type', 'application/x-ndjson')
+    xhr.setRequestHeader('Content-Type', 'text/plain; charset=utf-8')
     xhr.upload.onprogress = (event) => onProgress(Math.min(event.loaded, file.size))
     xhr.upload.onload = () => onProgress(file.size)
     xhr.onerror = () => finish(new Error('Upload could not be confirmed. Check import history before uploading the file again.'))

@@ -35,8 +35,8 @@ type interruptedImportReader struct{}
 func (interruptedImportReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
 func TestCollectorReferenceImportProxy(t *testing.T) {
-	const filename = "日本 + #&.jsonl"
-	const input = "{\"gid\":42,\"token\":\"reference-secret\"}\n"
+	const filename = "日本 + #&.txt"
+	const input = "42,reference-secret\n"
 	var requests, accepted atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -57,7 +57,7 @@ func TestCollectorReferenceImportProxy(t *testing.T) {
 			}
 			accepted.Add(1)
 			w.WriteHeader(202)
-			_, _ = io.WriteString(w, `{"id":"accepted","status":"processing","size_bytes":39}`)
+			_, _ = io.WriteString(w, `{"id":"accepted","status":"processing","size_bytes":20}`)
 		case r.Method == "GET" && r.URL.Path == "/api/reference-imports":
 			if r.URL.Query().Get("limit") != "25" || r.URL.Query().Get("offset") != "2" {
 				t.Errorf("pagination = %s", r.URL)
@@ -82,7 +82,7 @@ func TestCollectorReferenceImportProxy(t *testing.T) {
 	request := func(method, path string, body io.Reader, length int64) *importDeadlineRecorder {
 		r := httptest.NewRequest(method, "/api/collector/reference-imports"+path, body)
 		r.ContentLength = length
-		r.Header.Set("Content-Type", "application/x-ndjson")
+		r.Header.Set("Content-Type", "text/plain; charset=utf-8")
 		r.Header.Set("Cookie", "browser-secret=hidden")
 		r.Header.Set("Authorization", "Bearer browser-secret")
 		w := &importDeadlineRecorder{ResponseRecorder: httptest.NewRecorder(), read: time.Now(), write: time.Now()}
