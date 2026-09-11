@@ -296,7 +296,8 @@ func (q *Queries) PendingFetches(ctx context.Context, limit int64) ([]PendingFet
 }
 
 const pendingRefs = `-- name: PendingRefs :many
-SELECT gallery_id, token FROM gallery_refs WHERE metadata_attempted_at IS NULL ORDER BY gallery_id LIMIT ?
+SELECT gallery_id, token FROM gallery_refs WHERE metadata_attempted_at IS NULL
+ORDER BY metadata_priority, gallery_id LIMIT ?
 `
 
 type PendingRefsRow struct {
@@ -395,7 +396,8 @@ func (q *Queries) RetryState(ctx context.Context) (RetryStateRow, error) {
 }
 
 const saveGalleryRef = `-- name: SaveGalleryRef :exec
-INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?) ON CONFLICT (gallery_id) DO NOTHING
+INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?)
+ON CONFLICT (gallery_id) DO UPDATE SET metadata_priority = 0
 `
 
 type SaveGalleryRefParams struct {

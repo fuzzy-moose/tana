@@ -4,6 +4,7 @@ import "time"
 
 type Status struct {
 	Favorites             FavoritesStatus `json:"favorites"`
+	Sitemap               *SitemapStatus  `json:"sitemap,omitempty"`
 	Inventory             InventoryStatus `json:"inventory"`
 	MetadataErrors        []MetadataError `json:"metadata_errors"`
 	MetadataLastError     string          `json:"metadata_last_error,omitempty"`

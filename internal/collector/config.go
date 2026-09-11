@@ -8,6 +8,7 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/appdata"
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
+	"github.com/fuzzy-moose/tana/internal/collector/sitemap"
 	"github.com/fuzzy-moose/tana/internal/panda"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
@@ -18,6 +19,7 @@ type Config struct {
 	DownloadDir        string
 	APIToken           string
 	Feed               feed.Config
+	Sitemap            sitemap.Config
 	Panda              panda.Config
 	AuthenticatedPanda panda.AuthenticatedConfig
 }
@@ -34,6 +36,10 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("TANA_COLLECTOR_API_TOKEN must be nonempty and contain no whitespace")
 	}
 	cfg.Feed, err = feed.LoadConfig(getenv)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Sitemap, err = sitemap.LoadConfig(getenv)
 	if err != nil {
 		return Config{}, err
 	}

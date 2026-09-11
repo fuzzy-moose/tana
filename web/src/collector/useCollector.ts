@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { collectorMessages, getCollectorStatus, syncFavorites } from './api'
-import type { CollectorStatus, ConnectionStatus } from './api'
+import type { CollectorStatus, ConnectionStatus, SitemapStatus } from './api'
 
 export function useCollector() {
   const [connection, setConnection] = useState<ConnectionStatus | null>(null)
@@ -70,6 +70,10 @@ export function useCollector() {
     connectionUnknown: !!statusError,
     disabled: pending || !!error || !connection?.status,
     refresh: () => setRevision((value) => value + 1),
+    sitemapChanged: (sitemap: SitemapStatus) => {
+      setSnapshot((current) => current ? { ...current, status: { ...current.status, sitemap } } : current)
+      setRevision((value) => value + 1)
+    },
     downloadSettingsSaved: (categories: number[]) => {
       setSnapshot((current) => {
         if (!current?.status.favorites.downloads) return current

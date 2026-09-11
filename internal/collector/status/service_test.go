@@ -24,7 +24,7 @@ func TestStatusScopesFavoritesAndPartitionsInventory(t *testing.T) {
 	favorites := favorites.New(ctx, db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "current"}, nil, slog.New(slog.DiscardHandler))
 	defer favorites.Close()
 	ban := pandaban.New(db)
-	service := New(db, favorites, ban)
+	service := New(db, favorites, ban, nil)
 	empty, err := service.Get(t.Context())
 	if err != nil || len(empty.Favorites.Categories) != 10 || empty.Inventory.GalleryReferences != 0 || len(empty.MetadataErrors) != 0 {
 		t.Fatalf("empty status: %+v, %v", empty, err)

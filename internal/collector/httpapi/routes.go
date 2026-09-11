@@ -13,6 +13,8 @@ import (
 func NewHandler(app *collector.App) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/status", HandleStatus(app.Status))
+	mux.Handle("GET /api/sitemap/status", HandleSitemap(app.Sitemap))
+	mux.Handle("POST /api/sitemap/{action}", HandleSitemap(app.Sitemap))
 	mux.Handle("POST /api/favorites/{category}/sync", HandleSyncFavorites(app.Favorites))
 	mux.Handle("GET /api/favorites/download-settings", HandleFavoriteDownloadSettings(app.Favorites))
 	mux.Handle("PUT /api/favorites/download-settings", HandleFavoriteDownloadSettings(app.Favorites))

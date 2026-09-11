@@ -228,7 +228,8 @@ func (q *Queries) SaveFeedGalleryRef(ctx context.Context, arg SaveFeedGalleryRef
 }
 
 const saveGalleryRef = `-- name: SaveGalleryRef :exec
-INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?) ON CONFLICT (gallery_id) DO NOTHING
+INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?)
+ON CONFLICT (gallery_id) DO UPDATE SET metadata_priority = 0
 `
 
 type SaveGalleryRefParams struct {

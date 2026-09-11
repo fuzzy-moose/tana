@@ -8,6 +8,7 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
 	"github.com/fuzzy-moose/tana/internal/collector/pandaban"
+	"github.com/fuzzy-moose/tana/internal/collector/sitemap"
 	"github.com/fuzzy-moose/tana/internal/collector/status/dbgen"
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 )
@@ -16,10 +17,11 @@ type Service struct {
 	q         *dbgen.Queries
 	favorites *favorites.Service
 	ban       *pandaban.State
+	sitemap   *sitemap.Service
 }
 
-func New(db *sql.DB, favorites *favorites.Service, ban *pandaban.State) *Service {
-	return &Service{q: dbgen.New(db), favorites: favorites, ban: ban}
+func New(db *sql.DB, favorites *favorites.Service, ban *pandaban.State, sitemap *sitemap.Service) *Service {
+	return &Service{q: dbgen.New(db), favorites: favorites, ban: ban, sitemap: sitemap}
 }
 
 func (s *Service) Get(ctx context.Context) (collectorapi.Status, error) {
@@ -29,6 +31,13 @@ func (s *Service) Get(ctx context.Context) (collectorapi.Status, error) {
 		return result, err
 	}
 	result.Favorites = favorites
+	if s.sitemap != nil {
+		snapshot, err := s.sitemap.Status(ctx)
+		if err != nil {
+			return result, err
+		}
+		result.Sitemap = &snapshot
+	}
 	counts, err := s.q.InventoryStatistics(ctx)
 	if err != nil {
 		return result, err
@@ -64,6 +73,10 @@ func (s *Service) Get(ctx context.Context) (collectorapi.Status, error) {
 	}
 	if until.After(time.Now()) {
 		result.UpstreamCooldownUntil = &until
+		if result.Sitemap != nil && result.Sitemap.State == "running" &&
+			(result.Sitemap.RetryAt == nil || result.Sitemap.RetryAt.Before(until)) {
+			result.Sitemap.RetryAt = &until
+		}
 		for i := range result.Favorites.Categories {
 			category := &result.Favorites.Categories[i]
 			if category.State == "running" || category.State == "waiting_cooldown" {

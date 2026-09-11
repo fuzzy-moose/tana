@@ -79,6 +79,7 @@
 .collector-sync label { flex: 1 1 180px; }
 .collector-sync select { font: inherit; }
 .collector-sync select:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.sitemap-progress { width: 100%; height: 6px; accent-color: var(--accent); }
 .collector-notice, .collector-stale { margin: 16px 0; color: var(--accent); font-size: 13px; }
 .collector-table-scroll { overflow-x: auto; margin-top: 24px; }
 

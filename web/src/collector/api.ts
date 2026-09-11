@@ -34,7 +34,26 @@ export interface CollectorStatus {
   metadata_last_error?: string
   metadata_retry_at?: string
   upstream_cooldown_until?: string
+  sitemap?: SitemapStatus
 }
+
+export interface SitemapStatus {
+  state: 'idle' | 'running' | 'completed' | 'incomplete' | 'cancelled'
+  force: boolean
+  started_at?: string
+  finished_at?: string
+  retry_at?: string
+  children_total: number
+  children_completed: number
+  children_skipped: number
+  children_failed: number
+  references_found: number
+  references_imported: number
+  invalid_locations: number
+  last_error?: string
+}
+
+export type SitemapAction = 'start' | 'cancel' | 'retry'
 
 export interface FavoriteDownloadsStatus {
   categories: number[]
@@ -59,6 +78,7 @@ export const collectorMessages: Record<string, string> = {
   collector_invalid_response: 'The collector returned an unexpected status response.',
   collector_unavailable: 'The request could not be confirmed. Check collector status and try again.',
   invalid_download_categories: 'Select distinct favorite categories from 0 to 9.',
+  sitemap_state_conflict: 'Sitemap collection changed state. Refresh its status and try again.',
 }
 
 export const getCollectorStatus = (signal: AbortSignal) => request<ConnectionStatus>('/api/collector/status', { signal })
@@ -74,5 +94,12 @@ export const saveFavoriteDownloadSettings = (categories: number[], signal: Abort
   method: 'PUT',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ categories }),
+  signal,
+}, collectorMessages)
+
+export const updateSitemap = (action: SitemapAction, force: boolean, signal: AbortSignal) => request<SitemapStatus>(`/api/collector/sitemap/${action}`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(action === 'start' ? { force } : {}),
   signal,
 }, collectorMessages)

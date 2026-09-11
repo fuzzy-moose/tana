@@ -32,7 +32,8 @@ SELECT body FROM raw_feeds WHERE id = ?;
 UPDATE raw_feeds SET last_attempt_at = ?, last_error = ? WHERE id = ? AND processed_at IS NULL;
 
 -- name: SaveGalleryRef :exec
-INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?) ON CONFLICT (gallery_id) DO NOTHING;
+INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?)
+ON CONFLICT (gallery_id) DO UPDATE SET metadata_priority = 0;
 
 -- name: HasFeedSighting :one
 SELECT EXISTS(SELECT 1 FROM feed_gallery_refs WHERE gallery_id = ? AND raw_feed_id != ?);

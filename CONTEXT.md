@@ -84,7 +84,10 @@ A Panda download job stopped by explicit request, with its partial archive remov
 Automatic application of collected Panda metadata to a source-linked gallery using a Panda gallery candidate. Pending enrichment is an outstanding local intent to obtain and apply that metadata, distinct from a collector metadata fetch job.
 
 **Gallery reference inventory**:
-The distinct Panda gallery references discovered through feeds, Panda favorite collections, or Panda metadata, or supplied by Tana and confirmed by Panda. Tana-supplied references enter the inventory only after successful metadata retrieval confirms their tokens; references discovered through feeds, Panda favorite collections, or Panda metadata may await retrieval.
+The distinct Panda gallery references discovered through feeds, sitemaps, Panda favorite collections, or Panda metadata, or supplied by Tana and confirmed by Panda. Tana-supplied references enter the inventory only after successful metadata retrieval confirms their tokens; references discovered through feeds, sitemaps, Panda favorite collections, or Panda metadata may await retrieval.
+
+**Panda sitemap collection**:
+Discovery of Panda gallery references through the child sitemaps listed in Panda's sitemap index. Discovered references join the gallery reference inventory for metadata collection; sitemap collection does not request gallery archives.
 
 **Collected Panda metadata**:
 The latest successfully retrieved metadata for an upstream Panda gallery, retained indefinitely even if the gallery becomes unavailable upstream.

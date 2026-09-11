@@ -36,7 +36,7 @@ func TestLocalCollectorStatusAndSync(t *testing.T) {
 	favorites := favorites.New(t.Context(), db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "42"}, blockedFavorites{}, logger)
 	defer favorites.Close()
 	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{
-		Logger: logger, Favorites: favorites, Status: status.New(db, favorites, pandaban.New(db)), APIToken: "server-secret",
+		Logger: logger, Favorites: favorites, Status: status.New(db, favorites, pandaban.New(db), nil), APIToken: "server-secret",
 	}))
 	defer upstream.Close()
 	client, err := collectorapi.NewClient(upstream.URL, "server-secret")

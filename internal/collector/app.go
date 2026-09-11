@@ -14,6 +14,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
 	"github.com/fuzzy-moose/tana/internal/collector/pandaban"
+	"github.com/fuzzy-moose/tana/internal/collector/sitemap"
 	"github.com/fuzzy-moose/tana/internal/collector/status"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/panda"
@@ -24,6 +25,7 @@ type App struct {
 	Metadata  *metadata.Service
 	Favorites *favorites.Service
 	Downloads *downloads.Service
+	Sitemap   *sitemap.Service
 	Status    *status.Service
 	APIToken  string
 
@@ -68,6 +70,23 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	favoritesService := favorites.New(ctx, db, cfg.AuthenticatedPanda, authClient, logger)
+	sitemapLimiter, err := panda.NewRateLimiter(10*time.Second, 1)
+	if err != nil {
+		favoritesService.Close()
+		downloadService.Close()
+		db.Close()
+		return nil, err
+	}
+	sitemapService, err := sitemap.New(ctx, db, cfg.Sitemap, &http.Client{
+		// Redirects count as requests too; index children currently redirect hosts.
+		Timeout: 5 * time.Minute, Transport: panda.RateLimitedTransport(sitemapLimiter, panda.BanTransport(ban, nil)),
+	}, logger)
+	if err != nil {
+		favoritesService.Close()
+		downloadService.Close()
+		db.Close()
+		return nil, err
+	}
 	return &App{
 		Logger:    logger,
 		APIToken:  cfg.APIToken,
@@ -76,12 +95,14 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		Metadata:  metadata.New(ctx, db, client, logger),
 		Favorites: favoritesService,
 		Downloads: downloadService,
-		Status:    status.New(db, favoritesService, ban),
+		Sitemap:   sitemapService,
+		Status:    status.New(db, favoritesService, ban, sitemapService),
 	}, nil
 }
 
 // Close stops background work before releasing its database.
 func (a *App) Close() error {
+	a.Sitemap.Close()
 	a.Downloads.Close()
 	a.Favorites.Close()
 	a.feeds.Close()

@@ -34,7 +34,8 @@ INSERT INTO favorites (category_id, gallery_id, token, added_at) VALUES (?, ?, ?
 ON CONFLICT (category_id, gallery_id) DO UPDATE SET token = excluded.token, added_at = excluded.added_at;
 
 -- name: SaveGalleryRef :exec
-INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?) ON CONFLICT (gallery_id) DO NOTHING;
+INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?)
+ON CONFLICT (gallery_id) DO UPDATE SET metadata_priority = 0;
 
 -- name: GetSync :one
 SELECT * FROM favorite_syncs WHERE category_id = ?;

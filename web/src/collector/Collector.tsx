@@ -3,6 +3,7 @@ import type { FavoriteCategory } from './api'
 import { useCollector } from './useCollector'
 import Downloads from './Downloads'
 import FavoriteDownloads from './FavoriteDownloads'
+import Sitemap from './Sitemap'
 import './Collector.css'
 
 function date(value?: string) { return value ? new Date(value).toLocaleString() : '—' }
@@ -38,7 +39,7 @@ export default function Collector() {
         <div className="page-heading">
           <p className="eyebrow">Collection health</p>
           <h1 id="collector-title">Collector</h1>
-          <p>Sync Panda favorites, manage downloads, and follow metadata collection.</p>
+          <p>Collect Panda favorites and sitemaps, manage downloads, and follow metadata collection.</p>
         </div>
         <button className="button" type="button" disabled={collector.checking} onClick={collector.refresh}>{collector.checking ? 'Refreshing…' : 'Refresh'}</button>
       </div>
@@ -65,6 +66,8 @@ export default function Collector() {
           </dl>
           <p className="field-help">Pending and failed counts cover references without retained metadata. Explicit fetch requests: {status.inventory.fetches_pending.toLocaleString()} pending · {status.inventory.fetches_failed.toLocaleString()} failed.</p>
         </div>
+
+        {status.sitemap && <Sitemap status={status.sitemap} available={connected} onChanged={collector.sitemapChanged} />}
 
         <div className="collector-panel">
           <div className="collector-section-heading"><h2>Panda favorites</h2><span>{status.favorites.categories.reduce((sum, item) => sum + item.favorites, 0).toLocaleString()} collected favorites</span></div>
