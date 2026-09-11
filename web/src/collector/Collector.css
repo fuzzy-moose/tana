@@ -103,6 +103,13 @@
 .collector-errors strong { font-weight: 500; }
 .collector-errors small { color: var(--muted); }
 
+.collector-downloads th:first-child { white-space: nowrap; }
+.collector-downloads td:nth-child(2) { min-width: 180px; max-width: 320px; overflow-wrap: anywhere; }
+.collector-downloads td:last-child { min-width: 200px; }
+.download-delete { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.download-delete p { margin: 0 0 12px; }
+.download-pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 20px; font-size: 12px; }
+
 @media (max-width: 800px) {
   .collector-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .collector-panel { padding: 18px; }

@@ -17,6 +17,7 @@ type Client struct {
 	endpoint string
 	token    string
 	http     *http.Client
+	files    *http.Client
 }
 
 func NewClient(baseURL, token string) (*Client, error) {
@@ -29,8 +30,13 @@ func NewClient(baseURL, token string) (*Client, error) {
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
 	u.RawPath = ""
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
 	return &Client{endpoint: u.String(), token: token, http: &http.Client{
 		Timeout:       30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}, files: &http.Client{
+		Transport:     transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }

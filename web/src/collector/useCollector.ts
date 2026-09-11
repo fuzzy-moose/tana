@@ -62,7 +62,7 @@ export function useCollector() {
 
   const error = statusError || (connection?.error ? collectorMessages[connection.error] ?? 'Collector status is unavailable.' : '')
   return {
-    connection, snapshot, checking, pending, notice, error, requestError,
+    connection, snapshot, checking, pending, notice, error, requestError, revision,
     stale: !!snapshot && (!!error || !connection?.status),
     connectionUnknown: !!statusError,
     disabled: pending || !!error || !connection?.status,

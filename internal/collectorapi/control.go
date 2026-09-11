@@ -14,7 +14,10 @@ import (
 
 var ErrInvalidCategory = errors.New("invalid_category")
 
-type HTTPError struct{ StatusCode int }
+type HTTPError struct {
+	StatusCode int
+	Code       string
+}
 
 func (e *HTTPError) Error() string { return fmt.Sprintf("collector returned HTTP %d", e.StatusCode) }
 

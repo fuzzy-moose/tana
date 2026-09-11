@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FavoriteCategory } from './api'
 import { useCollector } from './useCollector'
+import Downloads from './Downloads'
 import './Collector.css'
 
 function date(value?: string) { return value ? new Date(value).toLocaleString() : '—' }
@@ -36,7 +37,7 @@ export default function Collector() {
         <div className="page-heading">
           <p className="eyebrow">Collection health</p>
           <h1 id="collector-title">Collector</h1>
-          <p>Sync Panda favorites and follow metadata collection.</p>
+          <p>Sync Panda favorites, manage downloads, and follow metadata collection.</p>
         </div>
         <button className="button" type="button" disabled={collector.checking} onClick={collector.refresh}>{collector.checking ? 'Refreshing…' : 'Refresh'}</button>
       </div>
@@ -48,10 +49,11 @@ export default function Collector() {
       </div>
 
       {collector.error && <div className="error-banner" role="alert"><p>{collector.error}</p></div>}
-      {connection && !connection.configured && <div className="collector-panel"><h2>Connect a collector</h2><p>Configure Tana’s collector URL and API token, then restart Tana to enable favorite sync and statistics.</p></div>}
+      {connection && !connection.configured && <div className="collector-panel"><h2>Connect a collector</h2><p>Configure Tana’s collector URL and API token, then restart Tana to enable favorite sync, downloads, and statistics.</p></div>}
       {collector.stale && <p className="collector-stale" role="status">Statistics are stale. Last updated {date(snapshot?.at)}.</p>}
 
       {status && <>
+        <Downloads available={connected} refreshKey={collector.revision} />
         <div className="collector-panel">
           <div className="collector-section-heading"><h2>Collector inventory</h2><span>All accounts and collection paths</span></div>
           <dl className="collector-metrics">
