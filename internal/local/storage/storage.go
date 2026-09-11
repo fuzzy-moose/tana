@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"modernc.org/sqlite"
@@ -30,44 +29,6 @@ func init() {
 		}
 		return strings.ToLower(value), nil
 	})
-}
-
-// DataDir resolves local application storage without accessing library roots.
-func DataDir() (string, error) {
-	return dataDir(os.Getenv, os.UserHomeDir, runtime.GOOS)
-}
-
-func dataDir(getenv func(string) string, homeDir func() (string, error), goos string) (string, error) {
-	if dir := getenv("TANA_DATA_DIR"); dir != "" {
-		return filepath.Abs(dir)
-	}
-	var base string
-	switch goos {
-	case "windows":
-		base = getenv("LOCALAPPDATA")
-	case "darwin":
-		// macOS uses ~/Library/Application Support.
-	default:
-		base = getenv("XDG_DATA_HOME")
-		if base != "" && !filepath.IsAbs(base) {
-			base = "" // The XDG specification ignores relative paths.
-		}
-	}
-	if base == "" {
-		home, err := homeDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve application data directory: %w", err)
-		}
-		switch goos {
-		case "windows":
-			base = filepath.Join(home, "AppData", "Local")
-		case "darwin":
-			base = filepath.Join(home, "Library", "Application Support")
-		default:
-			base = filepath.Join(home, ".local", "share")
-		}
-	}
-	return filepath.Abs(filepath.Join(base, "tana"))
 }
 
 // Open returns the initialized database and absolute application storage path.

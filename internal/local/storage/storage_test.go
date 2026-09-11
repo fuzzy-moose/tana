@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,32 +53,5 @@ func TestFutureDatabaseVersionRejected(t *testing.T) {
 	var version int
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 999 {
 		t.Fatalf("future schema was changed: %d, %v", version, err)
-	}
-}
-
-func TestDataDir(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "home")
-	for _, tc := range []struct {
-		name, goos string
-		env        map[string]string
-		want       string
-	}{
-		{"linux", "linux", nil, filepath.Join(home, ".local", "share", "tana")},
-		{"xdg", "linux", map[string]string{"XDG_DATA_HOME": home}, filepath.Join(home, "tana")},
-		{"relative xdg ignored", "linux", map[string]string{"XDG_DATA_HOME": "relative"}, filepath.Join(home, ".local", "share", "tana")},
-		{"mac", "darwin", nil, filepath.Join(home, "Library", "Application Support", "tana")},
-		{"windows", "windows", map[string]string{"LOCALAPPDATA": home}, filepath.Join(home, "tana")},
-		{"override", "linux", map[string]string{"TANA_DATA_DIR": home}, home},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := dataDir(func(k string) string { return tc.env[k] }, func() (string, error) { return home, nil }, tc.goos)
-			if err != nil || got != tc.want {
-				t.Fatalf("got %q, %v; want %q", got, err, tc.want)
-			}
-		})
-	}
-	_, err := dataDir(func(string) string { return "" }, func() (string, error) { return "", errors.New("no home") }, "linux")
-	if err == nil {
-		t.Fatal("missing home accepted")
 	}
 }

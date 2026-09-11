@@ -7,11 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
-	"unicode"
 
 	"github.com/fuzzy-moose/tana/internal/collector/downloads"
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
@@ -35,38 +31,18 @@ type App struct {
 	feeds *feed.Service
 }
 
-func New(ctx context.Context, logger *slog.Logger) (*App, error) {
-	token := strings.TrimSpace(os.Getenv("TANA_COLLECTOR_API_TOKEN"))
-	if token == "" || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
-		return nil, fmt.Errorf("TANA_COLLECTOR_API_TOKEN must be nonempty and contain no whitespace")
-	}
-	cfg, err := feed.LoadConfig(os.Getenv)
-	if err != nil {
-		return nil, err
-	}
-	pandaCfg, err := panda.LoadConfig(os.Getenv)
-	if err != nil {
-		return nil, err
-	}
+func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 	// Collection uses sustained pacing even if other Panda consumers allow bursts.
-	authCfg, err := panda.LoadAuthenticatedConfig(os.Getenv)
+	limiter, err := panda.NewRateLimiter(cfg.Panda.RateInterval, 1)
 	if err != nil {
 		return nil, err
 	}
-	limiter, err := panda.NewRateLimiter(pandaCfg.RateInterval, 1)
-	if err != nil {
-		return nil, err
-	}
-	dir, err := storage.DataDir()
-	if err != nil {
-		return nil, fmt.Errorf("resolve collector storage: %w", err)
-	}
-	db, _, err := storage.Open(ctx, dir)
+	db, _, err := storage.Open(ctx, cfg.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("open collector storage: %w", err)
 	}
 	ban := pandaban.New(db)
-	client, err := panda.NewClient(pandaCfg.APIURL, &http.Client{
+	client, err := panda.NewClient(cfg.Panda.APIURL, &http.Client{
 		Timeout: time.Minute, Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, nil)),
 	})
 	if err != nil {
@@ -78,29 +54,25 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 		db.Close()
 		return nil, err
 	}
-	authClient, err := panda.NewAuthenticatedClient(authCfg, &http.Client{
+	authClient, err := panda.NewAuthenticatedClient(cfg.AuthenticatedPanda, &http.Client{
 		Timeout: time.Minute, Transport: panda.RateLimitedTransport(authLimiter, panda.BanTransport(ban, nil)),
 	})
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	downloadDir := os.Getenv("TANA_COLLECTOR_DOWNLOAD_DIR")
-	if downloadDir == "" {
-		downloadDir = filepath.Join(dir, "downloads")
-	}
-	downloadService, err := downloads.New(ctx, db, downloadDir, authClient,
+	downloadService, err := downloads.New(ctx, db, cfg.DownloadDir, authClient,
 		downloads.NewHTTPTransfer(&http.Client{Timeout: 30 * time.Minute, Transport: panda.BanTransport(ban, nil)}), logger)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	favoritesService := favorites.New(ctx, db, authCfg, authClient, logger)
+	favoritesService := favorites.New(ctx, db, cfg.AuthenticatedPanda, authClient, logger)
 	return &App{
 		Logger:    logger,
-		APIToken:  token,
+		APIToken:  cfg.APIToken,
 		db:        db,
-		feeds:     feed.New(ctx, db, cfg, nil, logger),
+		feeds:     feed.New(ctx, db, cfg.Feed, nil, logger),
 		Metadata:  metadata.New(ctx, db, client, logger),
 		Favorites: favoritesService,
 		Downloads: downloadService,

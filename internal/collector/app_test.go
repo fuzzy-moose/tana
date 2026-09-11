@@ -51,7 +51,11 @@ func TestAppLifecycle(t *testing.T) {
 			t.Setenv("PANDA_ARCHIVER_URL", upstream.URL+"/account/prepare-archive")
 			t.Setenv("PANDA_FAVORITES_COOKIES", `{"ipb_member_id":"1","ipb_pass_hash":"test-hash","sp":"1"}`)
 			t.Setenv("PANDA_FAVORITES_ACCOUNT_KEY", "")
-			app, err := New(t.Context(), slog.New(slog.DiscardHandler))
+			cfg, err := LoadConfig(os.Getenv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			app, err := New(t.Context(), cfg, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -95,30 +99,5 @@ func TestAppLifecycle(t *testing.T) {
 				t.Fatalf("saved reference: %d/%s, %v", id, token, err)
 			}
 		})
-	}
-}
-
-func TestMissingFeedURLPreventsStartup(t *testing.T) {
-	t.Setenv("TANA_COLLECTOR_API_TOKEN", "test-token")
-	t.Setenv("PANDA_FEED_URL", "")
-	app, err := New(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if app != nil {
-		_ = app.Close()
-		t.Fatal("started collector without a feed URL")
-	}
-	if err == nil {
-		t.Fatal("missing feed URL accepted")
-	}
-}
-
-func TestMissingAPITokenPreventsStartup(t *testing.T) {
-	t.Setenv("TANA_COLLECTOR_API_TOKEN", "")
-	app, err := New(t.Context(), slog.New(slog.DiscardHandler))
-	if app != nil {
-		_ = app.Close()
-		t.Fatal("started collector without an API token")
-	}
-	if err == nil {
-		t.Fatal("missing API token accepted")
 	}
 }

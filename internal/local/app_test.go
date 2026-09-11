@@ -24,7 +24,7 @@ func TestAppLifecycle(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	app, err := local.New(ctx, logger)
+	app, err := local.New(ctx, loadConfig(t), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestAppLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reopened, err := local.New(t.Context(), logger)
+	reopened, err := local.New(t.Context(), loadConfig(t), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestNewRejectsInvalidStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TANA_DATA_DIR", path)
-	app, err := local.New(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	app, err := local.New(t.Context(), loadConfig(t), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if app != nil {
 		_ = app.Close()
 		t.Fatal("returned an application with invalid storage")
@@ -107,7 +107,7 @@ func TestAppServesWebAlongsideAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	app, err := local.New(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	app, err := local.New(t.Context(), loadConfig(t), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,12 +152,51 @@ func TestAppServesWebAlongsideAPI(t *testing.T) {
 func TestNewRejectsMissingWebBuild(t *testing.T) {
 	t.Setenv("TANA_DATA_DIR", t.TempDir())
 	t.Setenv("TANA_WEB_DIR", t.TempDir())
-	app, err := local.New(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	app, err := local.New(t.Context(), loadConfig(t), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if app != nil {
 		_ = app.Close()
 		t.Fatal("returned an application without a web build")
 	}
 	if err == nil || !strings.Contains(err.Error(), "open web UI") {
 		t.Fatalf("expected web UI initialization error, got %v", err)
+	}
+}
+
+func loadConfig(t *testing.T) local.Config {
+	t.Helper()
+	cfg, err := local.LoadConfig(os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+func TestOptionalCollectorConfiguration(t *testing.T) {
+	for _, tt := range []struct {
+		url, token       string
+		enabled, invalid bool
+	}{
+		{"", "", false, false},
+		{"", "collector-server-token", false, false},
+		{"http://localhost:8081/", "secret", true, false},
+		{"https://collector.test", "", false, true},
+		{"relative", "secret", false, true},
+		{"https://user:password@collector.test", "secret", false, true},
+		{"https://collector.test", "bad token", false, true},
+	} {
+		env := map[string]string{"TANA_COLLECTOR_URL": tt.url, "TANA_COLLECTOR_API_TOKEN": tt.token, "TANA_DATA_DIR": t.TempDir()}
+		cfg, err := local.LoadConfig(func(key string) string { return env[key] })
+		if err != nil {
+			t.Fatal(err)
+		}
+		app, err := local.New(t.Context(), cfg, slog.New(slog.DiscardHandler))
+		enabled := false
+		if app != nil {
+			enabled = app.Collector != nil
+			app.Close()
+		}
+		if (err != nil) != tt.invalid || enabled != tt.enabled {
+			t.Errorf("URL=%q: enabled=%t error=%v", tt.url, enabled, err)
+		}
 	}
 }

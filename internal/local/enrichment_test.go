@@ -49,7 +49,7 @@ func TestAppImportsBeforeCollectorRespondsThenEnriches(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	app, err := local.New(t.Context(), slog.New(slog.DiscardHandler))
+	app, err := local.New(t.Context(), loadConfig(t), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

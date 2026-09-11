@@ -34,21 +34,21 @@ func run(development bool) error {
 		logger.Error("startup_failed", "error", err)
 		return err
 	}
-	cfg, err := server.LoadConfig(os.Getenv, "TANA", "8080")
+	cfg, err := local.LoadConfig(os.Getenv)
 	if err != nil {
 		logger.Error("startup_failed", "error", err)
 		return err
 	}
-	level.Set(cfg.LogLevel)
+	level.Set(cfg.Server.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	app, err := local.New(ctx, logger)
+	app, err := local.New(ctx, cfg, logger)
 	if err != nil {
 		logger.Error("startup_failed", "error", err)
 		return err
 	}
 	defer cleanup.CloseAndLog(app, logger)
-	if err := server.Run(ctx, cfg, logger, httpapi.NewHandler(app)); err != nil {
+	if err := server.Run(ctx, cfg.Server, logger, httpapi.NewHandler(app)); err != nil {
 		logger.Error("server_failed", "error", err)
 		return err
 	}

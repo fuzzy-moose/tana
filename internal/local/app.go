@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/local/enrichment"
@@ -31,14 +30,18 @@ type App struct {
 }
 
 // New opens application storage and starts background availability checks.
-func New(ctx context.Context, logger *slog.Logger) (*App, error) {
-	collectorClient, err := enrichment.ConfiguredClient(os.Getenv)
-	if err != nil {
-		return nil, err
+func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
+	var collectorClient *collectorapi.Client
+	if cfg.CollectorURL != "" {
+		var err error
+		collectorClient, err = collectorapi.NewClient(cfg.CollectorURL, cfg.CollectorAPIToken)
+		if err != nil {
+			return nil, fmt.Errorf("configure Panda enrichment: %w", err)
+		}
 	}
 	var web fs.FS
-	if dir := strings.TrimSpace(os.Getenv("TANA_WEB_DIR")); dir != "" {
-		web = os.DirFS(dir)
+	if cfg.WebDir != "" {
+		web = os.DirFS(cfg.WebDir)
 		index, err := fs.Stat(web, "index.html")
 		if err != nil {
 			return nil, fmt.Errorf("open web UI: %w", err)
@@ -47,11 +50,7 @@ func New(ctx context.Context, logger *slog.Logger) (*App, error) {
 			return nil, fmt.Errorf("web UI index.html must be a file")
 		}
 	}
-	dataDir, err := storage.DataDir()
-	if err != nil {
-		return nil, fmt.Errorf("resolve local storage: %w", err)
-	}
-	db, dataDir, err := storage.Open(ctx, dataDir)
+	db, dataDir, err := storage.Open(ctx, cfg.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("open local storage: %w", err)
 	}
