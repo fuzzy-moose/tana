@@ -86,6 +86,12 @@ Automatic application of collected Panda metadata to a source-linked gallery usi
 **Gallery reference inventory**:
 The distinct Panda gallery references discovered through feeds, sitemaps, Panda favorite collections, or Panda metadata, or supplied by Tana and confirmed by Panda. Tana-supplied references enter the inventory only after successful metadata retrieval confirms their tokens; references discovered through feeds, sitemaps, Panda favorite collections, or Panda metadata may await retrieval.
 
+**Panda reference import**:
+Submission of Panda gallery references through Tana for admission to the gallery reference inventory, complete when every submitted reference has a final outcome. Matching inventory references count as already known; an import admits a new reference only after successful metadata retrieval confirms its token.
+
+**Accepted Panda reference import**:
+A Panda reference import whose complete input file has been received and whose processing is durably owned by the collector. Acceptance survives the submitting session and collector restarts, independently of later validation outcomes.
+
 **Panda sitemap collection**:
 Discovery of Panda gallery references through the child sitemaps listed in Panda's sitemap index. Discovered references join the gallery reference inventory for metadata collection; sitemap collection does not request gallery archives.
 

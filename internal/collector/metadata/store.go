@@ -26,6 +26,7 @@ func (s *store) complete(ctx context.Context, refs []panda.GalleryRef, entries [
 	defer tx.Rollback()
 	q := s.q.WithTx(tx)
 	requested := make(map[int64]string, len(refs))
+	known := make(map[int64]string, len(refs))
 	for _, ref := range refs {
 		requested[ref.ID] = ref.Token
 	}
@@ -35,6 +36,9 @@ func (s *store) complete(ctx context.Context, refs []panda.GalleryRef, entries [
 		token, err := q.GetGalleryToken(ctx, entry.ID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		if err == nil {
+			known[entry.ID] = token
 		}
 		if err == nil && token != requested[entry.ID] {
 			entries[i] = panda.Metadata{ID: entry.ID, Error: "token_conflict"}
@@ -80,6 +84,34 @@ func (s *store) complete(ctx context.Context, refs []panda.GalleryRef, entries [
 		if err := q.CompleteFetch(ctx, result); err != nil {
 			return err
 		}
+	}
+	// Related discovery in any response can make a failed reference known.
+	// Settle imports after all discovery, independently of response order.
+	for _, entry := range entries {
+		if _, exists := known[entry.ID]; !exists && entry.Error != "" {
+			token, err := q.GetGalleryToken(ctx, entry.ID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if err == nil {
+				known[entry.ID] = token
+			}
+		}
+		if err := completeImportedReference(ctx, tx, panda.GalleryRef{ID: entry.ID, Token: requested[entry.ID]}, entry.Error == "", known[entry.ID] == requested[entry.ID]); err != nil {
+			return err
+		}
+		if token, ok := known[entry.ID]; ok {
+			if err := settleImportedGallery(ctx, tx, entry.ID, token); err != nil {
+				return err
+			}
+		} else if entry.Error == "" {
+			if err := settleImportedGallery(ctx, tx, entry.ID, entry.Token); err != nil {
+				return err
+			}
+		}
+	}
+	if err := completeReferenceImports(ctx, tx, at); err != nil {
+		return err
 	}
 	if err := q.CompleteFetchJobs(ctx, nullableMillis(at)); err != nil {
 		return err
@@ -133,5 +165,8 @@ func (s *store) pendingRefs(ctx context.Context) ([]panda.GalleryRef, error) {
 	for _, row := range rows {
 		refs = append(refs, panda.GalleryRef{ID: row.GalleryID, Token: row.Token})
 	}
-	return refs, nil
+	if len(refs) != 0 {
+		return refs, nil
+	}
+	return s.pendingImportRefs(ctx)
 }

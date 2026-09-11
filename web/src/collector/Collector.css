@@ -116,7 +116,19 @@
 .download-delete p { margin: 0 0 12px; }
 .download-pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 20px; font-size: 12px; }
 
+.reference-import-upload input { max-width: 100%; font: inherit; }
+.reference-import-upload input::file-selector-button { margin-right: 12px; }
+.reference-import { border-top: 1px solid var(--border); padding: 20px 0; }
+.reference-import:last-child { padding-bottom: 0; }
+.reference-import h3 { margin: 0; overflow-wrap: anywhere; min-width: 0; flex: 1; }
+.reference-import h4 { margin: 0; font-size: 12px; font-weight: 500; }
+.reference-import-stages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 20px 0; }
+.reference-import-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; font-size: 12px; }
+.reference-import-counts dt { color: var(--muted); }
+.reference-import-counts dd { margin: 6px 0 0; font-size: 18px; font-variant-numeric: tabular-nums; }
+
 @media (max-width: 800px) {
   .collector-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .collector-panel { padding: 18px; }
+  .reference-import-stages { grid-template-columns: 1fr; }
 }

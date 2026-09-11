@@ -28,7 +28,7 @@ function connected(): ConnectionStatus {
 }
 
 test('Collector route shows statistics and submits all-category sync and a selected full re-sync', async () => {
-  const fetchMock = vi.fn<typeof fetch>(async (input, init) => String(input).startsWith('/api/collector/downloads') ? Response.json({ jobs: [] }) : init?.method === 'POST'
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => String(input).startsWith('/api/collector/reference-imports') ? Response.json({ imports: [] }) : String(input).startsWith('/api/collector/downloads') ? Response.json({ jobs: [] }) : init?.method === 'POST'
     ? Response.json({ status: 'accepted' }, { status: 202 }) : Response.json(connected()))
   vi.stubGlobal('fetch', fetchMock)
   window.history.replaceState(null, '', '/#/collector')
@@ -54,6 +54,7 @@ test('configures favorite downloads and shows baseline progress', async () => {
   const result = connected()
   result.status!.favorites.downloads = { categories: [], baseline_state: 'not_started', baseline_categories: 0 }
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    if (String(input).startsWith('/api/collector/reference-imports')) return Response.json({ imports: [] })
     if (String(input).startsWith('/api/collector/downloads')) return Response.json({ jobs: [] })
     if (init?.method === 'PUT') {
       const settings = JSON.parse(String(init.body)) as { categories: number[] }
@@ -83,7 +84,7 @@ test('configures favorite downloads and shows baseline progress', async () => {
 
 test('preserves statistics through connection failures, disables syncing, and recovers on refresh', async () => {
   let result = connected()
-  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => Response.json(String(input).startsWith('/api/collector/downloads') ? { jobs: [] } : result)))
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => Response.json(String(input).startsWith('/api/collector/reference-imports') ? { imports: [] } : String(input).startsWith('/api/collector/downloads') ? { jobs: [] } : result)))
   window.history.replaceState(null, '', '/#/collector')
   const user = userEvent.setup()
   render(<App />)
@@ -106,7 +107,7 @@ test('shows durable progress and collected favorites before the first sync compl
     state: 'running', favorites: 2000, entries_saved: 2000, pages_saved: 20,
     started_at: '2026-09-06T09:00:00Z', last_saved_at: '2026-09-06T09:59:00Z', last_synced_at: undefined,
   })
-  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => Response.json(String(input).startsWith('/api/collector/downloads') ? { jobs: [] } : result)))
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => Response.json(String(input).startsWith('/api/collector/reference-imports') ? { imports: [] } : String(input).startsWith('/api/collector/downloads') ? { jobs: [] } : result)))
   window.history.replaceState(null, '', '/#/collector')
   render(<App />)
   await screen.findByText('Connected')

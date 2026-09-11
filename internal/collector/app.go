@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collector/downloads"
@@ -21,13 +22,14 @@ import (
 )
 
 type App struct {
-	Logger    *slog.Logger
-	Metadata  *metadata.Service
-	Favorites *favorites.Service
-	Downloads *downloads.Service
-	Sitemap   *sitemap.Service
-	Status    *status.Service
-	APIToken  string
+	Logger           *slog.Logger
+	Metadata         *metadata.Service
+	Favorites        *favorites.Service
+	Downloads        *downloads.Service
+	Sitemap          *sitemap.Service
+	ReferenceImports *metadata.ReferenceImports
+	Status           *status.Service
+	APIToken         string
 
 	db    *sql.DB
 	feeds *feed.Service
@@ -87,21 +89,31 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	imports, err := metadata.NewReferenceImports(ctx, db, filepath.Join(cfg.DataDir, "reference-imports"), logger)
+	if err != nil {
+		sitemapService.Close()
+		favoritesService.Close()
+		downloadService.Close()
+		db.Close()
+		return nil, err
+	}
 	return &App{
-		Logger:    logger,
-		APIToken:  cfg.APIToken,
-		db:        db,
-		feeds:     feed.New(ctx, db, cfg.Feed, nil, logger),
-		Metadata:  metadata.New(ctx, db, client, logger),
-		Favorites: favoritesService,
-		Downloads: downloadService,
-		Sitemap:   sitemapService,
-		Status:    status.New(db, favoritesService, ban, sitemapService),
+		Logger:           logger,
+		APIToken:         cfg.APIToken,
+		db:               db,
+		feeds:            feed.New(ctx, db, cfg.Feed, nil, logger),
+		Metadata:         metadata.New(ctx, db, client, logger),
+		Favorites:        favoritesService,
+		Downloads:        downloadService,
+		Sitemap:          sitemapService,
+		ReferenceImports: imports,
+		Status:           status.New(db, favoritesService, ban, sitemapService),
 	}, nil
 }
 
 // Close stops background work before releasing its database.
 func (a *App) Close() error {
+	a.ReferenceImports.Close()
 	a.Sitemap.Close()
 	a.Downloads.Close()
 	a.Favorites.Close()

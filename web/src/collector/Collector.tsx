@@ -4,6 +4,7 @@ import { useCollector } from './useCollector'
 import Downloads from './Downloads'
 import FavoriteDownloads from './FavoriteDownloads'
 import Sitemap from './Sitemap'
+import ReferenceImports from './ReferenceImports'
 import './Collector.css'
 
 function date(value?: string) { return value ? new Date(value).toLocaleString() : '—' }
@@ -68,6 +69,8 @@ export default function Collector() {
         </div>
 
         {status.sitemap && <Sitemap status={status.sitemap} available={connected} onChanged={collector.sitemapChanged} />}
+
+        <ReferenceImports available={connected} refreshKey={collector.revision} />
 
         <div className="collector-panel">
           <div className="collector-section-heading"><h2>Panda favorites</h2><span>{status.favorites.categories.reduce((sum, item) => sum + item.favorites, 0).toLocaleString()} collected favorites</span></div>
