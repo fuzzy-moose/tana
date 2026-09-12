@@ -30,8 +30,8 @@ type ConnectionStatus struct {
 	Status        *Status   `json:"status,omitempty"`
 }
 
-// Status checks the authenticated API; a health response alone cannot prove
-// access to statistics. Connection failures are data for the local status page.
+// Status checks authenticated reachability independently of collector statistics.
+// Connection failures are data for the local status page.
 func (c *Client) Status(ctx context.Context) ConnectionStatus {
 	result := ConnectionStatus{Configured: true}
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
@@ -55,15 +55,9 @@ func (c *Client) Status(ctx context.Context) ConnectionStatus {
 		return result
 	}
 	var status Status
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&status); err != nil || len(status.Favorites.Categories) != 10 {
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&status); err != nil || !status.Available {
 		result.Error = "collector_invalid_response"
 		return result
-	}
-	for i, category := range status.Favorites.Categories {
-		if category.Category != i {
-			result.Error = "collector_invalid_response"
-			return result
-		}
 	}
 	authenticated := true
 	result.Authenticated = &authenticated

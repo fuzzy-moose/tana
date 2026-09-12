@@ -5,10 +5,13 @@ function subscribe(callback: () => void) {
   return () => window.removeEventListener('hashchange', callback)
 }
 
+export type CollectorPage = 'overview' | 'downloads' | 'favorites' | 'sitemap' | 'imports'
+
 export type Route =
   | { kind: 'galleries', search: string, page: number }
   | { kind: 'panda', search: string, page: number, includeExpunged: boolean }
-  | { kind: 'libraries' | 'collector' | 'not-found' }
+  | { kind: 'libraries' | 'not-found' }
+  | { kind: 'collector', page: CollectorPage }
   | { kind: 'detail', id: number, page: number }
   | { kind: 'reader', id: number, page: number, lastPage?: number }
 
@@ -21,7 +24,9 @@ export function useRoute(): Route {
   if (!path || path === '/' || path === '/galleries') return { kind: 'galleries', search: params.get('q') ?? '', page }
   if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', page, includeExpunged: params.get('include_expunged') === 'true' }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
-  if (path === '/collector') return { kind: 'collector' }
+  if (path === '/collector') return { kind: 'collector', page: 'overview' }
+  const collector = path.match(/^\/collector\/(downloads|favorites|sitemap|imports)$/)
+  if (collector) return { kind: 'collector', page: collector[1] as CollectorPage }
   const spread = path.match(/^\/galleries\/(\d+)\/page\/(\d+)(?:-(\d+))?$/)
   if (spread) {
     const id = Number(spread[1])

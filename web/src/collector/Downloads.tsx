@@ -1,6 +1,17 @@
 import { useState } from 'react'
 import { downloadFailure, downloadFileURL, downloadPageSize, downloadState } from './downloads'
+import type { DownloadFilter } from './downloads'
 import { useDownloads } from './useDownloads'
+
+const filters: { state: DownloadFilter, label: string }[] = [
+  { state: '', label: 'All' },
+  { state: 'running', label: 'Active' },
+  { state: 'queued', label: 'Pending' },
+  { state: 'completed', label: 'Completed' },
+  { state: 'failed', label: 'Failed' },
+  { state: 'cancelled', label: 'Cancelled' },
+  { state: 'deleting', label: 'Deleting' },
+]
 
 function date(value: string) { return new Date(value).toLocaleString() }
 function size(bytes: number) {
@@ -15,6 +26,8 @@ export default function Downloads({ available, refreshKey }: { available: boolea
   const [url, setURL] = useState('')
   const [deleting, setDeleting] = useState<number | null>(null)
   const actionsDisabled = downloads.disabled || downloads.stale || downloads.checking || !downloads.loaded
+  const filterLabel = filters.find((filter) => filter.state === downloads.filter)!.label
+  const total = downloads.counts ? Object.values(downloads.counts).reduce((sum, count) => sum + count, 0) : undefined
 
   return (
     <section className="collector-panel" aria-labelledby="downloads-title">
@@ -33,19 +46,30 @@ export default function Downloads({ available, refreshKey }: { available: boolea
         <button className="button button-primary" type="submit" disabled={downloads.disabled || !url.trim()}>{downloads.pending ? 'Requesting…' : 'Add download'}</button>
       </form>
       <p className="field-help">Submitting the same gallery reuses its existing download. Failed or cancelled jobs can be retried below.</p>
+      <div className="download-filters" role="group" aria-label="Filter downloads">
+        {filters.map(({ state, label }) => <button className="button download-filter" key={state} type="button"
+          aria-pressed={downloads.filter === state} disabled={downloads.disabled}
+          onClick={() => { downloads.selectFilter(state); setDeleting(null) }}>
+          <span>{label}</span>{' '}
+          <strong>{(state ? downloads.counts?.[state] : total)?.toLocaleString() ?? '—'}</strong>
+        </button>)}
+      </div>
+      {downloads.filter === 'queued' && <p className="field-help">Pending downloads are queued or waiting for an automatic retry or Panda cooldown.</p>}
       {downloads.notice && <p className="collector-notice" role="status">{downloads.notice}</p>}
       {downloads.requestError && <p className="error-message" role="alert">{downloads.requestError}</p>}
       {downloads.error && <p className="error-message" role="alert">{downloads.error}</p>}
       {downloads.stale && <p className="collector-stale" role="status">Download status is stale. Actions will be available when the collector reconnects and the list refreshes.</p>}
       {!downloads.loaded && !downloads.error && <p className="field-help">{available ? 'Loading downloads…' : 'Downloads are unavailable while the collector is disconnected.'}</p>}
-      {downloads.loaded && downloads.jobs.length === 0 && <p className="field-help">No downloads yet. Paste a Panda gallery URL to get started.</p>}
+      {downloads.loaded && downloads.jobs.length === 0 && <p className="download-empty" role="status">{downloads.filter
+        ? `No ${filterLabel.toLowerCase()} downloads.`
+        : 'No downloads yet. Paste a Panda gallery URL to get started.'}</p>}
       {downloads.jobs.length > 0 && <div className="collector-table-scroll">
         <table className="collector-table collector-downloads">
-          <caption className="collector-table-caption">Panda download jobs · newest first</caption>
+          <caption className="collector-table-caption">{filterLabel} downloads · newest first</caption>
           <thead><tr><th scope="col">Gallery</th><th scope="col">State</th><th scope="col">Archive size</th><th scope="col">Dates</th><th scope="col">Actions</th></tr></thead>
           <tbody>{downloads.jobs.map((job) => <tr key={job.gallery_id}>
             <th scope="row">Gallery {job.gallery_id}</th>
-            <td><span className="collector-state">{downloadState(job)}</span>
+            <td><span className="collector-state download-state" data-state={job.state}>{downloadState(job)}</span>
               {job.error && <span className="collector-secondary">{downloadFailure(job.error)}</span>}
               {job.failures > 0 && <span className="collector-secondary">{job.failures} failed {job.failures === 1 ? 'attempt' : 'attempts'}</span>}
               {job.retry_at && <span className="collector-secondary">Retry after {date(job.retry_at)}</span>}

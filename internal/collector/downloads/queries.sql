@@ -2,7 +2,12 @@
 SELECT * FROM panda_downloads WHERE gallery_id = ?;
 
 -- name: ListDownloads :many
-SELECT * FROM panda_downloads ORDER BY created_at DESC, gallery_id DESC LIMIT ? OFFSET ?;
+SELECT * FROM panda_downloads
+WHERE CAST(sqlc.arg(state) AS TEXT) = '' OR state = sqlc.arg(state)
+ORDER BY created_at DESC, gallery_id DESC LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: CountDownloadsByState :many
+SELECT state, count(*) AS count FROM panda_downloads GROUP BY state;
 
 -- name: RecoverDownloads :many
 SELECT * FROM panda_downloads WHERE state IN ('running', 'cancelled', 'deleting');

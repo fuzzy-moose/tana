@@ -10,6 +10,11 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 const job = (id: number, state: DownloadJob['state']): DownloadJob => ({
   gallery_id: id, state, created_at: '2026-09-11T08:00:00Z', updated_at: '2026-09-11T09:00:00Z', failures: 0, size_bytes: 0,
 })
+const listing = (jobs: DownloadJob[], page = jobs) => {
+  const counts = { queued: 0, running: 0, completed: 0, failed: 0, cancelled: 0, deleting: 0 }
+  for (const item of jobs) counts[item.state]++
+  return { jobs: page, counts }
+}
 const row = (id: number) => within(screen.getByRole('rowheader', { name: `Gallery ${id}` }).closest('tr')!)
 const props = { available: true, refreshKey: 0 }
 
@@ -21,7 +26,7 @@ test('submits a URL, reuses an existing job, cancels and explicitly retries it',
       jobs = [job(42, path.endsWith('/cancel') ? 'cancelled' : 'queued')]
       return Response.json(jobs[0], { status: path.endsWith('/downloads') ? 202 : 200 })
     }
-    return Response.json({ jobs })
+    return Response.json(listing(jobs))
   })
   vi.stubGlobal('fetch', fetchMock)
   const user = userEvent.setup()
@@ -55,7 +60,7 @@ test('shows retry diagnostics, offers retained ZIP retrieval, and deletes only a
       jobs = jobs.filter((item) => item.gallery_id !== 7)
       return new Response(null, { status: 204 })
     }
-    return Response.json({ jobs })
+    return Response.json(listing(jobs))
   })
   vi.stubGlobal('fetch', fetchMock)
   const user = userEvent.setup()
@@ -86,7 +91,7 @@ test('paginates and returns to the preceding page after deleting the last job', 
     }
     const url = new URL(String(input), 'http://tana.test')
     const offset = Number(url.searchParams.get('offset'))
-    return Response.json({ jobs: jobs.slice(offset, offset + 26) })
+    return Response.json(listing(jobs, jobs.slice(offset, offset + 26)))
   }))
   const user = userEvent.setup()
   render(<Downloads {...props} />)
@@ -101,12 +106,64 @@ test('paginates and returns to the preceding page after deleting the last job', 
   expect(screen.queryByRole('navigation', { name: 'Download pages' })).toBeNull()
 })
 
+test('filters all downloads by state, resets pagination, and updates global counts after cancellation', async () => {
+  let jobs = [
+    ...Array.from({ length: 25 }, (_, i) => job(28 - i, 'completed')),
+    job(3, 'queued'), job(2, 'queued'), job(1, 'running'),
+  ]
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    if (init?.method === 'POST') {
+      jobs = jobs.map((item) => item.gallery_id === 1 ? { ...item, state: 'cancelled' } : item)
+      return Response.json(jobs.find((item) => item.gallery_id === 1))
+    }
+    const url = new URL(String(input), 'http://tana.test')
+    const offset = Number(url.searchParams.get('offset'))
+    const state = url.searchParams.get('state')
+    const filtered = state ? jobs.filter((item) => item.state === state) : jobs
+    return Response.json(listing(jobs, filtered.slice(offset, offset + 26)))
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const user = userEvent.setup()
+  render(<Downloads {...props} />)
+  await screen.findByRole('rowheader', { name: 'Gallery 28' })
+  const filters = within(screen.getByRole('group', { name: 'Filter downloads' }))
+  expect(filters.getByRole('button', { name: 'All 28' }).getAttribute('aria-pressed')).toBe('true')
+  expect(filters.getByRole('button', { name: 'Active 1' }).getAttribute('aria-pressed')).toBe('false')
+  expect(screen.queryByRole('rowheader', { name: 'Gallery 1' })).toBeNull()
+
+  await user.click(screen.getByRole('button', { name: 'Next downloads' }))
+  await screen.findByRole('rowheader', { name: 'Gallery 1' })
+  expect(screen.getByText('Page 2')).toBeTruthy()
+  expect(filters.getByRole('button', { name: 'All 28' })).toBeTruthy()
+  await user.click(filters.getByRole('button', { name: 'Active 1' }))
+  await waitFor(() => expect(screen.getAllByRole('rowheader')).toHaveLength(1))
+  expect(row(1).getByText('Running')).toBeTruthy()
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/downloads?limit=26&offset=0&state=running', expect.any(Object))
+  expect(screen.queryByRole('navigation', { name: 'Download pages' })).toBeNull()
+  expect(filters.getByRole('button', { name: 'Active 1' }).getAttribute('aria-pressed')).toBe('true')
+  expect(filters.getByRole('button', { name: 'All 28' }).getAttribute('aria-pressed')).toBe('false')
+  expect(filters.getByRole('button', { name: 'Completed 25' })).toBeTruthy()
+  expect(filters.getByRole('button', { name: 'Pending 2' })).toBeTruthy()
+
+  await user.click(row(1).getByRole('button', { name: 'Cancel' }))
+  await screen.findByText('No active downloads.')
+  expect(filters.getByRole('button', { name: 'Active 0' }).getAttribute('aria-pressed')).toBe('true')
+  expect(filters.getByRole('button', { name: 'Cancelled 1' })).toBeTruthy()
+  expect(filters.getByRole('button', { name: 'All 28' })).toBeTruthy()
+  expect(screen.queryByRole('rowheader')).toBeNull()
+
+  await user.click(filters.getByRole('button', { name: 'Pending 2' }))
+  await screen.findByRole('rowheader', { name: 'Gallery 3' })
+  expect(screen.getAllByRole('rowheader')).toHaveLength(2)
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/downloads?limit=26&offset=0&state=queued', expect.any(Object))
+})
+
 test('retains input on submission failure and retains jobs through collector failures', async () => {
   let offline = false
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (_input, init) => {
     if (init?.method === 'POST') return Response.json({ error: 'download_token_conflict' }, { status: 409 })
     if (offline) return Response.json({ error: 'collector_unauthorized' }, { status: 502 })
-    return Response.json({ jobs: [job(7, 'completed')] })
+    return Response.json(listing([job(7, 'completed')]))
   }))
   const user = userEvent.setup()
   const view = render(<Downloads {...props} />)

@@ -96,6 +96,7 @@ func TestLocalCollectorDownloads(t *testing.T) {
 		{"GET", "?offset=1", "", 200, ""},
 		{"GET", "?limit=101", "", 400, "invalid_pagination"},
 		{"GET", "?offset=-1", "", 400, "invalid_pagination"},
+		{"GET", "?state=unknown", "", 400, "invalid_state"},
 		{"GET", "/bad", "", 400, "invalid_gallery_reference"},
 		{"GET", "/999999999999999999999999", "", 400, "invalid_gallery_reference"},
 		{"POST", "", `{"gid":42,"token":"other"}`, 409, "download_token_conflict"},
@@ -157,5 +158,100 @@ func TestLocalCollectorDownloads(t *testing.T) {
 	handler = NewHandler(&local.App{Logger: logger})
 	if w := request("GET", "/api/collector/downloads", ""); w.Code != 503 {
 		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestLocalCollectorDownloadFilteringAndGlobalCounts(t *testing.T) {
+	db, _, err := storage.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	logger := slog.New(slog.DiscardHandler)
+	service, err := downloads.New(t.Context(), db, t.TempDir(), blockedArchive{}, nil, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep seeded states stable while testing list snapshots and pagination.
+	service.Close()
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{
+		Logger: logger, Downloads: service, APIToken: "test-token",
+	}))
+	defer upstream.Close()
+	client, err := collectorapi.NewClient(upstream.URL, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(&local.App{Logger: logger, Collector: client})
+	list := func(query string) collectorapi.DownloadList {
+		t.Helper()
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/collector/downloads"+query, nil))
+		var result collectorapi.DownloadList
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("list %s: %d %s, %v", query, w.Code, w.Body, err)
+		}
+		return result
+	}
+	states := []string{"queued", "running", "completed", "failed", "cancelled", "deleting"}
+	empty := list("")
+	if empty.Jobs == nil || len(empty.Jobs) != 0 || len(empty.Counts) != len(states) {
+		t.Fatalf("empty list: %+v", empty)
+	}
+	for _, state := range states {
+		if count, ok := empty.Counts[state]; !ok || count != 0 {
+			t.Fatalf("empty %s count: %d, present %v", state, count, ok)
+		}
+	}
+	for id := int64(1); id <= 105; id++ {
+		if _, err := db.Exec(`INSERT INTO panda_downloads(gallery_id, token, state, created_at, updated_at)
+			VALUES (?, 'token', 'completed', 1, 1)`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, state := range []string{"running", "queued", "failed", "cancelled", "deleting"} {
+		if _, err := db.Exec(`INSERT INTO panda_downloads(gallery_id, token, state, created_at, updated_at)
+			VALUES (?, 'token', ?, ?, 1)`, 106+i, state, 2+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, state := range states {
+		result := list("?state=" + state + "&limit=2")
+		wantJobs := 1
+		if state == "completed" {
+			wantJobs = 2
+		}
+		if len(result.Jobs) != wantJobs {
+			t.Fatalf("%s jobs: %+v", state, result.Jobs)
+		}
+		for _, job := range result.Jobs {
+			if job.State != state {
+				t.Fatalf("%s filter returned %s job", state, job.State)
+			}
+		}
+		for _, countedState := range states {
+			want := int64(1)
+			if countedState == "completed" {
+				want = 105
+			}
+			if result.Counts[countedState] != want {
+				t.Fatalf("%s filter, %s count: %d, want %d", state, countedState, result.Counts[countedState], want)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		query string
+		ids   [2]int64
+	}{
+		{"?state=completed&limit=2&offset=100", [2]int64{5, 4}},
+		{"?limit=2&offset=1", [2]int64{109, 108}},
+	} {
+		result := list(tc.query)
+		if len(result.Jobs) != 2 || result.Jobs[0].GalleryID != tc.ids[0] || result.Jobs[1].GalleryID != tc.ids[1] {
+			t.Fatalf("page %s: %+v", tc.query, result.Jobs)
+		}
+	}
+	if result := list("?state=completed&offset=105"); len(result.Jobs) != 0 || result.Counts["completed"] != 105 {
+		t.Fatalf("past last page: %+v", result)
 	}
 }

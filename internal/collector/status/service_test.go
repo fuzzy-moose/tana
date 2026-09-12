@@ -13,7 +13,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
-func TestStatusScopesFavoritesAndPartitionsInventory(t *testing.T) {
+func TestStatusViewsScopeFavoritesAndPartitionInventory(t *testing.T) {
 	db, _, err := storage.Open(t.Context(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -24,10 +24,18 @@ func TestStatusScopesFavoritesAndPartitionsInventory(t *testing.T) {
 	favorites := favorites.New(ctx, db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "current"}, nil, slog.New(slog.DiscardHandler))
 	defer favorites.Close()
 	ban := pandaban.New(db)
-	service := New(db, favorites, ban, nil)
-	empty, err := service.Get(t.Context())
-	if err != nil || len(empty.Favorites.Categories) != 10 || empty.Inventory.GalleryReferences != 0 || len(empty.MetadataErrors) != 0 {
-		t.Fatalf("empty status: %+v, %v", empty, err)
+	service := New(db, favorites, ban)
+	emptyFavorites, err := service.Favorites(t.Context())
+	if err != nil || len(emptyFavorites.Categories) != 10 {
+		t.Fatalf("empty favorites: %+v, %v", emptyFavorites, err)
+	}
+	emptyInventory, err := service.Inventory(t.Context())
+	if err != nil || emptyInventory.GalleryReferences != 0 {
+		t.Fatalf("empty inventory: %+v, %v", emptyInventory, err)
+	}
+	emptyMetadata, err := service.Metadata(t.Context())
+	if err != nil || len(emptyMetadata.MetadataErrors) != 0 {
+		t.Fatalf("empty metadata: %+v, %v", emptyMetadata, err)
 	}
 	_, err = db.Exec(`
 INSERT INTO gallery_refs (gallery_id, token, metadata_attempted_at, metadata_error) VALUES
@@ -43,6 +51,7 @@ INSERT INTO favorite_categories (id, host, account_key, category, name, synced_a
   (3, 'https://other.test', 'current', 0, 'Other host', 1000);
 INSERT INTO favorites (category_id, gallery_id, token, added_at) VALUES
   (1, 1, 'one', 1), (1, 2, 'two', 2), (2, 3, 'three', 3), (3, 4, 'four', 4);
+INSERT INTO favorite_syncs (category_id, state, full, queued_at) VALUES (1, 'running', 0, 1000);
 UPDATE metadata_retry SET last_error = 'upstream unavailable', next_attempt_at = ? WHERE id = 1;
 `, time.Now().Add(time.Hour).UnixMilli())
 	if err != nil {
@@ -52,25 +61,36 @@ UPDATE metadata_retry SET last_error = 'upstream unavailable', next_attempt_at =
 	if err := ban.Extend(t.Context(), until); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.Get(t.Context())
+	inventory, err := service.Inventory(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := collectorapi.InventoryStatus{GalleryReferences: 4, MetadataAvailable: 1, MetadataPending: 2, MetadataFailed: 1, FetchesPending: 3, FetchesFailed: 1}
-	if result.Inventory != want {
-		t.Fatalf("inventory: %+v, want %+v", result.Inventory, want)
+	if inventory != want {
+		t.Fatalf("inventory: %+v, want %+v", inventory, want)
 	}
-	for i, category := range result.Favorites.Categories {
-		if category.Category != i || category.State != "idle" {
+	favoriteStatus, err := service.Favorites(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, category := range favoriteStatus.Categories {
+		if category.Category != i {
 			t.Fatalf("category: %+v", category)
 		}
 		if i == 2 {
 			if category.Name != "Manga" || category.Favorites != 2 || category.LastSyncedAt == nil || category.LastSyncedAt.UnixMilli() != 1234 {
 				t.Fatalf("current category: %+v", category)
 			}
-		} else if category.Favorites != 0 || category.LastSyncedAt != nil || category.Name != "" {
+			if category.State != "waiting_cooldown" || category.RetryAt == nil || category.RetryAt.UnixMilli() != until.UnixMilli() {
+				t.Fatalf("shared cooldown missing from favorites: %+v", category)
+			}
+		} else if category.State != "idle" || category.Favorites != 0 || category.LastSyncedAt != nil || category.Name != "" {
 			t.Fatalf("historical data leaked: %+v", category)
 		}
+	}
+	result, err := service.Metadata(t.Context())
+	if err != nil {
+		t.Fatal(err)
 	}
 	if result.UpstreamCooldownUntil == nil || result.UpstreamCooldownUntil.UnixMilli() != until.UnixMilli() ||
 		result.MetadataLastError != "upstream unavailable" || result.MetadataRetryAt == nil ||

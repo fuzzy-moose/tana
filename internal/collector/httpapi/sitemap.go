@@ -3,13 +3,15 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"time"
 
+	"github.com/fuzzy-moose/tana/internal/collector/pandaban"
 	"github.com/fuzzy-moose/tana/internal/collector/sitemap"
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func HandleSitemap(service *sitemap.Service) http.Handler {
+func HandleSitemap(service *sitemap.Service, ban *pandaban.State) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var result collectorapi.SitemapStatus
 		var err error
@@ -40,6 +42,13 @@ func HandleSitemap(service *sitemap.Service) http.Handler {
 			default:
 				http.NotFound(w, r)
 				return
+			}
+		}
+		if err == nil && result.State == "running" {
+			var until time.Time
+			until, err = ban.Until(r.Context())
+			if err == nil && until.After(time.Now()) && (result.RetryAt == nil || result.RetryAt.Before(until)) {
+				result.RetryAt = &until
 			}
 		}
 		if err != nil {

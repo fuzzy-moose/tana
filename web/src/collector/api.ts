@@ -21,20 +21,30 @@ export interface FavoriteCategory {
 }
 
 export interface CollectorStatus {
-  favorites: { host: string, account_key: string, categories: FavoriteCategory[], downloads?: FavoriteDownloadsStatus }
-  inventory: {
-    gallery_references: number
-    metadata_available: number
-    metadata_pending: number
-    metadata_failed: number
-    fetches_pending: number
-    fetches_failed: number
-  }
+  available: boolean
+}
+
+export interface FavoritesStatus {
+  host: string
+  account_key: string
+  categories: FavoriteCategory[]
+  downloads?: FavoriteDownloadsStatus
+}
+
+export interface InventoryStatus {
+  gallery_references: number
+  metadata_available: number
+  metadata_pending: number
+  metadata_failed: number
+  fetches_pending: number
+  fetches_failed: number
+}
+
+export interface MetadataStatus {
   metadata_errors: { gallery_id: number, error: string, at?: string }[]
   metadata_last_error?: string
   metadata_retry_at?: string
   upstream_cooldown_until?: string
-  sitemap?: SitemapStatus
 }
 
 export interface SitemapStatus {
@@ -82,6 +92,10 @@ export const collectorMessages: Record<string, string> = {
 }
 
 export const getCollectorStatus = (signal: AbortSignal) => request<ConnectionStatus>('/api/collector/status', { signal })
+export const getInventoryStatus = (signal: AbortSignal) => request<InventoryStatus>('/api/collector/inventory/status', { signal }, collectorMessages)
+export const getFavoritesStatus = (signal: AbortSignal) => request<FavoritesStatus>('/api/collector/favorites/status', { signal }, collectorMessages)
+export const getMetadataStatus = (signal: AbortSignal) => request<MetadataStatus>('/api/collector/metadata/status', { signal }, collectorMessages)
+export const getSitemapStatus = (signal: AbortSignal) => request<SitemapStatus>('/api/collector/sitemap/status', { signal }, collectorMessages)
 
 export const syncFavorites = (category: string, full: boolean, signal: AbortSignal) => request('/api/collector/favorites/' + category + '/sync', {
   method: 'POST',

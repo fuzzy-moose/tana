@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -25,12 +26,17 @@ type DownloadJob struct {
 }
 
 type DownloadList struct {
-	Jobs []DownloadJob `json:"jobs"`
+	Jobs   []DownloadJob    `json:"jobs"`
+	Counts map[string]int64 `json:"counts"`
 }
 
-func (c *Client) ListDownloads(ctx context.Context, limit, offset int64) (DownloadList, error) {
+func (c *Client) ListDownloads(ctx context.Context, state string, limit, offset int64) (DownloadList, error) {
 	var result DownloadList
-	err := c.downloadRequest(ctx, http.MethodGet, fmt.Sprintf("/api/downloads?limit=%d&offset=%d", limit, offset), nil, &result)
+	path := fmt.Sprintf("/api/downloads?limit=%d&offset=%d", limit, offset)
+	if state != "" {
+		path += "&state=" + url.QueryEscape(state)
+	}
+	err := c.downloadRequest(ctx, http.MethodGet, path, nil, &result)
 	if err == nil && result.Jobs == nil {
 		err = fmt.Errorf("collector returned an invalid download list")
 	}

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -8,6 +9,38 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
+
+func HandleCollectorFavoritesStatus(client *collectorapi.Client) http.Handler {
+	return handleCollectorStatusView(client, client.FavoritesStatus)
+}
+
+func HandleCollectorInventoryStatus(client *collectorapi.Client) http.Handler {
+	return handleCollectorStatusView(client, client.InventoryStatus)
+}
+
+func HandleCollectorMetadataStatus(client *collectorapi.Client) http.Handler {
+	return handleCollectorStatusView(client, client.MetadataStatus)
+}
+
+func handleCollectorStatusView[T any](client *collectorapi.Client, read func(context.Context) (T, error)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			server.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "collector_not_configured"})
+			return
+		}
+		result, err := read(r.Context())
+		if err != nil {
+			code := "collector_unavailable"
+			if upstream, ok := errors.AsType[*collectorapi.HTTPError](err); ok &&
+				(upstream.StatusCode == http.StatusUnauthorized || upstream.StatusCode == http.StatusForbidden) {
+				code = "collector_unauthorized"
+			}
+			server.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": code})
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, result)
+	})
+}
 
 func HandleCollectorStatus(client *collectorapi.Client) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

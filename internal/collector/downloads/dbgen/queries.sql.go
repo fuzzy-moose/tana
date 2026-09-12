@@ -9,6 +9,38 @@ import (
 	"context"
 )
 
+const countDownloadsByState = `-- name: CountDownloadsByState :many
+SELECT state, count(*) AS count FROM panda_downloads GROUP BY state
+`
+
+type CountDownloadsByStateRow struct {
+	State string
+	Count int64
+}
+
+func (q *Queries) CountDownloadsByState(ctx context.Context) ([]CountDownloadsByStateRow, error) {
+	rows, err := q.db.QueryContext(ctx, countDownloadsByState)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountDownloadsByStateRow{}
+	for rows.Next() {
+		var i CountDownloadsByStateRow
+		if err := rows.Scan(&i.State, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteDownload = `-- name: DeleteDownload :exec
 DELETE FROM panda_downloads WHERE gallery_id = ?
 `
@@ -62,16 +94,19 @@ func (q *Queries) GetDownload(ctx context.Context, galleryID int64) (PandaDownlo
 }
 
 const listDownloads = `-- name: ListDownloads :many
-SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error FROM panda_downloads ORDER BY created_at DESC, gallery_id DESC LIMIT ? OFFSET ?
+SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error FROM panda_downloads
+WHERE CAST(?1 AS TEXT) = '' OR state = ?1
+ORDER BY created_at DESC, gallery_id DESC LIMIT ?3 OFFSET ?2
 `
 
 type ListDownloadsParams struct {
-	Limit  int64
-	Offset int64
+	State      string
+	PageOffset int64
+	PageLimit  int64
 }
 
 func (q *Queries) ListDownloads(ctx context.Context, arg ListDownloadsParams) ([]PandaDownload, error) {
-	rows, err := q.db.QueryContext(ctx, listDownloads, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, listDownloads, arg.State, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

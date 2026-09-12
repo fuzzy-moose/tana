@@ -12,6 +12,9 @@ export interface DownloadJob {
   error?: string
 }
 
+export type DownloadFilter = DownloadJob['state'] | ''
+export type DownloadCounts = Record<DownloadJob['state'], number>
+
 export const downloadMessages: Record<string, string> = {
   ...collectorMessages,
   collector_unavailable: 'The download request could not be confirmed. Check collector status and try again.',
@@ -19,6 +22,7 @@ export const downloadMessages: Record<string, string> = {
   download_not_found: 'This download is no longer available. Refresh the download list.',
   download_state_conflict: 'The download state changed. Check the refreshed list and try again.',
   download_token_conflict: 'This gallery already has a download with a different token. Delete that job before submitting the corrected URL.',
+  invalid_state: 'Choose a valid download state.',
 }
 
 export function parseGalleryURL(value: string): { gid: number, token: string } {
@@ -37,8 +41,8 @@ export function parseGalleryURL(value: string): { gid: number, token: string } {
 
 const base = '/api/collector/downloads'
 export const downloadPageSize = 25
-export const listDownloads = (offset: number, signal: AbortSignal) => request<{ jobs: DownloadJob[] }>(
-  `${base}?limit=${downloadPageSize + 1}&offset=${offset}`, { signal }, downloadMessages,
+export const listDownloads = (offset: number, signal: AbortSignal, state: DownloadFilter = '') => request<{ jobs: DownloadJob[], counts: DownloadCounts }>(
+  `${base}?limit=${downloadPageSize + 1}&offset=${offset}${state ? `&state=${state}` : ''}`, { signal }, downloadMessages,
 )
 export const submitDownload = (ref: { gid: number, token: string }, signal: AbortSignal) => request<DownloadJob>(base, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ref), signal,

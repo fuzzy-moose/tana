@@ -151,7 +151,7 @@ test('fits Panda pages to the viewport and preserves the search and filter when 
   window.history.replaceState(null, '', '#/panda?q=manga&page=3&include_expunged=true')
   fetchMock.mockImplementation(async (input) => {
     const url = new URL(String(input), 'http://localhost')
-    if (url.pathname === '/api/collector/status') return Response.json({ configured: true, reachable: true, status: { inventory: { metadata_pending: 0, metadata_failed: 0 } } })
+    if (url.pathname === '/api/collector/inventory/status') return Response.json({ gallery_references: 0, metadata_available: 0, metadata_pending: 0, metadata_failed: 0, fetches_pending: 0, fetches_failed: 0 })
     if (url.pathname === '/api/collector/feed/status') return Response.json({ capture_active: false, processing_pending: 0, continuity: 'unknown', possible_gaps: 0 })
     const pageSize = Number(url.searchParams.get('page_size'))
     const page = Number(url.searchParams.get('page'))

@@ -47,12 +47,12 @@ func HandleListDownloads(service *downloads.Service) http.Handler {
 			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_pagination"})
 			return
 		}
-		jobs, err := service.List(r.Context(), limit, offset)
+		result, err := service.List(r.Context(), r.URL.Query().Get("state"), limit, offset)
 		if err != nil {
 			downloadError(w, r, err)
 			return
 		}
-		server.WriteJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
+		server.WriteJSON(w, http.StatusOK, result)
 	})
 }
 
@@ -131,6 +131,8 @@ func HandleGetDownloadFile(service *downloads.Service) http.Handler {
 
 func downloadError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, downloads.ErrInvalidState):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_state"})
 	case errors.Is(err, downloads.ErrInvalidReference):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_gallery_reference"})
 	case errors.Is(err, downloads.ErrState), errors.Is(err, downloads.ErrTokenConflict):

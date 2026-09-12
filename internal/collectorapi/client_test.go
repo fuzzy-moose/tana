@@ -86,3 +86,50 @@ func TestStatusReportsConnectionAndProtocolFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestFocusedStatusRequiresCompleteResponses(t *testing.T) {
+	categories := make([]FavoriteCategory, 10)
+	for i := range categories {
+		categories[i].Category = i
+	}
+	valid, err := json.Marshal(FavoritesStatus{Categories: categories})
+	if err != nil {
+		t.Fatal(err)
+	}
+	categories[9].Category = 8
+	duplicate, err := json.Marshal(FavoritesStatus{Categories: categories})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		path, body string
+		valid      bool
+	}{
+		{"favorites", string(valid), true},
+		{"favorites", string(duplicate), false},
+		{"favorites", `{}`, false},
+		{"metadata", `{"metadata_errors":[]}`, true},
+		{"metadata", `{}`, false},
+	} {
+		t.Run(tc.path+tc.body, func(t *testing.T) {
+			client, err := NewClient("https://collector.test", "secret")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.http.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path != "/api/"+tc.path+"/status" {
+					t.Fatalf("unexpected status path: %s", r.URL.Path)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
+			})
+			if tc.path == "favorites" {
+				_, err = client.FavoritesStatus(t.Context())
+			} else {
+				_, err = client.MetadataStatus(t.Context())
+			}
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v, error=%v", tc.valid, err)
+			}
+		})
+	}
+}

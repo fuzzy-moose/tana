@@ -14,6 +14,7 @@ vi.mock('../galleries/useGalleryLayout', () => ({
 const fetchMock = vi.fn<typeof fetch>()
 let catalogVersion: number
 let offline: boolean
+let inventoryUnavailable: boolean
 let captureActive: boolean
 
 function catalogRequests() {
@@ -24,15 +25,16 @@ beforeEach(() => {
   window.history.replaceState(null, '', '#/panda')
   catalogVersion = 1
   offline = false
+  inventoryUnavailable = false
   captureActive = false
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(String(input), 'http://localhost')
     if (offline) return Response.json({ error: 'collector_unreachable' }, { status: 502 })
-    if (url.pathname === '/api/collector/status') return Response.json({
-      configured: true, reachable: true, authenticated: true, checked_at: '2026-09-12T12:00:00Z',
-      status: { inventory: { metadata_pending: 12, metadata_failed: 2 } },
-    })
+    if (url.pathname === '/api/collector/inventory/status') {
+      if (inventoryUnavailable) return Response.json({ error: 'collector_status_unavailable' }, { status: 503 })
+      return Response.json({ gallery_references: 30, metadata_available: 16, metadata_pending: 12, metadata_failed: 2, fetches_pending: 0, fetches_failed: 0 })
+    }
     if (url.pathname.startsWith('/api/collector/feed/')) {
       if (init?.method === 'POST') captureActive = true
       return Response.json({ capture_active: captureActive, last_captured_at: '2026-09-12T12:00:00Z', processing_pending: 0, continuity: 'overlap', possible_gaps: 0 })
@@ -64,6 +66,8 @@ test('browses collected covers with local search, expunged filter, and numbered 
   expect(gallery.querySelector('time')?.getAttribute('datetime')).toBe('2026-09-12T10:00:00Z')
   expect(screen.getByText('9 galleries')).toBeTruthy()
   expect(screen.getByText(/12 metadata pending · 2 failed/)).toBeTruthy()
+  expect(fetchMock.mock.calls.some(([url]) => url === '/api/collector/inventory/status')).toBe(true)
+  expect(fetchMock.mock.calls.some(([url]) => url === '/api/collector/status')).toBe(false)
   expect(catalogRequests()[0][0]).toBe('/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false')
 
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'p:fate' } })
@@ -74,6 +78,17 @@ test('browses collected covers with local search, expunged filter, and numbered 
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
   await screen.findByRole('heading', { name: 'p:fate 1 page 2' })
   expect(window.location.hash).toBe('#/panda?q=p%3Afate&page=2&include_expunged=true')
+})
+
+test('inventory failure leaves feed status and capture available', async () => {
+  inventoryUnavailable = true
+  render(<App />)
+  await screen.findByRole('heading', { name: 'Upload 1 page 1' })
+  expect((await screen.findByRole('alert')).textContent).toContain('its status API is unavailable')
+  expect(screen.getByText(/Feed processing complete/)).toBeTruthy()
+  expect(screen.getByText(/Latest feed overlaps earlier captures/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh feed' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Capturing feed…' }).hasAttribute('disabled')).toBe(true))
 })
 
 test('Panda autocomplete uses the collected vocabulary and preserves raw tag characters', async () => {

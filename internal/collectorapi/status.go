@@ -1,15 +1,68 @@
 package collectorapi
 
-import "time"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
 
 type Status struct {
-	Favorites             FavoritesStatus `json:"favorites"`
-	Sitemap               *SitemapStatus  `json:"sitemap,omitempty"`
-	Inventory             InventoryStatus `json:"inventory"`
+	Available bool `json:"available"`
+}
+
+type MetadataStatus struct {
 	MetadataErrors        []MetadataError `json:"metadata_errors"`
 	MetadataLastError     string          `json:"metadata_last_error,omitempty"`
 	MetadataRetryAt       *time.Time      `json:"metadata_retry_at,omitempty"`
 	UpstreamCooldownUntil *time.Time      `json:"upstream_cooldown_until,omitempty"`
+}
+
+func (c *Client) FavoritesStatus(ctx context.Context) (FavoritesStatus, error) {
+	var result FavoritesStatus
+	err := c.readStatus(ctx, "/api/favorites/status", &result)
+	if err == nil {
+		if len(result.Categories) != 10 {
+			return result, fmt.Errorf("collector returned an invalid favorites status")
+		}
+		for i, category := range result.Categories {
+			if category.Category != i {
+				return result, fmt.Errorf("collector returned an invalid favorites status")
+			}
+		}
+	}
+	return result, err
+}
+
+func (c *Client) InventoryStatus(ctx context.Context) (InventoryStatus, error) {
+	var result InventoryStatus
+	err := c.readStatus(ctx, "/api/inventory/status", &result)
+	return result, err
+}
+
+func (c *Client) MetadataStatus(ctx context.Context) (MetadataStatus, error) {
+	var result MetadataStatus
+	err := c.readStatus(ctx, "/api/metadata/status", &result)
+	if err == nil && result.MetadataErrors == nil {
+		err = fmt.Errorf("collector returned an invalid metadata status")
+	}
+	return result, err
+}
+
+func (c *Client) readStatus(ctx context.Context, path string, result any) error {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	response, err := c.controlRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return &HTTPError{StatusCode: response.StatusCode}
+	}
+	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(result)
 }
 
 type FavoritesStatus struct {

@@ -43,7 +43,7 @@ function App() {
       </aside>
       <main id="main-content" tabIndex={-1}>
         {route.kind === 'libraries' && <Libraries />}
-        {route.kind === 'collector' && <Collector />}
+        {route.kind === 'collector' && <Collector page={route.page} />}
         {route.kind === 'panda' && <PandaCatalog search={route.search} page={route.page} includeExpunged={route.includeExpunged} />}
         {route.kind === 'galleries' && <Galleries key={route.search} search={route.search} page={route.page} />}
         {route.kind === 'detail' && <GalleryDetail key={route.id} id={route.id} />}

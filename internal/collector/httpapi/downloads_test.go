@@ -70,6 +70,7 @@ func TestDownloadsAPI(t *testing.T) {
 		{"GET", "/api/downloads/bad", "", 400},
 		{"GET", "/api/downloads?limit=101", "", 400},
 		{"GET", "/api/downloads?offset=-1", "", 400},
+		{"GET", "/api/downloads?state=unknown", "", 400},
 		{"POST", "/api/downloads", `{"gid":42,"token":"other"}`, 409},
 		{"POST", "/api/downloads", `{"gid":0,"token":"token"}`, 400},
 		{"POST", "/api/downloads", `{"gid":1}`, 400},

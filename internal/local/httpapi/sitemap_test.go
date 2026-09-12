@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collector"
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
@@ -37,9 +38,14 @@ func TestSitemapControlsThroughLocalProxy(t *testing.T) {
 	sitemaps.Close() // Stop the idle worker before submitting durable work.
 	favs := favorites.New(ctx, db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "42"}, blockedFavorites{}, logger)
 	defer favs.Close()
+	ban := pandaban.New(db)
+	until := time.Now().Add(time.Hour).Truncate(time.Millisecond)
+	if err := ban.Extend(t.Context(), until); err != nil {
+		t.Fatal(err)
+	}
 	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{
-		Logger: logger, Sitemap: sitemaps, Favorites: favs,
-		Status: status.New(db, favs, pandaban.New(db), sitemaps), APIToken: "server-secret",
+		Logger: logger, Sitemap: sitemaps, Favorites: favs, Ban: ban,
+		Status: status.New(db, favs, ban), APIToken: "server-secret",
 	}))
 	defer upstream.Close()
 	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
@@ -78,16 +84,21 @@ func TestSitemapControlsThroughLocalProxy(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &state); err != nil || state.State != tc.state || !state.Force {
 				t.Fatalf("%s: %s, %v", tc.action, w.Body, err)
 			}
+			if state.State == "running" && (state.RetryAt == nil || !state.RetryAt.Equal(until)) {
+				t.Fatalf("%s missing shared cooldown: %s", tc.action, w.Body)
+			}
 		}
 	}
 	w := request("GET", "/api/collector/sitemap/status", "")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"state":"running"`) {
-		t.Fatalf("sitemap status: %d %s", w.Code, w.Body)
+	var sitemapStatus collectorapi.SitemapStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &sitemapStatus); err != nil || w.Code != 200 || sitemapStatus.State != "running" ||
+		sitemapStatus.RetryAt == nil || !sitemapStatus.RetryAt.Equal(until) {
+		t.Fatalf("sitemap status: %d %s, %v", w.Code, w.Body, err)
 	}
 	w = request("GET", "/api/collector/status", "")
 	var connection collectorapi.ConnectionStatus
 	if err := json.Unmarshal(w.Body.Bytes(), &connection); err != nil || w.Code != 200 || connection.Status == nil ||
-		connection.Status.Sitemap == nil || connection.Status.Sitemap.State != "running" || strings.Contains(w.Body.String(), "server-secret") {
+		!connection.Status.Available || strings.Contains(w.Body.String(), "server-secret") {
 		t.Fatalf("collector status: %d %s, %v", w.Code, w.Body, err)
 	}
 	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-token")

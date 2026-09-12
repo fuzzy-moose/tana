@@ -22,6 +22,7 @@ import (
 var ErrInvalidReference = errors.New("invalid gallery reference")
 var ErrState = errors.New("operation not allowed in current download state")
 var ErrTokenConflict = errors.New("gallery token conflicts with existing download")
+var ErrInvalidState = errors.New("invalid download state")
 
 const maxFailures = 5
 
@@ -38,6 +39,11 @@ type Job struct {
 	Failures  int64      `json:"failures"`
 	SizeBytes int64      `json:"size_bytes"`
 	Error     string     `json:"error,omitempty"`
+}
+
+type ListResult struct {
+	Jobs   []Job            `json:"jobs"`
+	Counts map[string]int64 `json:"counts"`
 }
 
 func publicJob(row dbgen.PandaDownload) Job {
@@ -58,6 +64,7 @@ type activeJob struct {
 }
 
 type Service struct {
+	db       *sql.DB
 	q        *dbgen.Queries
 	dir      string
 	client   ArchiveClient
@@ -81,7 +88,7 @@ func New(ctx context.Context, db *sql.DB, dir string, client ArchiveClient, tran
 		return nil, fmt.Errorf("create download directory: %w", err)
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Service{q: dbgen.New(db), dir: abs, client: client, transfer: transfer, logger: logger,
+	s := &Service{db: db, q: dbgen.New(db), dir: abs, client: client, transfer: transfer, logger: logger,
 		ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
 	if err := s.recover(ctx); err != nil {
 		cancel()
@@ -146,22 +153,40 @@ func (s *Service) Get(ctx context.Context, id int64) (Job, error) {
 	return publicJob(row), err
 }
 
-func (s *Service) List(ctx context.Context, limit, offset int64) ([]Job, error) {
+func (s *Service) List(ctx context.Context, state string, limit, offset int64) (ListResult, error) {
+	result := ListResult{Jobs: []Job{}, Counts: map[string]int64{
+		"queued": 0, "running": 0, "completed": 0, "failed": 0, "cancelled": 0, "deleting": 0,
+	}}
+	if _, valid := result.Counts[state]; state != "" && !valid {
+		return result, ErrInvalidState
+	}
 	if limit <= 0 || limit > 100 {
 		limit = 100
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.q.ListDownloads(ctx, dbgen.ListDownloadsParams{Limit: limit, Offset: offset})
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
-	jobs := make([]Job, 0, len(rows))
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+	counts, err := q.CountDownloadsByState(ctx)
+	if err != nil {
+		return result, err
+	}
+	for _, count := range counts {
+		result.Counts[count.State] = count.Count
+	}
+	rows, err := q.ListDownloads(ctx, dbgen.ListDownloadsParams{State: state, PageLimit: limit, PageOffset: offset})
+	if err != nil {
+		return result, err
+	}
 	for _, row := range rows {
-		jobs = append(jobs, publicJob(row))
+		result.Jobs = append(result.Jobs, publicJob(row))
 	}
-	return jobs, nil
+	return result, tx.Commit()
 }
 
 func (s *Service) Retry(ctx context.Context, id int64) (Job, error) {

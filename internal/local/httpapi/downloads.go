@@ -31,7 +31,7 @@ func HandleCollectorDownloads(client *collectorapi.Client) http.Handler {
 			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_pagination"})
 			return
 		}
-		result, err := client.ListDownloads(r.Context(), limit, offset)
+		result, err := client.ListDownloads(r.Context(), r.URL.Query().Get("state"), limit, offset)
 		if err != nil {
 			collectorDownloadError(w, err)
 			return
@@ -121,6 +121,9 @@ func collectorDownloadError(w http.ResponseWriter, err error) {
 			code = "collector_unauthorized"
 		case http.StatusBadRequest:
 			status, code = http.StatusBadRequest, "invalid_gallery_reference"
+			if upstream.Code == "invalid_state" {
+				code = "invalid_state"
+			}
 		case http.StatusNotFound:
 			status, code = http.StatusNotFound, "download_not_found"
 		case http.StatusConflict:

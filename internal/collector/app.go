@@ -30,6 +30,7 @@ type App struct {
 	Sitemap          *sitemap.Service
 	ReferenceImports *metadata.ReferenceImports
 	Status           *status.Service
+	Ban              *pandaban.State
 	Catalog          *catalog.Service
 	Feeds            *feed.Service
 	APIToken         string
@@ -115,7 +116,8 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		Downloads:        downloadService,
 		Sitemap:          sitemapService,
 		ReferenceImports: imports,
-		Status:           status.New(db, favoritesService, ban, sitemapService),
+		Status:           status.New(db, favoritesService, ban),
+		Ban:              ban,
 	}, nil
 }
 
