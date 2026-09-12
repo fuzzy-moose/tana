@@ -60,7 +60,7 @@ The system MUST support these namespaces and the listed short forms.
 | `male`      | `m`        |
 | `mixed`     | `x`        |
 | `other`     | `o`        |
-| `series`    | `p`        |
+| `parody`    | `p`        |
 | `reclass`   | `r`        |
 
 Custom namespaces MUST also be supported. Prefix resolution MUST prefer qualifiers, then existing full namespace names,

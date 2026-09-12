@@ -41,7 +41,7 @@ func TestSearchMatchingAndBooleanLogic(t *testing.T) {
 		{"Berry Blue 2010", []tag.Value{{Namespace: "artist", Value: "artist y"}, {Namespace: "other", Value: "berry blue"}, {Namespace: "other", Value: "red"}, {Namespace: "other", Value: "green"}}},
 		{"Strawberry 2011", []tag.Value{{Namespace: "artist", Value: "artist y extended"}, {Namespace: "other", Value: "strawberry"}, {Namespace: "other", Value: "red"}, {Namespace: "other", Value: "blue"}, {Namespace: "other", Value: "yellow"}}},
 		{"Story Arc", []tag.Value{{Namespace: "artist", Value: "artist y"}, {Namespace: "character", Value: "char x"}, {Namespace: "other", Value: "blue"}, {Namespace: "other", Value: "red"}}},
-		{"Other", []tag.Value{{Namespace: "series", Value: "story arc"}, {Namespace: "other", Value: "topic-a extended"}, {Namespace: "artist", Value: "berry"}, {Namespace: "custom", Value: "custom one"}}},
+		{"Other", []tag.Value{{Namespace: "series", Value: "story arc"}, {Namespace: "parody", Value: "show-z"}, {Namespace: "other", Value: "topic-a extended"}, {Namespace: "artist", Value: "berry"}, {Namespace: "custom", Value: "custom one"}}},
 		{`A blue box, literal ~hello "quote" C:\shelf 100% ÉTÉ 🦊`, []tag.Value{{Namespace: "other", Value: "ai"}, {Namespace: "other", Value: "x-berry.blue"}, {Namespace: "other", Value: "topic-a"}}},
 	}
 	for _, fixture := range fixtures {
@@ -68,6 +68,9 @@ func TestSearchMatchingAndBooleanLogic(t *testing.T) {
 		{`~a:"artist y$" ~tag:yellow$`, []int{0, 1, 2}},
 		{`a:artist_y$ c:char_x`, []int{2}},
 		{`custom:custom`, []int{3}},
+		{`p:show-z`, []int{3}},
+		{`parody:show-z`, []int{3}},
+		{`p:story_arc`, nil},
 		{`title:"story arc"`, []int{2}},
 		{`"story arc"`, []int{2, 3}},
 		{`title:story_arc`, []int{2}},

@@ -13,7 +13,7 @@ var ErrInvalidQuery = errors.New("invalid query")
 var namespaceShortForms = map[string]string{
 	"a": "artist", "c": "character", "cos": "cosplayer", "f": "female",
 	"g": "group", "l": "language", "loc": "location", "m": "male",
-	"x": "mixed", "o": "other", "p": "series", "r": "reclass",
+	"x": "mixed", "o": "other", "p": "parody", "r": "reclass",
 }
 
 type searchToken struct {
