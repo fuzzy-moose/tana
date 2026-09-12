@@ -10,6 +10,10 @@ import (
 func NewHandler(app *local.App) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/collector/status", HandleCollectorStatus(app.Collector))
+	mux.Handle("GET /api/collector/catalog", HandleCollectorCatalog(app.Collector))
+	mux.Handle("GET /api/collector/catalog/completions", HandleCollectorCatalogCompletions(app.Collector))
+	mux.Handle("GET /api/collector/feed/status", HandleCollectorFeed(app.Collector))
+	mux.Handle("POST /api/collector/feed/refresh", HandleCollectorFeed(app.Collector))
 	mux.Handle("GET /api/collector/sitemap/status", HandleCollectorSitemap(app.Collector))
 	mux.Handle("POST /api/collector/sitemap/{action}", HandleCollectorSitemap(app.Collector))
 	mux.Handle("POST /api/collector/favorites/{category}/sync", HandleCollectorSyncFavorites(app.Collector))

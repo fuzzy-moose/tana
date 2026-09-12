@@ -98,6 +98,9 @@ Discovery of Panda gallery references through the child sitemaps listed in Panda
 **Collected Panda metadata**:
 The latest successfully retrieved metadata for an upstream Panda gallery, retained indefinitely even if the gallery becomes unavailable upstream.
 
+**Panda catalog**:
+The browsable collection of collected Panda metadata across all discovery paths, with one entry per upstream gallery. Its coverage is limited to metadata already collected.
+
 **Metadata refresh time**:
 The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.
 

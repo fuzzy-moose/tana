@@ -3,7 +3,13 @@ import { listingLink } from '../navigation'
 import { completeGallerySearch } from './api'
 import type { SearchCompletion, TagSuggestion } from './api'
 
-export default function GallerySearch({ search }: { search: string }) {
+interface GallerySearchProps {
+  search: string
+  completeSearch?: typeof completeGallerySearch
+  searchHref?: (query: string) => string
+}
+
+export default function GallerySearch({ search, completeSearch = completeGallerySearch, searchHref = listingLink }: GallerySearchProps) {
   const [query, setQuery] = useState(search)
   const [cursor, setCursor] = useState(search.length)
   const [focused, setFocused] = useState(false)
@@ -21,14 +27,14 @@ export default function GallerySearch({ search }: { search: string }) {
     const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
-        const result = await completeGallerySearch(query, cursor, controller.signal)
+        const result = await completeSearch(query, cursor, controller.signal)
         if (!controller.signal.aborted) { setResponse({ query, cursor, result }); setActive(0) }
       } catch {
         // Completion is optional; a failed request must not interrupt typing.
       }
     }, 150)
     return () => { controller.abort(); clearTimeout(timer) }
-  }, [query, cursor, focused, dismissed, composing])
+  }, [query, cursor, focused, dismissed, composing, completeSearch])
 
   useLayoutEffect(() => {
     if (pendingCursor.current === null) return
@@ -57,7 +63,7 @@ export default function GallerySearch({ search }: { search: string }) {
       event.preventDefault()
       if (composing) return
       setDismissed(true)
-      window.location.hash = listingLink(query.trim())
+      window.location.hash = searchHref(query.trim())
     }}>
       <label className="form-field" htmlFor="gallery-search">Search titles and tags</label>
       <div className="button-group">

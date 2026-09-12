@@ -146,3 +146,26 @@ test('shows the full title on hover and focus, and dismisses it with Escape', as
   fireEvent.keyDown(card, { key: 'Escape' })
   expect(tooltip()).toBeNull()
 })
+
+test('fits Panda pages to the viewport and preserves the search and filter when resizing', async () => {
+  window.history.replaceState(null, '', '#/panda?q=manga&page=3&include_expunged=true')
+  fetchMock.mockImplementation(async (input) => {
+    const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/collector/status') return Response.json({ configured: true, reachable: true, status: { inventory: { metadata_pending: 0, metadata_failed: 0 } } })
+    if (url.pathname === '/api/collector/feed/status') return Response.json({ capture_active: false, processing_pending: 0, continuity: 'unknown', possible_gaps: 0 })
+    const pageSize = Number(url.searchParams.get('page_size'))
+    const page = Number(url.searchParams.get('page'))
+    const first = (page - 1) * pageSize
+    return Response.json({ items: Array.from({ length: pageSize }, (_, index) => ({ gallery_id: first + index, title: `Panda ${first + index}`, page_count: 20, posted_at: '2026-09-12T10:00:00Z', url: 'https://panda.example/g/1/token/' })), total: 40, page, page_size: pageSize, total_pages: Math.ceil(40 / pageSize) })
+  })
+  render(<App />)
+  await screen.findByRole('heading', { name: 'Panda 16' })
+  expect(within(screen.getByRole('list', { name: 'Panda galleries' })).getAllByRole('listitem')).toHaveLength(8)
+  resize(716, 975)
+  await screen.findByRole('heading', { name: 'Panda 12' })
+  expect(within(screen.getByRole('list', { name: 'Panda galleries' })).getAllByRole('listitem')).toHaveLength(12)
+  expect(window.location.hash).toBe('#/panda?q=manga&page=2&include_expunged=true')
+  resize(716, 646)
+  await screen.findByRole('heading', { name: 'Panda 16' })
+  expect(window.location.hash).toBe('#/panda?q=manga&page=3&include_expunged=true')
+})

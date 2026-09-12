@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/fuzzy-moose/tana/internal/collector/catalog"
 	"github.com/fuzzy-moose/tana/internal/collector/downloads"
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
@@ -29,10 +30,11 @@ type App struct {
 	Sitemap          *sitemap.Service
 	ReferenceImports *metadata.ReferenceImports
 	Status           *status.Service
+	Catalog          *catalog.Service
+	Feeds            *feed.Service
 	APIToken         string
 
-	db    *sql.DB
-	feeds *feed.Service
+	db *sql.DB
 }
 
 func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
@@ -44,6 +46,11 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 	db, _, err := storage.Open(ctx, cfg.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("open collector storage: %w", err)
+	}
+	catalogService := catalog.New(db, cfg.AuthenticatedPanda.Origin())
+	if err := catalogService.Backfill(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("prepare Panda catalog: %w", err)
 	}
 	ban := pandaban.New(db)
 	client, err := panda.NewClient(cfg.Panda.APIURL, &http.Client{
@@ -101,7 +108,8 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		Logger:           logger,
 		APIToken:         cfg.APIToken,
 		db:               db,
-		feeds:            feed.New(ctx, db, cfg.Feed, nil, logger),
+		Feeds:            feed.New(ctx, db, cfg.Feed, nil, logger),
+		Catalog:          catalogService,
 		Metadata:         metadata.New(ctx, db, client, logger),
 		Favorites:        favoritesService,
 		Downloads:        downloadService,
@@ -117,7 +125,7 @@ func (a *App) Close() error {
 	a.Sitemap.Close()
 	a.Downloads.Close()
 	a.Favorites.Close()
-	a.feeds.Close()
+	a.Feeds.Close()
 	a.Metadata.Close()
 	return a.db.Close()
 }

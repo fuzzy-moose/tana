@@ -16,13 +16,18 @@ import (
 )
 
 type Service struct {
-	store   *store
-	config  Config
-	client  *http.Client
-	logger  *slog.Logger
-	trigger chan struct{}
-	cancel  context.CancelFunc
-	workers sync.WaitGroup
+	store       *store
+	config      Config
+	client      *http.Client
+	logger      *slog.Logger
+	trigger     chan struct{}
+	refresh     chan struct{}
+	mu          sync.Mutex
+	active      bool
+	lastError   string
+	lastErrorAt *time.Time
+	cancel      context.CancelFunc
+	workers     sync.WaitGroup
 }
 
 // New starts the downloader and a single processor. The caller owns db.
@@ -33,7 +38,7 @@ func New(ctx context.Context, db *sql.DB, cfg Config, client *http.Client, logge
 	}
 	s := &Service{
 		store: newStore(db), config: cfg, client: client,
-		logger: logger, trigger: make(chan struct{}, 1), cancel: cancel,
+		logger: logger, trigger: make(chan struct{}, 1), refresh: make(chan struct{}, 1), cancel: cancel,
 	}
 	s.notifyProcessor()
 	s.workers.Go(func() { s.processLoop(ctx) })
@@ -55,26 +60,48 @@ func (s *Service) notifyProcessor() {
 }
 
 func (s *Service) downloadLoop(ctx context.Context) {
+	retry := false
 	for ctx.Err() == nil {
 		delay, err := s.store.fetchDelay(ctx, time.Now(), s.config.Interval)
 		if err != nil {
 			s.logger.Error("feed_schedule_failed", "error", err)
-			if !wait(ctx, s.config.RetryDelay) {
-				return
-			}
-			continue
 		}
-		if !wait(ctx, delay) {
+		if retry || err != nil {
+			delay = s.config.RetryDelay
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-s.refresh:
+			timer.Stop()
+		case <-timer.C:
+		}
+		if ctx.Err() != nil {
 			return
 		}
-		if err := s.download(ctx); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
+		s.mu.Lock()
+		// A scheduled capture also satisfies a manual request racing its timer.
+		select {
+		case <-s.refresh:
+		default:
+		}
+		s.active = true
+		s.mu.Unlock()
+		err = s.download(ctx)
+		s.mu.Lock()
+		s.active = false
+		if err != nil {
+			now := time.Now().UTC()
+			s.lastError, s.lastErrorAt = err.Error(), &now
+		} else {
+			s.lastError, s.lastErrorAt = "", nil
+		}
+		s.mu.Unlock()
+		retry = err != nil
+		if err != nil && ctx.Err() == nil {
 			s.logger.Error("feed_download_failed", "error", err)
-			if !wait(ctx, s.config.RetryDelay) {
-				return
-			}
 		}
 	}
 }
@@ -163,15 +190,4 @@ func (s *Service) process(ctx context.Context, id int64) error {
 	}
 	s.logger.Info("feed_processed", "capture_id", id, "entries", len(entries))
 	return nil
-}
-
-func wait(ctx context.Context, delay time.Duration) bool {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return ctx.Err() == nil
-	}
 }

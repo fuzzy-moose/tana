@@ -7,6 +7,7 @@ function subscribe(callback: () => void) {
 
 export type Route =
   | { kind: 'galleries', search: string, page: number }
+  | { kind: 'panda', search: string, page: number, includeExpunged: boolean }
   | { kind: 'libraries' | 'collector' | 'not-found' }
   | { kind: 'detail', id: number, page: number }
   | { kind: 'reader', id: number, page: number, lastPage?: number }
@@ -18,6 +19,7 @@ export function useRoute(): Route {
   const value = Number(params.get('page') ?? 1)
   const page = Number.isSafeInteger(value) && value > 0 ? value : 1
   if (!path || path === '/' || path === '/galleries') return { kind: 'galleries', search: params.get('q') ?? '', page }
+  if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', page, includeExpunged: params.get('include_expunged') === 'true' }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
   if (path === '/collector') return { kind: 'collector' }
   const spread = path.match(/^\/galleries\/(\d+)\/page\/(\d+)(?:-(\d+))?$/)
@@ -47,4 +49,12 @@ export function listingLink(search: string, page = 1) {
   if (search) params.set('q', search)
   if (page > 1) params.set('page', String(page))
   return `#/galleries${params.size ? `?${params}` : ''}`
+}
+
+export function pandaListingLink(search: string, page = 1, includeExpunged = false) {
+  const params = new URLSearchParams()
+  if (search) params.set('q', search)
+  if (page > 1) params.set('page', String(page))
+  if (includeExpunged) params.set('include_expunged', 'true')
+  return `#/panda${params.size ? `?${params}` : ''}`
 }

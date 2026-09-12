@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 )
 
 func TestAppLifecycle(t *testing.T) {
@@ -80,6 +81,10 @@ func TestAppLifecycle(t *testing.T) {
 					t.Fatal("collector did not capture feed and collect metadata")
 				}
 				time.Sleep(time.Millisecond)
+			}
+			catalog, err := app.Catalog.List(t.Context(), collectorapi.CatalogOptions{Query: "title:collected", Page: 1, PageSize: 24})
+			if err != nil || catalog.Total != 1 || len(catalog.Items) != 1 || catalog.Items[0].URL != upstream.URL+"/g/42/token/" {
+				t.Fatalf("collected feed metadata absent from catalog: %+v, %v", catalog, err)
 			}
 			if err := app.Close(); err != nil {
 				t.Fatal(err)

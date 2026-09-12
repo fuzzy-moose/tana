@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/fuzzy-moose/tana/internal/collector/catalog"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata/dbgen"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
@@ -57,6 +58,9 @@ func (s *store) complete(ctx context.Context, refs []panda.GalleryRef, entries [
 				return err
 			}
 			if err := q.SaveMetadata(ctx, dbgen.SaveMetadataParams{GalleryID: entry.ID, Body: body, RefreshedAt: at.UnixMilli()}); err != nil {
+				return err
+			}
+			if err := catalog.Project(ctx, tx, entry); err != nil {
 				return err
 			}
 			for _, ref := range []panda.GalleryRef{
