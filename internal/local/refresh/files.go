@@ -68,12 +68,13 @@ func inspect(ctx context.Context, filesystem fs.FS, rows []dbgen.ListSourcesRow)
 				parent = path.Join(parent, part)
 			}
 		}
-		if !result.missing[row.ID] && result.uncertain[row.ID] == "" {
+		// The root can remain readable as an empty mount point after storage disconnects.
+		if row.Path != "." && !result.missing[row.ID] && result.uncertain[row.ID] == "" {
 			present++
 		}
 	}
 	if len(rows) > 0 && present == 0 {
-		result.blocked = "No cataloged source could be confirmed present. Storage may be disconnected; removal is blocked for this library."
+		result.blocked = "No cataloged source below the library root could be confirmed present. Storage may be disconnected; removal is blocked for this library."
 	}
 	return result
 }

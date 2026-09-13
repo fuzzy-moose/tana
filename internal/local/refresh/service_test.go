@@ -89,6 +89,7 @@ func TestRefreshRemovesSelectedMissingSourcesAndTheirGalleryReferences(t *testin
 	excluded, _, _ := f.source(t, l, "Excluded.zip", source.Archive, false)
 	present, _, presentFile := f.source(t, l, "Present.cbz", source.Archive, true)
 	empty, _, _ := f.source(t, l, "Empty", source.Directory, true)
+	root, _, _ := f.source(t, l, ".", source.Directory, true)
 	galleries := gallery.NewSQLiteRepository(f.db)
 	combined, err := galleries.Create(t.Context(), "Combined", []int64{aFile, presentFile, aFile})
 	if err != nil {
@@ -144,7 +145,7 @@ func TestRefreshRemovesSelectedMissingSourcesAndTheirGalleryReferences(t *testin
 	if pages, err := galleries.Pages(t.Context(), independent.ID); err != nil || len(pages) != 0 {
 		t.Fatalf("empty independent gallery pages = %+v, %v", pages, err)
 	}
-	for _, id := range []int64{excluded.ID, present.ID, empty.ID, otherPresent.ID} {
+	for _, id := range []int64{excluded.ID, present.ID, empty.ID, root.ID, otherPresent.ID} {
 		if _, err := source.NewSQLiteRepository(f.db).Get(t.Context(), id); err != nil {
 			t.Fatalf("retained source %d missing: %v", id, err)
 		}
@@ -171,6 +172,35 @@ func TestRefreshBlocksUnavailableAndEntirelyMissingLibraries(t *testing.T) {
 	}
 	if _, err := f.service.Preview(t.Context(), l.ID+1); !errors.Is(err, library.ErrNotFound) {
 		t.Fatalf("unknown library: %v", err)
+	}
+}
+
+func TestRefreshCatalogedRootDoesNotEstablishStoragePresence(t *testing.T) {
+	f := newFixture(t)
+	l := f.library(t, "NAS")
+	root, _, _ := f.source(t, l, ".", source.Directory, true)
+	missing, linked, _ := f.source(t, l, "Gone.cbz", source.Archive, false)
+	preview := f.preview(t, l.ID, 0)
+	if len(preview.Skipped) != 1 || preview.Skipped[0].LibraryID != l.ID || preview.Skipped[0].SourceID != 0 {
+		t.Fatalf("empty mount point not blocked: %+v", preview)
+	}
+
+	present, _, _ := f.source(t, l, "Present.zip", source.Archive, true)
+	preview = f.preview(t, l.ID, 1)
+	if err := os.Remove(filepath.Join(l.Path, present.Path)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.service.Execute(t.Context(), preview.PlanID, []int64{missing.ID})
+	if err != nil || len(result.Removed) != 0 || len(result.Failed) != 1 {
+		t.Fatalf("unsafe removal after storage disconnected: %+v, %v", result, err)
+	}
+	for _, id := range []int64{root.ID, missing.ID, present.ID} {
+		if _, err := source.NewSQLiteRepository(f.db).Get(t.Context(), id); err != nil {
+			t.Fatalf("retained source %d missing: %v", id, err)
+		}
+	}
+	if _, err := gallery.NewSQLiteRepository(f.db).Get(t.Context(), linked.ID); err != nil {
+		t.Fatalf("linked gallery lost: %v", err)
 	}
 }
 
