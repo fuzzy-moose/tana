@@ -16,6 +16,7 @@ func NewHandler(app *local.App) http.Handler {
 	proxies := HandleCollectorMetadataProxies(app.Collector)
 	mux.Handle("GET /api/collector/metadata/proxies", proxies)
 	mux.Handle("PUT /api/collector/metadata/proxies", proxies)
+	mux.Handle("POST /api/collector/metadata/proxies/import", HandleImportCollectorMetadataProxies(app.Collector))
 	mux.Handle("POST /api/collector/metadata/proxies/channels", proxies)
 	mux.Handle("PUT /api/collector/metadata/proxies/channels/{id}", proxies)
 	mux.Handle("DELETE /api/collector/metadata/proxies/channels/{id}", proxies)

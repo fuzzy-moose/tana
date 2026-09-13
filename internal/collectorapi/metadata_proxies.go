@@ -12,10 +12,12 @@ import (
 )
 
 var (
-	ErrInvalidProxy   = errors.New("proxy_invalid_configuration")
-	ErrDuplicateProxy = errors.New("proxy_duplicate")
-	ErrProxyNotFound  = errors.New("proxy_not_found")
-	ErrProxyChanging  = errors.New("proxy_changing")
+	ErrInvalidProxy      = errors.New("proxy_invalid_configuration")
+	ErrDuplicateProxy    = errors.New("proxy_duplicate")
+	ErrProxyNotFound     = errors.New("proxy_not_found")
+	ErrProxyChanging     = errors.New("proxy_changing")
+	ErrInvalidProxyList  = errors.New("proxy_list_invalid")
+	ErrProxyListTooLarge = errors.New("proxy_list_too_large")
 )
 
 type MetadataProxyInput struct {
@@ -54,6 +56,27 @@ type MetadataProxySettings struct {
 	Enabled bool `json:"enabled"`
 }
 
+type MetadataProxyImportInput struct {
+	Proxies  string `json:"proxies"`
+	Protocol string `json:"protocol"`
+	Enabled  bool   `json:"enabled"`
+}
+
+type MetadataProxyImportResult struct {
+	Status     MetadataProxyStatus `json:"status"`
+	Added      int                 `json:"added"`
+	Duplicates int                 `json:"duplicates"`
+}
+
+func (c *Client) ImportMetadataProxies(ctx context.Context, input MetadataProxyImportInput) (MetadataProxyImportResult, error) {
+	var result MetadataProxyImportResult
+	err := c.metadataProxyRequest(ctx, http.MethodPost, "/import", input, &result)
+	if err == nil && result.Status.Channels == nil {
+		err = errors.New("collector returned invalid proxy import result")
+	}
+	return result, err
+}
+
 func (c *Client) MetadataProxies(ctx context.Context) (MetadataProxyStatus, error) {
 	return c.metadataProxies(ctx, http.MethodGet, "", nil)
 }
@@ -74,19 +97,28 @@ func (c *Client) DeleteMetadataProxy(ctx context.Context, id string) (MetadataPr
 }
 
 func (c *Client) metadataProxies(ctx context.Context, method, path string, input any) (MetadataProxyStatus, error) {
+	var status MetadataProxyStatus
+	err := c.metadataProxyRequest(ctx, method, path, input, &status)
+	if err == nil && status.Channels == nil {
+		err = errors.New("collector returned invalid proxy status")
+	}
+	return status, err
+}
+
+func (c *Client) metadataProxyRequest(ctx context.Context, method, path string, input, result any) error {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	var body io.Reader
 	if input != nil {
 		data, err := json.Marshal(input)
 		if err != nil {
-			return MetadataProxyStatus{}, err
+			return err
 		}
 		body = bytes.NewReader(data)
 	}
 	response, err := c.controlRequest(ctx, method, "/api/metadata/proxies"+path, body)
 	if err != nil {
-		return MetadataProxyStatus{}, err
+		return err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
@@ -94,20 +126,14 @@ func (c *Client) metadataProxies(ctx context.Context, method, path string, input
 			Error string `json:"error"`
 		}
 		if response.StatusCode >= 400 && response.StatusCode < 500 && json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&failure) == nil {
-			for _, known := range []error{ErrInvalidProxy, ErrDuplicateProxy, ErrProxyNotFound, ErrProxyChanging} {
+			for _, known := range []error{ErrInvalidProxy, ErrDuplicateProxy, ErrProxyNotFound, ErrProxyChanging,
+				ErrInvalidProxyList, ErrProxyListTooLarge} {
 				if failure.Error == known.Error() {
-					return MetadataProxyStatus{}, known
+					return known
 				}
 			}
 		}
-		return MetadataProxyStatus{}, &HTTPError{StatusCode: response.StatusCode}
+		return &HTTPError{StatusCode: response.StatusCode}
 	}
-	var status MetadataProxyStatus
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&status); err != nil {
-		return status, err
-	}
-	if status.Channels == nil {
-		return status, errors.New("collector returned invalid proxy status")
-	}
-	return status, nil
+	return json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(result)
 }

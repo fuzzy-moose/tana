@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { channelInput, deleteMetadataProxy, getMetadataProxies, proxyFailure, proxyState, saveMetadataProxy, setMetadataProxies } from './metadataProxies'
-import type { MetadataProxyChannel, MetadataProxyInput, MetadataProxyStatus } from './metadataProxies'
+import { channelInput, deleteMetadataProxy, getMetadataProxies, importMetadataProxies, proxyFailure, proxyState, saveMetadataProxy, setMetadataProxies } from './metadataProxies'
+import type { MetadataProxyChannel, MetadataProxyImportInput, MetadataProxyImportResult, MetadataProxyInput, MetadataProxyStatus } from './metadataProxies'
 import { useCollectorResource } from './useCollectorResource'
 import ResourceStatus from './ResourceStatus'
 
@@ -16,6 +16,7 @@ const date = (value: string) => new Date(value).toLocaleString()
 export default function MetadataProxies({ available, refreshKey }: { available: boolean, refreshKey: number }) {
   const resource = useCollectorResource(getMetadataProxies, available, refreshKey)
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [importDraft, setImportDraft] = useState<MetadataProxyImportInput | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -23,7 +24,7 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
   useEffect(() => () => mutation.current?.abort(), [])
   const disabled = !available || resource.stale || pending || !resource.data
 
-  async function change(action: (signal: AbortSignal) => Promise<MetadataProxyStatus>, message: string) {
+  async function change(action: (signal: AbortSignal) => Promise<MetadataProxyStatus | MetadataProxyImportResult>, message = '') {
     if (disabled || mutation.current) return false
     const controller = new AbortController()
     mutation.current = controller
@@ -31,10 +32,15 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
     setError('')
     setNotice('')
     try {
-      const status = await action(controller.signal)
+      const result = await action(controller.signal)
       if (controller.signal.aborted) return false
-      resource.update(status)
-      setNotice(message)
+      if ('status' in result) {
+        resource.update(result.status)
+        setNotice(`Added ${result.added} ${result.added === 1 ? 'channel' : 'channels'}. Skipped ${result.duplicates} ${result.duplicates === 1 ? 'duplicate' : 'duplicates'}.`)
+      } else {
+        resource.update(result)
+        setNotice(message)
+      }
       return true
     } catch (error) {
       if (!controller.signal.aborted) setError((error as Error).message)
@@ -63,10 +69,24 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
     if (await change((signal) => saveMetadataProxy(draft.id, input, signal), 'Channel saved.')) setDraft(null)
   }
 
+  async function importList() {
+    if (!importDraft) return
+    if (await change((signal) => importMetadataProxies(importDraft, signal))) {
+      setImportDraft(null)
+    }
+  }
+
   return <section className="collector-panel" aria-labelledby="metadata-proxies-title">
     <div className="collector-section-heading">
       <h2 id="metadata-proxies-title">Metadata proxy channels</h2>
-      <button className="button" disabled={disabled || draft !== null} onClick={() => edit()}>Add channel</button>
+      <div className="button-group">
+        <button className="button" disabled={disabled || draft !== null || importDraft !== null} onClick={() => {
+          setImportDraft({ proxies: '', protocol: 'socks5', enabled: true })
+          setError('')
+          setNotice('')
+        }}>Paste proxy list</button>
+        <button className="button" disabled={disabled || draft !== null || importDraft !== null} onClick={() => edit()}>Add channel</button>
+      </div>
     </div>
     <p>Use fixed proxies to collect background metadata and validate reference imports. Each channel has its own pacing and Panda cooldown.</p>
     <ResourceStatus name="Proxy channels" loaded={!!resource.data} available={available} error={resource.error} stale={resource.stale} at={resource.at} />
@@ -81,6 +101,34 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
     </>}
     {notice && <p className="collector-notice" role="status">{notice}</p>}
     {error && <p className="error-message" role="alert">{error}</p>}
+
+    {importDraft && <form className="proxy-form" onSubmit={(event) => { event.preventDefault(); void importList() }}>
+      <h3>Paste proxy list</h3>
+      <p className="field-help">Add several channels at once. Existing proxy addresses are skipped.</p>
+      <fieldset disabled={disabled}>
+        <div className="proxy-form-fields">
+          <label className="form-field">Proxy type
+            <select className="text-input" value={importDraft.protocol} onChange={(event) => setImportDraft({ ...importDraft, protocol: event.target.value as MetadataProxyImportInput['protocol'] })}>
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+              <option value="socks5">SOCKS5</option>
+            </select>
+            <span className="field-help">Applies to every address. SOCKS4 is not supported.</span>
+          </label>
+          <label className="form-field proxy-list-addresses">Proxy addresses
+            <textarea className="text-input" required rows={7} spellCheck={false} placeholder={'192.0.2.10:1080\n192.0.2.11:1080'} value={importDraft.proxies}
+              onChange={(event) => setImportDraft({ ...importDraft, proxies: event.target.value })} />
+            <span className="field-help">One host:port per line, without a URL scheme.</span>
+          </label>
+        </div>
+        <label className="proxy-toggle"><input type="checkbox" checked={importDraft.enabled} onChange={(event) => setImportDraft({ ...importDraft, enabled: event.target.checked })} />Enable imported channels</label>
+        {!resource.data?.enabled && <p className="field-help">Channels can run once proxy metadata collection is enabled.</p>}
+        <div className="button-group">
+          <button className="button" type="submit">{pending ? 'Importing…' : 'Import channels'}</button>
+          <button className="button" type="button" onClick={() => setImportDraft(null)}>Cancel</button>
+        </div>
+      </fieldset>
+    </form>}
 
     {draft && <form className="proxy-form" onSubmit={(event) => { event.preventDefault(); void save() }}>
       <h3>{draft.id ? 'Edit channel' : 'New channel'}</h3>
@@ -114,7 +162,7 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
       </fieldset>
     </form>}
 
-    {resource.data?.channels.length === 0 && !draft && <p className="download-empty">No proxy channels configured. Add a channel to get started.</p>}
+    {resource.data?.channels.length === 0 && !draft && !importDraft && <p className="download-empty">No proxy channels configured. Paste a proxy list or add a channel to get started.</p>}
     <div className="proxy-channels">
       {resource.data?.channels.map((channel) => <article className="proxy-channel" key={channel.id} aria-label={channel.name}>
         <div className="collector-section-heading">
@@ -136,8 +184,8 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
             Enable {channel.name}
           </label>
           <div className="button-group">
-            <button className="button" disabled={disabled || draft !== null || channel.state === 'removing'} onClick={() => edit(channel)}>Edit</button>
-            <button className="button" disabled={disabled || draft !== null || channel.state === 'removing'} onClick={() => { void change((signal) => deleteMetadataProxy(channel.id, signal), 'Channel removal requested. Any active batch will finish first.') }}>Remove</button>
+            <button className="button" disabled={disabled || draft !== null || importDraft !== null || channel.state === 'removing'} onClick={() => edit(channel)}>Edit</button>
+            <button className="button" disabled={disabled || draft !== null || importDraft !== null || channel.state === 'removing'} onClick={() => { void change((signal) => deleteMetadataProxy(channel.id, signal), 'Channel removal requested. Any active batch will finish first.') }}>Remove</button>
           </div>
         </div>
       </article>)}

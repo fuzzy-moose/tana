@@ -28,6 +28,18 @@ export interface MetadataProxyStatus {
   default_user_agent: string
 }
 
+export interface MetadataProxyImportInput {
+  proxies: string
+  protocol: 'http' | 'https' | 'socks5'
+  enabled: boolean
+}
+
+export interface MetadataProxyImportResult {
+  status: MetadataProxyStatus
+  added: number
+  duplicates: number
+}
+
 const base = '/api/collector/metadata/proxies'
 const messages = {
   ...collectorMessages,
@@ -35,6 +47,8 @@ const messages = {
   proxy_duplicate: 'A channel already uses this proxy address and port, including channels being removed.',
   proxy_not_found: 'This channel was removed. Refresh the proxy list.',
   proxy_changing: 'This channel is being removed. Wait for its active batch to finish.',
+  proxy_list_invalid: 'Enter one host:port per line, without a URL scheme. Select HTTP, HTTPS or SOCKS5.',
+  proxy_list_too_large: 'The proxy list exceeds the limit of 1 MiB or 10,000 entries.',
 }
 
 export const getMetadataProxies = (signal: AbortSignal) => request<MetadataProxyStatus>(base, { signal }, messages)
@@ -51,6 +65,9 @@ export const saveMetadataProxy = (id: string, input: MetadataProxyInput, signal:
   '/channels' + (id ? '/' + encodeURIComponent(id) : ''), id ? 'PUT' : 'POST', input, signal,
 )
 export const deleteMetadataProxy = (id: string, signal: AbortSignal) => mutate('/channels/' + encodeURIComponent(id), 'DELETE', undefined, signal)
+export const importMetadataProxies = (input: MetadataProxyImportInput, signal: AbortSignal) => request<MetadataProxyImportResult>(base + '/import', {
+  method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+}, messages)
 
 export function proxyState(state: MetadataProxyChannel['state']) {
   return {

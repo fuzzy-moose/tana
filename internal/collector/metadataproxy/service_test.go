@@ -75,6 +75,23 @@ func addChannel(t *testing.T, s *Service, name, address string) string {
 	return ""
 }
 
+func TestImportPersistsObservedBan(t *testing.T) {
+	s := testService(t, t.TempDir(), "http://panda.invalid/api")
+	until := time.Now().Add(time.Hour).UnixMilli()
+	s.mu.Lock()
+	s.observed["endpoint:socks5://proxy.invalid:1080"] = until
+	s.mu.Unlock()
+	result, err := s.Import(t.Context(), collectorapi.MetadataProxyImportInput{Proxies: "proxy.invalid:1080", Protocol: "socks5"})
+	if err != nil || result.Added != 1 {
+		t.Fatalf("import: %+v, %v", result, err)
+	}
+	// Endpoint history must survive removal of the imported channel and restart.
+	var recorded int64
+	if err := s.db.QueryRow(`SELECT until_at FROM metadata_proxy_bans WHERE endpoint = ?`, "socks5://proxy.invalid:1080").Scan(&recorded); err != nil || recorded != until {
+		t.Fatalf("ban history = %d, %v", recorded, err)
+	}
+}
+
 func status(t *testing.T, s *Service) collectorapi.MetadataProxyStatus {
 	t.Helper()
 	result, err := s.Status(t.Context())

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -79,6 +80,66 @@ func TestLocalMetadataProxyConfiguration(t *testing.T) {
 	}
 	request("PUT", "/channels/missing", input, 404)
 	request("POST", "/channels", `{"name":"bad","proxy_url":"ftp://proxy.invalid"}`, 400)
+
+	t.Run("imports lists without changing existing channels", func(t *testing.T) {
+		until := time.Now().Add(time.Hour).UnixMilli()
+		if _, err := db.Exec(`INSERT INTO metadata_proxy_bans (endpoint, until_at) VALUES (?, ?)`, "http://other.invalid:443", until); err != nil {
+			t.Fatal(err)
+		}
+		importList := func(proxies string, want int) *httptest.ResponseRecorder {
+			t.Helper()
+			body, err := json.Marshal(collectorapi.MetadataProxyImportInput{Proxies: proxies, Protocol: "http", Enabled: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return request("POST", "/import", string(body), want)
+		}
+		const list = "proxy.invalid:8080\nnew.invalid:1080\nnew.invalid:1080\nother.invalid:443"
+		var imported collectorapi.MetadataProxyImportResult
+		if err := json.Unmarshal(importList(list, 200).Body.Bytes(), &imported); err != nil {
+			t.Fatal(err)
+		}
+		if imported.Added != 2 || imported.Duplicates != 2 || imported.Status.Enabled || len(imported.Status.Channels) != 3 {
+			t.Fatalf("import result: %+v", imported)
+		}
+		old, fresh, banned := imported.Status.Channels[0], imported.Status.Channels[1], imported.Status.Channels[2]
+		if old.Name != "Renamed" || old.Enabled || old.UserAgent != "Another Browser" || !old.HasPassword {
+			t.Fatalf("existing settings changed: %+v", old)
+		}
+		if fresh.ProxyURL != "http://new.invalid:1080" || fresh.Username != "" || fresh.HasPassword || !fresh.Enabled || fresh.UserAgent != imported.Status.DefaultUserAgent {
+			t.Fatalf("new channel: %+v", fresh)
+		}
+		if banned.BanUntil == nil || banned.BanUntil.UnixMilli() != until {
+			t.Fatalf("ban lost: %+v", banned)
+		}
+		if err := json.Unmarshal(importList(list, 200).Body.Bytes(), &imported); err != nil || imported.Added != 0 || imported.Duplicates != 4 {
+			t.Fatalf("repeat import: %+v, %v", imported, err)
+		}
+		for _, failure := range []struct {
+			proxies, code string
+			status        int
+		}{
+			{"unsaved.invalid:8080\nnot a proxy", "proxy_list_invalid", 400},
+			{strings.Repeat("x", (1<<20)+1), "proxy_list_too_large", 413},
+		} {
+			if w := importList(failure.proxies, failure.status); !strings.Contains(w.Body.String(), failure.code) {
+				t.Fatalf("wrong error: %s", w.Body)
+			}
+		}
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM metadata_proxy_channels`).Scan(&count); err != nil || count != 3 {
+			t.Fatalf("failed import changed channels: %d, %v", count, err)
+		}
+		// Public lists can exceed the ordinary JSON request and response bounds.
+		var large strings.Builder
+		for i := range 3000 {
+			fmt.Fprintf(&large, "proxy-%d.invalid:8080\n", i)
+		}
+		if err := json.Unmarshal(importList(large.String(), 200).Body.Bytes(), &imported); err != nil || imported.Added != 3000 || len(imported.Status.Channels) != 3003 {
+			t.Fatalf("large paste: added=%d channels=%d, %v", imported.Added, len(imported.Status.Channels), err)
+		}
+		request("GET", "", "", 200)
+	})
 	request("DELETE", "/channels/"+id, "", 200)
 	request("DELETE", "/channels/missing", "", 404)
 }
