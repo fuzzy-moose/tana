@@ -9,10 +9,9 @@ import (
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
-// pendingImportRefs is called only after explicit requests and the complete
-// inventory queue, including sitemap backfill, have no work. It chooses at
-// most one token per gallery, from the oldest outstanding import.
-func (s *store) pendingImportRefs(ctx context.Context) ([]panda.GalleryRef, error) {
+// pendingImportRefs chooses at most one token per gallery from the oldest
+// outstanding import. Inventory, including in-flight work, takes priority.
+func (s *store) pendingImportRefs(ctx context.Context, reserved map[int64]bool) ([]panda.GalleryRef, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -23,7 +22,7 @@ func (s *store) pendingImportRefs(ctx context.Context) ([]panda.GalleryRef, erro
 		AND e.status = 'pending' AND NOT EXISTS (
 			SELECT 1 FROM reference_import_entries older
 			WHERE older.import_id = e.import_id AND older.gallery_id = e.gallery_id AND older.status = 'pending' AND older.id < e.id
-		) ORDER BY e.id LIMIT ?`, panda.MaxBatchSize)
+		) ORDER BY e.id LIMIT ?`, panda.MaxBatchSize+len(reserved))
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +33,9 @@ func (s *store) pendingImportRefs(ctx context.Context) ([]panda.GalleryRef, erro
 			rows.Close()
 			return nil, err
 		}
-		refs = append(refs, ref)
+		if !reserved[ref.ID] && len(refs) < panda.MaxBatchSize {
+			refs = append(refs, ref)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()

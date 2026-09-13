@@ -15,6 +15,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
+	"github.com/fuzzy-moose/tana/internal/collector/metadataproxy"
 	"github.com/fuzzy-moose/tana/internal/collector/pandaban"
 	"github.com/fuzzy-moose/tana/internal/collector/sitemap"
 	"github.com/fuzzy-moose/tana/internal/collector/status"
@@ -25,6 +26,7 @@ import (
 type App struct {
 	Logger           *slog.Logger
 	Metadata         *metadata.Service
+	MetadataProxies  *metadataproxy.Service
 	Favorites        *favorites.Service
 	Downloads        *downloads.Service
 	Sitemap          *sitemap.Service
@@ -105,13 +107,25 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	metadataService := metadata.New(ctx, db, client, logger)
+	proxies, err := metadataproxy.New(ctx, db, metadataService, cfg.Panda, logger)
+	if err != nil {
+		metadataService.Close()
+		imports.Close()
+		sitemapService.Close()
+		favoritesService.Close()
+		downloadService.Close()
+		db.Close()
+		return nil, err
+	}
 	return &App{
 		Logger:           logger,
 		APIToken:         cfg.APIToken,
 		db:               db,
 		Feeds:            feed.New(ctx, db, cfg.Feed, nil, logger),
 		Catalog:          catalogService,
-		Metadata:         metadata.New(ctx, db, client, logger),
+		Metadata:         metadataService,
+		MetadataProxies:  proxies,
 		Favorites:        favoritesService,
 		Downloads:        downloadService,
 		Sitemap:          sitemapService,
@@ -128,6 +142,7 @@ func (a *App) Close() error {
 	a.Downloads.Close()
 	a.Favorites.Close()
 	a.Feeds.Close()
+	a.MetadataProxies.Close()
 	a.Metadata.Close()
 	return a.db.Close()
 }

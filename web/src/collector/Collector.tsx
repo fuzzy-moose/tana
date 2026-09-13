@@ -5,6 +5,7 @@ import Favorites from './Favorites'
 import Overview from './Overview'
 import SitemapPage from './SitemapPage'
 import ReferenceImports from './ReferenceImports'
+import MetadataProxies from './MetadataProxies'
 import './Collector.css'
 
 const pages: { page: CollectorPage, label: string, description: string }[] = [
@@ -13,6 +14,7 @@ const pages: { page: CollectorPage, label: string, description: string }[] = [
   { page: 'favorites', label: 'Favorites', description: 'Sync Panda favorites and choose categories for automatic downloads.' },
   { page: 'sitemap', label: 'Sitemap', description: 'Collect Panda gallery references from sitemaps.' },
   { page: 'imports', label: 'Reference imports', description: 'Import Panda gallery references and follow their progress.' },
+  { page: 'proxies', label: 'Metadata proxies', description: 'Configure independent proxy channels for background metadata collection.' },
 ]
 
 export default function Collector({ page }: { page: CollectorPage }) {
@@ -56,6 +58,7 @@ export default function Collector({ page }: { page: CollectorPage }) {
         {page === 'favorites' && <Favorites {...props} />}
         {page === 'sitemap' && <SitemapPage {...props} />}
         {page === 'imports' && <ReferenceImports {...props} />}
+        {page === 'proxies' && <MetadataProxies {...props} />}
       </>}
   </section>
 }

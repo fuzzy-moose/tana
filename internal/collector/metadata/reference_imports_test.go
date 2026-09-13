@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -323,10 +324,9 @@ func TestReferenceImportValidationSharesPersistentRequestBackoff(t *testing.T) {
 		imports := batchImports(t, db, filepath.Join(dir, "imports"))
 		item := acceptImport(t, imports, "1,token1\n")
 		parseImports(t, imports)
-		var requests int
+		var requests atomic.Int64
 		transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			requests++
-			if requests == 1 {
+			if requests.Add(1) == 1 {
 				return &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": {"120"}}, Body: io.NopCloser(strings.NewReader("busy"))}, nil
 			}
 			return metadataResponse(t, panda.Metadata{ID: 1, Token: "token1"}), nil
@@ -346,13 +346,13 @@ func TestReferenceImportValidationSharesPersistentRequestBackoff(t *testing.T) {
 		defer worker.Close()
 		time.Sleep(119 * time.Second)
 		synctest.Wait()
-		if requests != 1 {
-			t.Fatalf("restart bypassed shared cooldown: %d requests", requests)
+		if count := requests.Load(); count != 1 {
+			t.Fatalf("restart bypassed shared cooldown: %d requests", count)
 		}
 		time.Sleep(time.Second)
 		synctest.Wait()
-		if got := readImport(t, imports, item.ID); requests != 2 || got.Status != "completed" || got.Imported != 1 {
-			t.Fatalf("validation did not resume: %+v, requests=%d", got, requests)
+		if got := readImport(t, imports, item.ID); requests.Load() != 2 || got.Status != "completed" || got.Imported != 1 {
+			t.Fatalf("validation did not resume: %+v, requests=%d", got, requests.Load())
 		}
 	})
 }

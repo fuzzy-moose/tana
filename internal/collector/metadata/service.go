@@ -18,12 +18,14 @@ import (
 )
 
 type Service struct {
-	store   *store
-	client  *panda.Client
-	logger  *slog.Logger
-	cancel  context.CancelFunc
-	workers sync.WaitGroup
-	wake    chan struct{}
+	store    *store
+	client   *panda.Client
+	logger   *slog.Logger
+	cancel   context.CancelFunc
+	workers  sync.WaitGroup
+	wake     chan struct{}
+	dispatch sync.Mutex
+	reserved map[int64]bool
 }
 
 // New starts a single collector that also drains work persisted before startup.
@@ -91,16 +93,22 @@ func (s *Service) collect(ctx context.Context) (time.Duration, error) {
 	if delay := time.Until(time.UnixMilli(retry.NextAttemptAt)); delay > 0 {
 		return delay, nil
 	}
-	refs, err := s.store.pendingRefs(ctx)
-	if err != nil || len(refs) == 0 {
+	batch, err := s.claim(ctx, false)
+	if err != nil || batch == nil {
 		return time.Second, err
 	}
-	entries, err := s.client.GetMetadata(ctx, refs)
+	defer batch.Close()
+	return 0, batch.fetch(ctx, s.client, true)
+}
+
+func (b *Batch) fetch(ctx context.Context, client *panda.Client, main bool) error {
+	s, refs := b.service, b.refs
+	entries, err := client.GetMetadata(ctx, refs)
 	if err != nil {
 		var httpErr *panda.HTTPError
-		if !errors.As(err, &httpErr) || httpErr.StatusCode < 400 || httpErr.StatusCode >= 500 ||
+		if !main || !errors.As(err, &httpErr) || httpErr.StatusCode < 400 || httpErr.StatusCode >= 500 ||
 			httpErr.StatusCode == http.StatusRequestTimeout || httpErr.StatusCode == http.StatusTooManyRequests {
-			return 0, err
+			return err
 		}
 		// Permanent request rejection finishes these entries instead of retrying
 		// forever. Transport errors, throttling and server failures share backoff.
@@ -117,7 +125,7 @@ func (s *Service) collect(ctx context.Context) (time.Duration, error) {
 	for i, entry := range entries {
 		token, ok := wanted[entry.ID]
 		if !ok {
-			return 0, fmt.Errorf("unexpected or duplicate Panda gallery %d", entry.ID)
+			return fmt.Errorf("unexpected or duplicate Panda gallery %d", entry.ID)
 		}
 		if entry.Error == "" && entry.Token != token {
 			entries[i] = panda.Metadata{ID: entry.ID, Error: "token_mismatch"}
@@ -125,10 +133,10 @@ func (s *Service) collect(ctx context.Context) (time.Duration, error) {
 		delete(wanted, entry.ID)
 	}
 	if len(wanted) != 0 {
-		return 0, fmt.Errorf("Panda response omitted %d galleries", len(wanted))
+		return fmt.Errorf("Panda response omitted %d galleries", len(wanted))
 	}
-	if err := s.store.complete(ctx, refs, entries, time.Now()); err != nil {
-		return 0, err
+	if err := s.store.complete(ctx, refs, entries, time.Now(), main); err != nil {
+		return err
 	}
 	collected := 0
 	for _, entry := range entries {
@@ -139,5 +147,5 @@ func (s *Service) collect(ctx context.Context) (time.Duration, error) {
 		}
 	}
 	s.logger.Info("metadata_batch_completed", "collected", collected, "failed", len(entries)-collected)
-	return 0, nil
+	return nil
 }

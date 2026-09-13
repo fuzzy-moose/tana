@@ -104,6 +104,9 @@ The browsable collection of collected Panda metadata across all discovery paths,
 **Metadata refresh time**:
 The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.
 
+**Panda metadata proxy channel**:
+An optional route for collecting Panda metadata from background gallery references and validating Panda reference imports through a fixed proxy, with its own upstream ban state.
+
 **Metadata fetch job**:
 A durable request from Tana to retrieve fresh Panda metadata for supplied gallery references, with a pending, successful, or failed outcome for each reference. Queued references are not evidence of valid tokens or membership in the gallery reference inventory.
 

@@ -5,7 +5,7 @@ function subscribe(callback: () => void) {
   return () => window.removeEventListener('hashchange', callback)
 }
 
-export type CollectorPage = 'overview' | 'downloads' | 'favorites' | 'sitemap' | 'imports'
+export type CollectorPage = 'overview' | 'downloads' | 'favorites' | 'sitemap' | 'imports' | 'proxies'
 
 export type Route =
   | { kind: 'galleries', search: string, page: number }
@@ -25,7 +25,7 @@ export function useRoute(): Route {
   if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', page, includeExpunged: params.get('include_expunged') === 'true' }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
   if (path === '/collector') return { kind: 'collector', page: 'overview' }
-  const collector = path.match(/^\/collector\/(downloads|favorites|sitemap|imports)$/)
+  const collector = path.match(/^\/collector\/(downloads|favorites|sitemap|imports|proxies)$/)
   if (collector) return { kind: 'collector', page: collector[1] as CollectorPage }
   const spread = path.match(/^\/galleries\/(\d+)\/page\/(\d+)(?:-(\d+))?$/)
   if (spread) {

@@ -19,7 +19,7 @@ type store struct {
 
 // complete commits successful metadata and related references together, so a
 // restart cannot lose discovered work after marking its source collected.
-func (s *store) complete(ctx context.Context, refs []panda.GalleryRef, entries []panda.Metadata, at time.Time) error {
+func (s *store) complete(ctx context.Context, refs []panda.GalleryRef, entries []panda.Metadata, at time.Time, main bool) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -120,8 +120,10 @@ func (s *store) complete(ctx context.Context, refs []panda.GalleryRef, entries [
 	if err := q.CompleteFetchJobs(ctx, nullableMillis(at)); err != nil {
 		return err
 	}
-	if err := q.RecordBatchSuccess(ctx, sql.NullInt64{Int64: at.UnixMilli(), Valid: true}); err != nil {
-		return err
+	if main {
+		if err := q.RecordBatchSuccess(ctx, sql.NullInt64{Int64: at.UnixMilli(), Valid: true}); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -149,28 +151,39 @@ func (s *store) maintainJobs(ctx context.Context, at time.Time) error {
 }
 
 func (s *store) pendingRefs(ctx context.Context) ([]panda.GalleryRef, error) {
-	// The single worker selects explicit work first. A feed batch already in
-	// flight may also satisfy a job submitted while that batch was running.
-	queued, err := s.q.PendingFetches(ctx, panda.MaxBatchSize)
-	if err != nil {
-		return nil, err
-	}
+	return s.pendingRefsFor(ctx, false, nil)
+}
+
+func (s *store) pendingRefsFor(ctx context.Context, background bool, reserved map[int64]bool) ([]panda.GalleryRef, error) {
+	// Each query selects distinct gallery IDs. This bounded over-read leaves a
+	// full batch available even when every reserved gallery precedes other work.
+	limit := int64(panda.MaxBatchSize + len(reserved))
 	refs := make([]panda.GalleryRef, 0, panda.MaxBatchSize)
-	for _, row := range queued {
-		refs = append(refs, panda.GalleryRef{ID: row.GalleryID, Token: row.Token})
+	if !background {
+		queued, err := s.q.PendingFetches(ctx, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range queued {
+			if !reserved[row.GalleryID] && len(refs) < panda.MaxBatchSize {
+				refs = append(refs, panda.GalleryRef{ID: row.GalleryID, Token: row.Token})
+			}
+		}
+		if len(queued) != 0 {
+			return refs, nil
+		}
 	}
-	if len(refs) != 0 {
-		return refs, nil
-	}
-	rows, err := s.q.PendingRefs(ctx, panda.MaxBatchSize)
+	rows, err := s.q.PendingRefs(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		refs = append(refs, panda.GalleryRef{ID: row.GalleryID, Token: row.Token})
+		if !reserved[row.GalleryID] && len(refs) < panda.MaxBatchSize {
+			refs = append(refs, panda.GalleryRef{ID: row.GalleryID, Token: row.Token})
+		}
 	}
-	if len(refs) != 0 {
+	if len(rows) != 0 {
 		return refs, nil
 	}
-	return s.pendingImportRefs(ctx)
+	return s.pendingImportRefs(ctx, reserved)
 }
