@@ -11,21 +11,22 @@ import (
 )
 
 const inventoryStatistics = `-- name: InventoryStatistics :one
-WITH inventory AS (
-    SELECT CASE WHEN m.gallery_id IS NOT NULL THEN 'available'
-        WHEN r.metadata_attempted_at IS NULL OR EXISTS (
-            SELECT 1 FROM metadata_fetches f
-            WHERE f.gallery_id = r.gallery_id AND f.token = r.token AND f.status = 'pending'
-        ) THEN 'pending' ELSE 'failed' END AS state
-    FROM gallery_refs r LEFT JOIN gallery_metadata m ON m.gallery_id = r.gallery_id
+WITH counts AS (
+    SELECT
+        (SELECT count(*) FROM gallery_refs) AS gallery_references,
+        (SELECT count(*) FROM gallery_metadata) AS metadata_available,
+        (SELECT count(*) FROM gallery_refs r
+         WHERE r.metadata_attempted_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM gallery_metadata m INDEXED BY gallery_metadata_inventory WHERE m.gallery_id = r.gallery_id))
+        + (SELECT count(*) FROM metadata_fetches f JOIN gallery_refs r ON r.gallery_id = f.gallery_id AND r.token = f.token
+           WHERE f.status = 'pending' AND r.metadata_attempted_at IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM gallery_metadata m INDEXED BY gallery_metadata_inventory WHERE m.gallery_id = r.gallery_id)) AS metadata_pending
 )
-SELECT count(*) AS gallery_references,
-    count(CASE WHEN state = 'available' THEN 1 END) AS metadata_available,
-    count(CASE WHEN state = 'pending' THEN 1 END) AS metadata_pending,
-    count(CASE WHEN state = 'failed' THEN 1 END) AS metadata_failed,
+SELECT gallery_references, metadata_available, CAST(metadata_pending AS INTEGER) AS metadata_pending,
+    CAST(gallery_references - metadata_available - metadata_pending AS INTEGER) AS metadata_failed,
     (SELECT count(*) FROM metadata_fetches WHERE status = 'pending') AS fetches_pending,
     (SELECT count(*) FROM metadata_fetches WHERE status = 'failed') AS fetches_failed
-FROM inventory
+FROM counts
 `
 
 type InventoryStatisticsRow struct {
@@ -68,9 +69,12 @@ func (q *Queries) MetadataRetry(ctx context.Context) (MetadataRetryRow, error) {
 }
 
 const recentMetadataErrors = `-- name: RecentMetadataErrors :many
-WITH errors AS (
+WITH gallery_errors AS (
     SELECT gallery_id, metadata_error, metadata_attempted_at
     FROM gallery_refs WHERE metadata_error IS NOT NULL AND metadata_error != ''
+    ORDER BY metadata_attempted_at DESC, gallery_id LIMIT 10
+), errors AS (
+    SELECT gallery_id, metadata_error, metadata_attempted_at FROM gallery_errors
     UNION ALL
     SELECT f.gallery_id, f.error, (
         SELECT max(coalesce(j.completed_at, j.created_at))

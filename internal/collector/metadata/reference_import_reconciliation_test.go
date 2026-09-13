@@ -128,6 +128,8 @@ func TestReferenceImportReconciliationUpgradeResumesPastUnmatchedEntries(t *test
 		DROP TABLE reference_import_inventory_queue;
 		DROP TABLE reference_import_reconciliation;
 		DROP INDEX reference_import_entries_pending_gallery;
+		DROP INDEX gallery_refs_inventory;
+		DROP INDEX gallery_refs_recent_metadata_errors;
 		PRAGMA user_version = 15`); err != nil {
 		t.Fatal(err)
 	}

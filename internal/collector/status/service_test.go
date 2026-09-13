@@ -98,3 +98,61 @@ UPDATE metadata_retry SET last_error = 'upstream unavailable', next_attempt_at =
 		t.Fatalf("diagnostics: %+v", result)
 	}
 }
+
+func TestInventoryCountsRetainedMetadataAndMatchingRetries(t *testing.T) {
+	db, _, err := storage.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`INSERT INTO gallery_refs (gallery_id, token, metadata_attempted_at) VALUES
+		(1, 'one', NULL), (2, 'two', NULL), (3, 'three', 1), (4, 'four', 1), (5, 'five', 1);
+		INSERT INTO gallery_metadata (gallery_id, body, refreshed_at) VALUES (1, '{}', 1), (5, '{}', 1);
+		INSERT INTO metadata_fetches (gallery_id, token, status) VALUES
+		(2, 'two', 'pending'), (2, 'wrong', 'pending'), (3, 'three', 'pending'),
+		(4, 'wrong', 'pending'), (5, 'five', 'pending');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := New(db, nil, nil).Inventory(t.Context())
+	want := collectorapi.InventoryStatus{GalleryReferences: 5, MetadataAvailable: 2, MetadataPending: 2, MetadataFailed: 1, FetchesPending: 5}
+	if err != nil || got != want {
+		t.Fatalf("inventory: %+v, %v; want %+v", got, err, want)
+	}
+}
+
+func TestRecentMetadataErrorsMergeLatestDistinctGalleries(t *testing.T) {
+	db, _, err := storage.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`WITH RECURSIVE ids(id) AS (VALUES(1) UNION ALL SELECT id + 1 FROM ids WHERE id < 30)
+		INSERT INTO gallery_refs (gallery_id, token, metadata_attempted_at, metadata_error)
+		SELECT id, 'token', 100 + id, 'gallery error' FROM ids;
+		INSERT INTO metadata_fetch_jobs (id, created_at, completed_at) VALUES ('new', 1000, 1001), ('old', 1, 2);
+		INSERT INTO metadata_fetches (id, gallery_id, token, status, error) VALUES
+		(1, 10, 'token', 'failed', 'new fetch error'), (2, 31, 'token', 'failed', 'new fetch error'),
+		(3, 31, 'other', 'failed', 'old fetch error'), (4, 30, 'token', 'failed', 'old fetch error');
+		INSERT INTO metadata_fetch_job_entries (job_id, position, fetch_id) VALUES
+		('new', 1, 1), ('new', 2, 2), ('old', 1, 3), ('old', 2, 4);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := New(db, nil, pandaban.New(db)).Metadata(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int64{10, 31, 30, 29, 28, 27, 26, 25, 24, 23}
+	if len(got.MetadataErrors) != len(want) {
+		t.Fatalf("recent errors: %+v", got.MetadataErrors)
+	}
+	for i, id := range want {
+		if got.MetadataErrors[i].GalleryID != id {
+			t.Fatalf("recent errors: %+v; want gallery IDs %v", got.MetadataErrors, want)
+		}
+	}
+	if got.MetadataErrors[0].Error != "new fetch error" || got.MetadataErrors[1].Error != "new fetch error" || got.MetadataErrors[2].Error != "gallery error" {
+		t.Fatalf("older error replaced latest outcome: %+v", got.MetadataErrors)
+	}
+}
