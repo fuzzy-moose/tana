@@ -117,6 +117,8 @@
 .collector-downloads th:first-child { white-space: nowrap; }
 .collector-downloads td:nth-child(2) { min-width: 180px; max-width: 320px; overflow-wrap: anywhere; }
 .collector-downloads td:last-child { min-width: 200px; }
+.collector-feeds th:first-child, .collector-feeds td:last-child { white-space: nowrap; }
+.collector-feeds td:nth-child(3) { min-width: 180px; max-width: 360px; overflow-wrap: anywhere; }
 .download-filters { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin: 24px 0 16px; }
 .download-filter { display: grid; gap: 8px; padding: 12px; text-align: left; color: var(--muted); }
 .download-filter strong { color: var(--foreground); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }

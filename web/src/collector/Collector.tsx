@@ -6,6 +6,7 @@ import Overview from './Overview'
 import SitemapPage from './SitemapPage'
 import ReferenceImports from './ReferenceImports'
 import MetadataProxies from './MetadataProxies'
+import RawFeeds from './RawFeeds'
 import './Collector.css'
 
 const pages: { page: CollectorPage, label: string, description: string }[] = [
@@ -13,6 +14,7 @@ const pages: { page: CollectorPage, label: string, description: string }[] = [
   { page: 'downloads', label: 'Downloads', description: 'Manage queued downloads and archives retained on the collector.' },
   { page: 'favorites', label: 'Favorites', description: 'Sync Panda favorites and choose categories for automatic downloads.' },
   { page: 'sitemap', label: 'Sitemap', description: 'Collect Panda gallery references from sitemaps.' },
+  { page: 'feeds', label: 'Raw feeds', description: 'Inspect feed processing errors and download captured feeds for local analysis.' },
   { page: 'imports', label: 'Reference imports', description: 'Import Panda gallery references and follow their progress.' },
   { page: 'proxies', label: 'Metadata proxies', description: 'Configure independent proxy channels for background metadata collection.' },
 ]
@@ -57,6 +59,7 @@ export default function Collector({ page }: { page: CollectorPage }) {
         {page === 'downloads' && <Downloads {...props} />}
         {page === 'favorites' && <Favorites {...props} />}
         {page === 'sitemap' && <SitemapPage {...props} />}
+        {page === 'feeds' && <RawFeeds {...props} />}
         {page === 'imports' && <ReferenceImports {...props} />}
         {page === 'proxies' && <MetadataProxies {...props} />}
       </>}

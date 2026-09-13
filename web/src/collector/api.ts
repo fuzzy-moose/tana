@@ -24,6 +24,24 @@ export interface CollectorStatus {
   available: boolean
 }
 
+export interface FeedCapture {
+  id: number
+  captured_at: string
+  size_bytes: number
+  state: 'pending' | 'processed' | 'failed'
+  error?: string
+}
+
+export interface FeedCaptureList {
+  captures: FeedCapture[]
+  has_more: boolean
+}
+
+export const getFeedCaptures = (failedOnly: boolean, limit: number, offset: number, signal: AbortSignal) =>
+  request<FeedCaptureList>(`/api/collector/feed/captures?failed_only=${failedOnly}&limit=${limit}&offset=${offset}`, { signal }, collectorMessages)
+
+export const feedCaptureFileURL = (id: number) => `/api/collector/feed/captures/${id}/file`
+
 export interface FavoritesStatus {
   host: string
   account_key: string

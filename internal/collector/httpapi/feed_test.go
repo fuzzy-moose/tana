@@ -19,6 +19,39 @@ type feedTransport func(*http.Request) (*http.Response, error)
 
 func (f feedTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestFeedCaptureFileClearsWriteDeadline(t *testing.T) {
+	db, _, err := storage.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	const raw = "<feed/>\r\n"
+	if _, err := db.Exec(`INSERT INTO raw_feeds (id, captured_at, feed_url, body) VALUES (42, 1000, 'https://panda.test/feed', ?)`, []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	service := feed.New(ctx, db, feed.Config{Interval: time.Hour}, nil, slog.New(slog.DiscardHandler))
+	service.Close()
+	handler := server.HTTPContextMiddleware(HandleFeedCaptureFile(service))
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		r := httptest.NewRequest(method, "/api/feed/captures/42/file", nil)
+		r.SetPathValue("id", "42")
+		w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder(), deadline: time.Now().Add(30 * time.Second)}
+		handler.ServeHTTP(w, r)
+		if !w.deadline.IsZero() {
+			t.Fatal("raw feed download retained the API write deadline")
+		}
+		want := raw
+		if method == http.MethodHead {
+			want = ""
+		}
+		if w.Code != http.StatusOK || w.Body.String() != want {
+			t.Fatalf("%s capture: %d %q", method, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestFeedControlProtocol(t *testing.T) {
 	db, _, err := storage.Open(t.Context(), t.TempDir())
 	if err != nil {

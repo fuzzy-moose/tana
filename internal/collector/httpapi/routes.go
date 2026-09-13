@@ -26,6 +26,8 @@ func NewHandler(app *collector.App) http.Handler {
 	mux.Handle("GET /api/catalog/completions", HandleCompleteCatalog(app.Catalog))
 	mux.Handle("GET /api/feed/status", HandleFeed(app.Feeds))
 	mux.Handle("POST /api/feed/refresh", HandleFeed(app.Feeds))
+	mux.Handle("GET /api/feed/captures", HandleListFeedCaptures(app.Feeds))
+	mux.Handle("GET /api/feed/captures/{id}/file", HandleFeedCaptureFile(app.Feeds))
 	mux.Handle("GET /api/sitemap/status", HandleSitemap(app.Sitemap, app.Ban))
 	mux.Handle("POST /api/sitemap/{action}", HandleSitemap(app.Sitemap, app.Ban))
 	mux.Handle("POST /api/favorites/{category}/sync", HandleSyncFavorites(app.Favorites))
