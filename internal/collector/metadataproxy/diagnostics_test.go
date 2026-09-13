@@ -82,7 +82,7 @@ func TestProxyBatchPersistsSpecificFailureWithoutLosingWork(t *testing.T) {
 				}
 			}
 			addChannel(t, s, "A", proxy.URL)
-			if err := s.SetEnabled(t.Context(), true); err != nil {
+			if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: true}); err != nil {
 				t.Fatal(err)
 			}
 			result := awaitStatus(t, s, func(result collectorapi.MetadataProxyStatus) bool { return result.Channels[0].LastError != "" })

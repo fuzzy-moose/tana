@@ -10,8 +10,8 @@ import (
 func (s *Service) Status(ctx context.Context) (collectorapi.MetadataProxyStatus, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	enabled, channels, err := s.channels(ctx)
-	status := collectorapi.MetadataProxyStatus{Enabled: enabled, Channels: []collectorapi.MetadataProxyChannel{},
+	settings, channels, err := s.channels(ctx)
+	status := collectorapi.MetadataProxyStatus{Enabled: settings.Enabled, AutoRemoveInactive: settings.AutoRemoveInactive, Channels: []collectorapi.MetadataProxyChannel{},
 		RateIntervalMS: s.config.RateInterval.Milliseconds(), DefaultUserAgent: defaultUserAgent}
 	if err != nil {
 		return status, err
@@ -39,7 +39,7 @@ func (s *Service) Status(ctx context.Context) (collectorapi.MetadataProxyStatus,
 		if ch.AuthFailed {
 			item.State = "authentication_required"
 		}
-		if !enabled || !ch.Enabled {
+		if !settings.Enabled || !ch.Enabled {
 			item.State = "disabled"
 		}
 		if runtime := s.runtime[ch.ID]; runtime != nil && runtime.batchSize > 0 {
@@ -47,7 +47,7 @@ func (s *Service) Status(ctx context.Context) (collectorapi.MetadataProxyStatus,
 			if runtime.config.Revision != ch.Revision {
 				item.State = "updating"
 			}
-			if !enabled || !ch.Enabled {
+			if !settings.Enabled || !ch.Enabled {
 				item.State = "stopping"
 			}
 		}

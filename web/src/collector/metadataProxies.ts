@@ -21,8 +21,12 @@ export interface MetadataProxyChannel extends Omit<MetadataProxyInput, 'password
   last_error?: string
 }
 
-export interface MetadataProxyStatus {
+export interface MetadataProxySettings {
   enabled: boolean
+  auto_remove_inactive: boolean
+}
+
+export interface MetadataProxyStatus extends MetadataProxySettings {
   channels: MetadataProxyChannel[]
   rate_interval_ms: number
   default_user_agent: string
@@ -60,7 +64,7 @@ function mutate(path: string, method: string, input: unknown, signal: AbortSigna
   }, messages)
 }
 
-export const setMetadataProxies = (enabled: boolean, signal: AbortSignal) => mutate('', 'PUT', { enabled }, signal)
+export const setMetadataProxies = (settings: MetadataProxySettings, signal: AbortSignal) => mutate('', 'PUT', settings, signal)
 export const saveMetadataProxy = (id: string, input: MetadataProxyInput, signal: AbortSignal) => mutate(
   '/channels' + (id ? '/' + encodeURIComponent(id) : ''), id ? 'PUT' : 'POST', input, signal,
 )

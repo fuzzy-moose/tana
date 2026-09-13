@@ -22,7 +22,7 @@ func HandleMetadataProxies(service *metadataproxy.Service) http.Handler {
 			if !server.DecodeJSON(w, r, &settings) {
 				return
 			}
-			err = service.SetEnabled(r.Context(), settings.Enabled)
+			err = service.SetSettings(r.Context(), settings)
 		case r.Method == http.MethodPost || r.Method == http.MethodPut:
 			var input collectorapi.MetadataProxyInput
 			if !server.DecodeJSON(w, r, &input) {

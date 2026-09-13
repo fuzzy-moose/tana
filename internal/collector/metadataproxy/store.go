@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 )
@@ -13,36 +14,39 @@ type channel struct {
 	ID, Name, Endpoint, Username, Password, UserAgent    string
 	Enabled, Deleting, AuthFailed                        bool
 	Revision, BanUntil, Failures, RetryAt, LastSuccessAt int64
+	CreatedAt                                            int64
 	LastError                                            string
 }
 
-func (s *Service) channels(ctx context.Context) (bool, []channel, error) {
-	var enabled bool
-	if err := s.db.QueryRowContext(ctx, `SELECT enabled FROM metadata_proxy_settings WHERE id = 1`).Scan(&enabled); err != nil {
-		return false, nil, err
+func (s *Service) channels(ctx context.Context) (collectorapi.MetadataProxySettings, []channel, error) {
+	var settings collectorapi.MetadataProxySettings
+	if err := s.db.QueryRowContext(ctx, `SELECT enabled, auto_remove_inactive FROM metadata_proxy_settings WHERE id = 1`).
+		Scan(&settings.Enabled, &settings.AutoRemoveInactive); err != nil {
+		return settings, nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name, endpoint, username, password, user_agent, enabled,
-		revision, deleting, ban_until, failures, retry_at, auth_failed, last_error, last_success_at FROM metadata_proxy_channels ORDER BY rowid`)
+		revision, deleting, ban_until, failures, retry_at, auth_failed, last_error, last_success_at, created_at FROM metadata_proxy_channels ORDER BY rowid`)
 	if err != nil {
-		return false, nil, err
+		return settings, nil, err
 	}
 	defer rows.Close()
 	var channels []channel
 	for rows.Next() {
 		var ch channel
 		if err := rows.Scan(&ch.ID, &ch.Name, &ch.Endpoint, &ch.Username, &ch.Password, &ch.UserAgent, &ch.Enabled,
-			&ch.Revision, &ch.Deleting, &ch.BanUntil, &ch.Failures, &ch.RetryAt, &ch.AuthFailed, &ch.LastError, &ch.LastSuccessAt); err != nil {
-			return false, nil, err
+			&ch.Revision, &ch.Deleting, &ch.BanUntil, &ch.Failures, &ch.RetryAt, &ch.AuthFailed, &ch.LastError, &ch.LastSuccessAt, &ch.CreatedAt); err != nil {
+			return settings, nil, err
 		}
 		channels = append(channels, ch)
 	}
-	return enabled, channels, rows.Err()
+	return settings, channels, rows.Err()
 }
 
-func (s *Service) SetEnabled(ctx context.Context, enabled bool) error {
+func (s *Service) SetSettings(ctx context.Context, settings collectorapi.MetadataProxySettings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx, `UPDATE metadata_proxy_settings SET enabled = ? WHERE id = 1`, enabled)
+	_, err := s.db.ExecContext(ctx, `UPDATE metadata_proxy_settings SET enabled = ?, auto_remove_inactive = ? WHERE id = 1`,
+		settings.Enabled, settings.AutoRemoveInactive)
 	if err == nil {
 		s.notify()
 	}
@@ -106,8 +110,8 @@ func (s *Service) Save(ctx context.Context, id string, input collectorapi.Metada
 	if id == "" {
 		id = rand.Text()
 		_, err = tx.ExecContext(ctx, `INSERT INTO metadata_proxy_channels
-			(id, name, endpoint, username, password, user_agent, enabled, ban_until) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, input.Name, input.ProxyURL, input.Username, password, input.UserAgent, input.Enabled, until)
+			(id, name, endpoint, username, password, user_agent, enabled, ban_until, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, input.Name, input.ProxyURL, input.Username, password, input.UserAgent, input.Enabled, until, time.Now().UnixMilli())
 	} else {
 		changedAuth := old.Endpoint != input.ProxyURL || old.Username != input.Username || old.Password != password
 		_, err = tx.ExecContext(ctx, `UPDATE metadata_proxy_channels SET name = ?, endpoint = ?, username = ?, password = ?,

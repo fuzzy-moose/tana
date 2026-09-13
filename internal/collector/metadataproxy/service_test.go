@@ -182,7 +182,7 @@ func TestChannelsOverlapAndDisableFinishesAssignedBatches(t *testing.T) {
 	seed(t, s.db, 51)
 	addChannel(t, s, "A", a.URL)
 	addChannel(t, s, "B", b.URL)
-	if err := s.SetEnabled(t.Context(), true); err != nil {
+	if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	first, second := receive(t, started), receive(t, started)
@@ -198,7 +198,7 @@ func TestChannelsOverlapAndDisableFinishesAssignedBatches(t *testing.T) {
 			seen[entry.ID] = true
 		}
 	}
-	if err := s.SetEnabled(t.Context(), false); err != nil {
+	if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: false}); err != nil {
 		t.Fatal(err)
 	}
 	for _, ch := range status(t, s).Channels {
@@ -255,14 +255,14 @@ func TestBansAreIndependentAndSurviveEditsRemovalAndRestart(t *testing.T) {
 	seed(t, s.db, 26)
 	id := addChannel(t, s, "A", a.URL)
 	addChannel(t, s, "B", b.URL)
-	if err := s.SetEnabled(t.Context(), true); err != nil {
+	if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	result := awaitStatus(t, s, func(result collectorapi.MetadataProxyStatus) bool {
 		return result.Channels[0].BanUntil != nil && result.Channels[1].BatchSize > 0
 	})
 	until := *result.Channels[0].BanUntil
-	if err := s.SetEnabled(t.Context(), false); err != nil {
+	if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: false}); err != nil {
 		t.Fatal(err)
 	}
 	close(release)
@@ -282,7 +282,7 @@ func TestBansAreIndependentAndSurviveEditsRemovalAndRestart(t *testing.T) {
 	}
 	awaitStatus(t, s, func(result collectorapi.MetadataProxyStatus) bool { return len(result.Channels) == 1 })
 	id = addChannel(t, s, "A recreated", a.URL)
-	if err := s.SetEnabled(t.Context(), true); err != nil {
+	if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -317,7 +317,7 @@ func TestEditingActiveRouteCarriesLateBanToNewEndpoint(t *testing.T) {
 	defer s.Close()
 	seed(t, s.db, 1)
 	id := addChannel(t, s, "A", proxy.URL)
-	if err := s.SetEnabled(t.Context(), true); err != nil {
+	if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	receive(t, started)
@@ -354,7 +354,7 @@ func TestProxyAuthenticationPausesHTTPAndCONNECTWithoutLosingWork(t *testing.T) 
 			defer s.Close()
 			seed(t, s.db, 1)
 			id := addChannel(t, s, "A", proxy.URL)
-			if err := s.SetEnabled(t.Context(), true); err != nil {
+			if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: true}); err != nil {
 				t.Fatal(err)
 			}
 			result := awaitStatus(t, s, func(result collectorapi.MetadataProxyStatus) bool {
@@ -438,7 +438,7 @@ func TestSOCKSAuthenticationFailurePausesChannel(t *testing.T) {
 	if err := s.Save(t.Context(), "", collectorapi.MetadataProxyInput{Name: "SOCKS", ProxyURL: "socks5h://" + listener.Addr().String(), Username: "user", Password: &password, Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetEnabled(t.Context(), true); err != nil {
+	if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	result := awaitStatus(t, s, func(result collectorapi.MetadataProxyStatus) bool {
@@ -459,7 +459,7 @@ func TestProxyRequestRejectionRemainsPendingAndBackoffGrows(t *testing.T) {
 	defer s.Close()
 	seed(t, s.db, 1)
 	id := addChannel(t, s, "A", proxy.URL)
-	if err := s.SetEnabled(t.Context(), true); err != nil {
+	if err := s.SetSettings(t.Context(), collectorapi.MetadataProxySettings{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	awaitStatus(t, s, func(result collectorapi.MetadataProxyStatus) bool { return result.Channels[0].State == "waiting_retry" })

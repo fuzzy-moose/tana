@@ -74,6 +74,12 @@ func TestLocalMetadataProxyConfiguration(t *testing.T) {
 	request("PUT", "", `{"enabled":true}`, 200)
 	request("PUT", "", `{"enabled":false}`, 200)
 	request("GET", "", "", 200)
+	for _, cleanup := range []bool{true, false} {
+		request("PUT", "", fmt.Sprintf(`{"enabled":false,"auto_remove_inactive":%t}`, cleanup), 200)
+		if err := json.Unmarshal(request("GET", "", "", 200).Body.Bytes(), &result); err != nil || result.AutoRemoveInactive != cleanup || result.Enabled {
+			t.Fatalf("cleanup setting: %+v, %v", result, err)
+		}
+	}
 	var password, name string
 	if err := db.QueryRow(`SELECT name, password FROM metadata_proxy_channels WHERE id = ?`, id).Scan(&name, &password); err != nil || name != "Renamed" || password != "private-password" {
 		t.Fatal("configuration did not persist")

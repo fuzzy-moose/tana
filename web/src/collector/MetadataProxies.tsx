@@ -93,10 +93,16 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
     {resource.data && <>
       <label className="proxy-toggle">
         <input type="checkbox" checked={resource.data.enabled} disabled={disabled}
-          onChange={(event) => { void change((signal) => setMetadataProxies(event.target.checked, signal), 'Proxy collection settings saved.') }} />
+          onChange={(event) => { void change((signal) => setMetadataProxies({ enabled: event.target.checked, auto_remove_inactive: resource.data!.auto_remove_inactive }, signal), 'Proxy collection settings saved.') }} />
         Enable proxy metadata collection
       </label>
       <p className="field-help">Settings apply to this collector for all Tana clients. Enabled channels resume after a restart. Disabling finishes the active batch first.</p>
+      <label className="proxy-toggle">
+        <input type="checkbox" checked={resource.data.auto_remove_inactive} disabled={disabled}
+          onChange={(event) => { void change((signal) => setMetadataProxies({ enabled: resource.data!.enabled, auto_remove_inactive: event.target.checked }, signal), 'Proxy cleanup settings saved.') }} />
+        Remove proxies after 5 minutes without a successful request
+      </label>
+      <p className="field-help">Includes idle and disabled channels. New channels get 5 minutes to succeed. Active batches finish before removal.</p>
       <p className="field-help">Up to 25 galleries per batch · one batch per channel every {resource.data.rate_interval_ms / 1000} seconds.</p>
     </>}
     {notice && <p className="collector-notice" role="status">{notice}</p>}

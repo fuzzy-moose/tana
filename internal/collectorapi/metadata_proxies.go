@@ -46,14 +46,16 @@ type MetadataProxyChannel struct {
 }
 
 type MetadataProxyStatus struct {
-	Enabled          bool                   `json:"enabled"`
-	Channels         []MetadataProxyChannel `json:"channels"`
-	RateIntervalMS   int64                  `json:"rate_interval_ms"`
-	DefaultUserAgent string                 `json:"default_user_agent"`
+	Enabled            bool                   `json:"enabled"`
+	AutoRemoveInactive bool                   `json:"auto_remove_inactive"`
+	Channels           []MetadataProxyChannel `json:"channels"`
+	RateIntervalMS     int64                  `json:"rate_interval_ms"`
+	DefaultUserAgent   string                 `json:"default_user_agent"`
 }
 
 type MetadataProxySettings struct {
-	Enabled bool `json:"enabled"`
+	Enabled            bool `json:"enabled"`
+	AutoRemoveInactive bool `json:"auto_remove_inactive"`
 }
 
 type MetadataProxyImportInput struct {

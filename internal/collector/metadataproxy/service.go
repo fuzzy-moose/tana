@@ -96,16 +96,21 @@ func (s *Service) run(ctx context.Context) {
 func (s *Service) dispatch(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	enabled, channels, err := s.channels(ctx)
+	settings, channels, err := s.channels(ctx)
 	if err != nil {
 		return err
 	}
+	cutoff := time.Now().Add(-5 * time.Minute).UnixMilli()
 	for _, ch := range channels {
 		runtime := s.runtime[ch.ID]
 		if runtime != nil && runtime.batchSize != 0 {
 			continue
 		}
-		if ch.Deleting {
+		lastSuccess := ch.LastSuccessAt
+		if lastSuccess == 0 {
+			lastSuccess = ch.CreatedAt
+		}
+		if ch.Deleting || (settings.AutoRemoveInactive && lastSuccess <= cutoff) {
 			if _, err := s.db.ExecContext(ctx, `DELETE FROM metadata_proxy_channels WHERE id = ?`, ch.ID); err != nil {
 				return err
 			}
@@ -119,7 +124,7 @@ func (s *Service) dispatch(ctx context.Context) error {
 		if runtime != nil && runtime.holdUntil.After(time.Now()) {
 			continue
 		}
-		if !enabled || !ch.Enabled || ch.AuthFailed || ch.RetryAt > time.Now().UnixMilli() {
+		if !settings.Enabled || !ch.Enabled || ch.AuthFailed || ch.RetryAt > time.Now().UnixMilli() {
 			continue
 		}
 		until, err := s.banUntil(ctx, ch.ID, ch.Endpoint)

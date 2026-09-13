@@ -3,6 +3,7 @@ package metadataproxy
 import (
 	"context"
 	"crypto/rand"
+	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 )
@@ -30,8 +31,8 @@ func (s *Service) importChannels(ctx context.Context, entries []collectorapi.Met
 	}
 	defer tx.Rollback()
 	insert, err := tx.PrepareContext(ctx, `INSERT INTO metadata_proxy_channels
-		(id, name, endpoint, username, password, user_agent, enabled, ban_until)
-		VALUES (?, ?, ?, ?, ?, ?, ?, max(?, coalesce((SELECT until_at FROM metadata_proxy_bans WHERE endpoint = ?), 0)))
+		(id, name, endpoint, username, password, user_agent, enabled, ban_until, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, max(?, coalesce((SELECT until_at FROM metadata_proxy_bans WHERE endpoint = ?), 0)), ?)
 		ON CONFLICT (endpoint) DO NOTHING`)
 	if err != nil {
 		return result, err
@@ -51,7 +52,7 @@ func (s *Service) importChannels(ctx context.Context, entries []collectorapi.Met
 			}
 		}
 		saved, err := insert.ExecContext(ctx, rand.Text(), entry.Name, entry.ProxyURL, entry.Username, password,
-			entry.UserAgent, enabled, s.observed["endpoint:"+entry.ProxyURL], entry.ProxyURL)
+			entry.UserAgent, enabled, s.observed["endpoint:"+entry.ProxyURL], entry.ProxyURL, time.Now().UnixMilli())
 		if err != nil {
 			return result, err
 		}
