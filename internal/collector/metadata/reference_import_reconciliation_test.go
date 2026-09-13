@@ -127,6 +127,7 @@ func TestReferenceImportReconciliationUpgradeResumesPastUnmatchedEntries(t *test
 	if _, err := db.Exec(`DROP TRIGGER reference_import_inventory_insert;
 		DROP TABLE reference_import_inventory_queue;
 		DROP TABLE reference_import_reconciliation;
+		DROP INDEX reference_import_entries_pending_gallery;
 		PRAGMA user_version = 15`); err != nil {
 		t.Fatal(err)
 	}

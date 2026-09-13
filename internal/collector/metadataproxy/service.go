@@ -98,78 +98,112 @@ func (s *Service) run(ctx context.Context) {
 	}
 }
 
-// Configuration and dispatch share a lock; once a change is saved, only a
-// batch already assigned to that channel may finish with its old settings.
 func (s *Service) dispatch(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	settings, channels, err := s.channels(ctx)
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM metadata_proxy_channels ORDER BY rowid`)
 	if err != nil {
 		return err
 	}
-	cutoff := time.Now().Add(-5 * time.Minute).UnixMilli()
-	for _, ch := range channels {
-		runtime := s.runtime[ch.ID]
-		if runtime != nil && runtime.batchSize != 0 {
-			continue
-		}
-		lastSuccess := ch.LastSuccessAt
-		if lastSuccess == 0 {
-			lastSuccess = ch.CreatedAt
-		}
-		if ch.Deleting || (settings.AutoRemoveInactive && lastSuccess <= cutoff) {
-			if _, err := s.db.ExecContext(ctx, `DELETE FROM metadata_proxy_channels WHERE id = ?`, ch.ID); err != nil {
-				return err
-			}
-			if runtime != nil && runtime.transport != nil {
-				runtime.transport.CloseIdleConnections()
-			}
-			delete(s.runtime, ch.ID)
-			delete(s.observed, "channel:"+ch.ID)
-			continue
-		}
-		if runtime != nil && runtime.holdUntil.After(time.Now()) {
-			continue
-		}
-		if !settings.Enabled || !ch.Enabled || ch.AuthFailed || ch.RetryAt > time.Now().UnixMilli() {
-			continue
-		}
-		until, err := s.banUntil(ctx, ch.ID, ch.Endpoint)
-		if err != nil {
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
 			return err
 		}
-		if until > time.Now().UnixMilli() {
-			continue
-		}
-		if runtime == nil {
-			limiter, err := panda.NewRateLimiter(s.config.RateInterval, 1)
-			if err != nil {
-				return err
-			}
-			runtime = &channelRuntime{limiter: limiter}
-			s.runtime[ch.ID] = runtime
-		}
-		if runtime.client == nil || runtime.config.Revision != ch.Revision {
-			if runtime.transport != nil {
-				runtime.transport.CloseIdleConnections()
-			}
-			client, transport, err := s.client(ch, runtime.limiter)
-			if err != nil {
-				return err
-			}
-			runtime.client, runtime.transport, runtime.config = client, transport, ch
-		}
-		batch, err := s.metadata.ClaimBackground(ctx)
-		if err != nil {
-			return err
-		}
-		if batch == nil {
-			continue
-		}
-		runtime.config = ch
-		runtime.batchSize = batch.Size()
-		s.workers.Go(func() { s.fetch(ctx, runtime, batch) })
+		ids = append(ids, id)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := s.dispatchChannel(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Release the configuration lock between channels so status, bans and results
+// can progress during a large dispatch. Read current settings under the lock:
+// only an already assigned batch may finish with settings that were edited.
+func (s *Service) dispatchChannel(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	runtime := s.runtime[id]
+	if runtime != nil && runtime.batchSize != 0 {
+		return nil
+	}
+	settings, err := s.settings(ctx)
+	if err != nil {
+		return err
+	}
+	ch, err := scanChannel(s.db.QueryRowContext(ctx, `SELECT `+channelColumns+` FROM metadata_proxy_channels WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	lastSuccess := ch.LastSuccessAt
+	if lastSuccess == 0 {
+		lastSuccess = ch.CreatedAt
+	}
+	if ch.Deleting || (settings.AutoRemoveInactive && lastSuccess <= time.Now().Add(-5*time.Minute).UnixMilli()) {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM metadata_proxy_channels WHERE id = ?`, ch.ID); err != nil {
+			return err
+		}
+		if runtime != nil && runtime.transport != nil {
+			runtime.transport.CloseIdleConnections()
+		}
+		delete(s.runtime, ch.ID)
+		delete(s.observed, "channel:"+ch.ID)
+		return nil
+	}
+	if runtime != nil && runtime.holdUntil.After(time.Now()) {
+		return nil
+	}
+	if !settings.Enabled || !ch.Enabled || ch.AuthFailed || ch.RetryAt > time.Now().UnixMilli() {
+		return nil
+	}
+	until, err := s.banUntil(ctx, ch.ID, ch.Endpoint)
+	if err != nil {
+		return err
+	}
+	if until > time.Now().UnixMilli() {
+		return nil
+	}
+	if runtime == nil {
+		limiter, err := panda.NewRateLimiter(s.config.RateInterval, 1)
+		if err != nil {
+			return err
+		}
+		runtime = &channelRuntime{limiter: limiter}
+		s.runtime[ch.ID] = runtime
+	}
+	if runtime.client == nil || runtime.config.Revision != ch.Revision {
+		if runtime.transport != nil {
+			runtime.transport.CloseIdleConnections()
+		}
+		client, transport, err := s.client(ch, runtime.limiter)
+		if err != nil {
+			return err
+		}
+		runtime.client, runtime.transport, runtime.config = client, transport, ch
+	}
+	batch, err := s.metadata.ClaimBackground(ctx)
+	if err != nil {
+		return err
+	}
+	if batch == nil {
+		return nil
+	}
+	runtime.config = ch
+	runtime.batchSize = batch.Size()
+	s.workers.Go(func() { s.fetch(ctx, runtime, batch) })
 	return nil
 }
 

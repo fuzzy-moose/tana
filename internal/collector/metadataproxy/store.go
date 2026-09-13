@@ -18,23 +18,37 @@ type channel struct {
 	LastError                                            string
 }
 
-func (s *Service) channels(ctx context.Context) (collectorapi.MetadataProxySettings, []channel, error) {
+func (s *Service) settings(ctx context.Context) (collectorapi.MetadataProxySettings, error) {
 	var settings collectorapi.MetadataProxySettings
-	if err := s.db.QueryRowContext(ctx, `SELECT enabled, auto_remove_inactive FROM metadata_proxy_settings WHERE id = 1`).
-		Scan(&settings.Enabled, &settings.AutoRemoveInactive); err != nil {
+	err := s.db.QueryRowContext(ctx, `SELECT enabled, auto_remove_inactive FROM metadata_proxy_settings WHERE id = 1`).
+		Scan(&settings.Enabled, &settings.AutoRemoveInactive)
+	return settings, err
+}
+
+const channelColumns = `id, name, endpoint, username, password, user_agent, enabled,
+	revision, deleting, ban_until, failures, retry_at, auth_failed, last_error, last_success_at, created_at`
+
+func scanChannel(row interface{ Scan(...any) error }) (channel, error) {
+	var ch channel
+	err := row.Scan(&ch.ID, &ch.Name, &ch.Endpoint, &ch.Username, &ch.Password, &ch.UserAgent, &ch.Enabled,
+		&ch.Revision, &ch.Deleting, &ch.BanUntil, &ch.Failures, &ch.RetryAt, &ch.AuthFailed, &ch.LastError, &ch.LastSuccessAt, &ch.CreatedAt)
+	return ch, err
+}
+
+func (s *Service) channels(ctx context.Context) (collectorapi.MetadataProxySettings, []channel, error) {
+	settings, err := s.settings(ctx)
+	if err != nil {
 		return settings, nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, endpoint, username, password, user_agent, enabled,
-		revision, deleting, ban_until, failures, retry_at, auth_failed, last_error, last_success_at, created_at FROM metadata_proxy_channels ORDER BY rowid`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+channelColumns+` FROM metadata_proxy_channels ORDER BY rowid`)
 	if err != nil {
 		return settings, nil, err
 	}
 	defer rows.Close()
 	var channels []channel
 	for rows.Next() {
-		var ch channel
-		if err := rows.Scan(&ch.ID, &ch.Name, &ch.Endpoint, &ch.Username, &ch.Password, &ch.UserAgent, &ch.Enabled,
-			&ch.Revision, &ch.Deleting, &ch.BanUntil, &ch.Failures, &ch.RetryAt, &ch.AuthFailed, &ch.LastError, &ch.LastSuccessAt, &ch.CreatedAt); err != nil {
+		ch, err := scanChannel(rows)
+		if err != nil {
 			return settings, nil, err
 		}
 		channels = append(channels, ch)
