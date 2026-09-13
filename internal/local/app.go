@@ -11,6 +11,7 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/local/cleanup"
+	"github.com/fuzzy-moose/tana/internal/local/delivery"
 	"github.com/fuzzy-moose/tana/internal/local/enrichment"
 	"github.com/fuzzy-moose/tana/internal/local/favoritedownloads"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
@@ -28,6 +29,7 @@ type App struct {
 	Collector         *collectorapi.Client
 	Cleanup           *cleanup.Service
 	FavoriteDownloads *favoritedownloads.Service
+	Deliveries        *delivery.Service
 
 	db         *sql.DB
 	enrichment *enrichment.Service
@@ -72,6 +74,17 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		favoriteDownloads = favoritedownloads.New(db, collectorClient)
 	}
 	scans := scan.New(ctx, db, libraries, os.DirFS, logger, enrich)
+	var deliveries *delivery.Service
+	if collectorClient != nil {
+		deliveries, err = delivery.New(ctx, db, collectorClient, libraries, scans, logger)
+		if err != nil {
+			scans.Close()
+			enrich.Close()
+			libraries.Close()
+			_ = db.Close()
+			return nil, fmt.Errorf("open library deliveries: %w", err)
+		}
+	}
 	return &App{
 		Logger:            logger,
 		Libraries:         libraries,
@@ -81,6 +94,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		Collector:         collectorClient,
 		Cleanup:           sourceCleanup,
 		FavoriteDownloads: favoriteDownloads,
+		Deliveries:        deliveries,
 		db:                db,
 		enrichment:        enrich,
 	}, nil
@@ -88,6 +102,9 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 
 // Close stops background work and releases storage after HTTP requests drain.
 func (a *App) Close() error {
+	if a.Deliveries != nil {
+		a.Deliveries.Close()
+	}
 	a.Scans.Close()
 	if a.enrichment != nil {
 		a.enrichment.Close()

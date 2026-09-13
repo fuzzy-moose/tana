@@ -61,6 +61,11 @@ func (s *Service) discover(ctx context.Context, libraries []library.Library) ([]
 			for _, entry := range entries {
 				child := path.Join(name, entry.Name())
 				if entry.IsDir() {
+					// Delivery staging must stay outside the catalog until its
+					// archive is completely saved and published at the root.
+					if child == ".tana-delivery" {
+						continue
+					}
 					hasDirectory = true
 					directories = append(directories, child)
 				} else if entry.Type().IsRegular() {

@@ -5,8 +5,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -108,6 +110,25 @@ func (s *Service) Status() Status {
 	return s.status
 }
 
+// ImportArchive imports one saved archive without scheduling a library scan.
+// The caller owns the file; repeated calls reuse an atomically committed source.
+func (s *Service) ImportArchive(ctx context.Context, libraryID int64, path string) error {
+	if !fs.ValidPath(path) || !source.IsArchive(path) {
+		return fmt.Errorf("invalid archive path")
+	}
+	l, err := s.libraries.Get(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	c := candidate{libraryID: libraryID, root: s.dirFS(l.Path), rootName: filepath.Base(l.Path), path: path, kind: source.Archive}
+	prepared := s.prepareSource(ctx, c)
+	if prepared.err != nil {
+		return prepared.err
+	}
+	_, err = s.importSource(ctx, c, prepared.files, prepared.metadata)
+	return err
+}
+
 // Close cancels work and waits for workers before the caller closes storage.
 func (s *Service) Close() {
 	s.mu.Lock()
@@ -201,6 +222,19 @@ func (s *Service) importSource(ctx context.Context, c candidate, files []string,
 		return false, err
 	}
 	defer tx.Rollback()
+	// A delivery and a scan may prepare the same newly published archive. Check
+	// within the write transaction so only one creates its inventory and gallery.
+	var existingKind string
+	err = tx.QueryRowContext(ctx, "SELECT kind FROM sources WHERE library_id = ? AND path = ?", c.libraryID, c.path).Scan(&existingKind)
+	if err == nil {
+		if existingKind != string(c.kind) {
+			return false, fmt.Errorf("source path already registered with another kind")
+		}
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
 	imported, err := s.sources.CreateTx(ctx, tx, c.libraryID, c.path, c.kind, files)
 	if err != nil {
 		return false, err

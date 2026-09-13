@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { downloadFailure, downloadFileURL, downloadPageSize, downloadState } from './downloads'
 import type { DownloadFilter } from './downloads'
 import { useDownloads } from './useDownloads'
+import { useLibraryDeliveries } from './useLibraryDeliveries'
+import LibraryDeliveries from './LibraryDeliveries'
+import { deliveryActive } from './libraryDeliveries'
 
 const filters: { state: DownloadFilter, label: string }[] = [
   { state: '', label: 'All' },
@@ -23,9 +26,15 @@ function size(bytes: number) {
 
 export default function Downloads({ available, refreshKey }: { available: boolean, refreshKey: number }) {
   const downloads = useDownloads(available, refreshKey)
+  const deliveries = useLibraryDeliveries(refreshKey)
   const [url, setURL] = useState('')
   const [deleting, setDeleting] = useState<number | null>(null)
+  const [libraryID, setLibraryID] = useState(0)
   const actionsDisabled = downloads.disabled || downloads.stale || downloads.checking || !downloads.loaded
+  const canDeliver = !actionsDisabled && !deliveries.disabled && !deliveries.active && !deliveries.libraryError && deliveries.libraries.some((library) => library.id === libraryID)
+  const deliveryOwnsArchive = (id: number) => deliveries.batches.some((batch) => batch.items.some((item) => item.gallery_id === id && (
+    item.state === 'cleanup_pending' || deliveryActive(batch) && !['completed', 'skipped', 'failed'].includes(item.state)
+  )))
   const filterLabel = filters.find((filter) => filter.state === downloads.filter)!.label
   const total = downloads.counts ? Object.values(downloads.counts).reduce((sum, count) => sum + count, 0) : undefined
 
@@ -35,7 +44,7 @@ export default function Downloads({ available, refreshKey }: { available: boolea
         <h2 id="downloads-title">Downloads</h2>
         <button className="button" type="button" disabled={!available || downloads.checking || downloads.pending} onClick={downloads.refresh}>Refresh downloads</button>
       </div>
-      <p>Download original Panda archives to the collector. Save ZIP copies an archive to your device; it remains on the collector until deleted. Archives are not added to a Tana library automatically.</p>
+      <p>Download original Panda archives to the collector, then add completed downloads to a Tana library. Save ZIP copies an archive to your device and keeps the collector copy.</p>
       <form className="collector-sync" onSubmit={async (event) => {
         event.preventDefault()
         if (await downloads.submit(url)) setURL('')
@@ -46,6 +55,7 @@ export default function Downloads({ available, refreshKey }: { available: boolea
         <button className="button button-primary" type="submit" disabled={downloads.disabled || !url.trim()}>{downloads.pending ? 'Requesting…' : 'Add download'}</button>
       </form>
       <p className="field-help">Submitting the same gallery reuses its existing download. Failed or cancelled jobs can be retried below.</p>
+      <LibraryDeliveries deliveries={deliveries} libraryID={libraryID} onLibraryChange={setLibraryID} canStart={canDeliver} completedCount={downloads.counts?.completed ?? 0} />
       <div className="download-filters" role="group" aria-label="Filter downloads">
         {filters.map(({ state, label }) => <button className="button download-filter" key={state} type="button"
           aria-pressed={downloads.filter === state} disabled={downloads.disabled}
@@ -78,17 +88,18 @@ export default function Downloads({ available, refreshKey }: { available: boolea
             <td><span>Added {date(job.created_at)}</span><span className="collector-secondary">Updated {date(job.updated_at)}</span></td>
             <td>
               <div className="button-group">
+                {job.state === 'completed' && <button className="button button-primary" disabled={!canDeliver || deliveryOwnsArchive(job.gallery_id)} onClick={() => void deliveries.start({ library_id: libraryID, gallery_id: job.gallery_id })}>Add to library</button>}
                 {job.state === 'completed' && (actionsDisabled
                   ? <button className="button" disabled>Save ZIP</button>
                   : <a className="button" href={downloadFileURL(job.gallery_id)} download>Save ZIP</a>)}
                 {(job.state === 'queued' || job.state === 'running') && <button className="button" disabled={actionsDisabled} onClick={() => void downloads.change(job.gallery_id, 'cancel')}>Cancel</button>}
                 {(job.state === 'failed' || job.state === 'cancelled') && <button className="button" disabled={actionsDisabled} onClick={() => void downloads.change(job.gallery_id, 'retry')}>Retry</button>}
-                {['completed', 'failed', 'cancelled', 'deleting'].includes(job.state) && <button className="button" disabled={actionsDisabled} onClick={() => setDeleting(job.gallery_id)}>Delete</button>}
+                {['completed', 'failed', 'cancelled', 'deleting'].includes(job.state) && <button className="button" disabled={actionsDisabled || deliveryOwnsArchive(job.gallery_id)} onClick={() => setDeleting(job.gallery_id)}>Delete</button>}
               </div>
               {deleting === job.gallery_id && <div className="download-delete" role="group" aria-label={`Delete download for gallery ${job.gallery_id}`}>
                 <p>Delete this download and any archive retained on the collector?</p>
                 <div className="button-group">
-                  <button className="button" disabled={actionsDisabled} onClick={async () => { if (await downloads.change(job.gallery_id, 'delete')) setDeleting(null) }}>Delete download</button>
+                  <button className="button" disabled={actionsDisabled || deliveryOwnsArchive(job.gallery_id)} onClick={async () => { if (await downloads.change(job.gallery_id, 'delete')) setDeleting(null) }}>Delete download</button>
                   <button className="button" disabled={downloads.pending} onClick={() => setDeleting(null)}>Keep download</button>
                 </div>
               </div>}

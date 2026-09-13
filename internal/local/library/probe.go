@@ -17,18 +17,20 @@ type probeCall struct {
 	err  error
 }
 
+// DirectoryProbe bounds and shares concurrent directory checks.
 // Filesystem calls cannot reliably be canceled on a stalled NAS. Retain their
 // slots until they actually return, and share in-flight work for the same root.
 // Callers can stop waiting without spawning more work beyond this fixed bound.
-type filesystemProbe struct {
+type DirectoryProbe struct {
 	mu      sync.Mutex
 	active  map[string]*probeCall
 	changed chan struct{}
 	inspect func(string) error
 }
 
-func newFilesystemProbe(dirFS func(string) fs.FS) *filesystemProbe {
-	return &filesystemProbe{
+// NewDirectoryProbe uses dirFS to inspect native paths (os.DirFS in production).
+func NewDirectoryProbe(dirFS func(string) fs.FS) *DirectoryProbe {
+	return &DirectoryProbe{
 		active: make(map[string]*probeCall), changed: make(chan struct{}),
 		inspect: func(path string) error {
 			return inspectDirectory(dirFS, path)
@@ -54,7 +56,8 @@ func inspectDirectory(dirFS func(string) fs.FS, path string) error {
 	return nil
 }
 
-func (p *filesystemProbe) check(ctx context.Context, path string) error {
+// Check waits for a directory observation until ctx expires.
+func (p *DirectoryProbe) Check(ctx context.Context, path string) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return errors.Join(errProbeNotAdmitted, err)

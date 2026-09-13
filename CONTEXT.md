@@ -81,10 +81,16 @@ A Panda favorite with no cataloged source for the same Panda gallery ID across a
 A durable request for the collector to obtain an upstream Panda gallery's original archive, identified by gallery ID. Repeated requests reuse the existing job or retained archive; failed jobs require explicit retry after bounded automatic retries are exhausted.
 
 **Retained Panda archive**:
-A completed original archive owned and stored by the collector across restarts until explicitly deleted; retrieval does not remove it. Its presence does not establish a source in a Tana library.
+A completed original archive owned and stored by the collector across restarts until explicitly deleted or successfully delivered into a Tana library; retrieval alone does not remove it. Its presence does not establish a source in a Tana library.
 
 **Cancelled Panda download job**:
 A Panda download job stopped by explicit request, with its partial archive removed. The job remains available for explicit retry.
+
+**Panda library delivery**:
+A user-requested transfer of a retained Panda archive into a selected Tana library, complete when the archive is safely saved and imported and its collector copy has been removed.
+
+**Panda library delivery batch**:
+A user-requested snapshot of completed collector archives destined for one selected Tana library, delivered sequentially.
 
 **Panda enrichment**:
 Automatic application of collected Panda metadata to a source-linked gallery using a Panda gallery candidate. Pending enrichment is an outstanding local intent to obtain and apply that metadata, distinct from a collector metadata fetch job.

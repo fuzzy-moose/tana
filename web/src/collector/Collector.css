@@ -135,6 +135,15 @@
 .download-delete p { margin: 0 0 12px; }
 .download-pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 20px; font-size: 12px; }
 
+.library-deliveries { margin: 24px 0; padding: 20px; border: 1px solid var(--accent-border); border-radius: 8px; }
+.library-deliveries h3, .library-delivery h4 { margin: 0; font-size: 13px; font-weight: 500; }
+.library-deliveries .collector-sync { margin-top: 16px; }
+.library-delivery { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+.library-delivery-actions { margin: 16px 0; }
+.library-delivery-items { margin-top: 16px; font-size: 12px; }
+.library-delivery-items summary { cursor: pointer; padding: 6px 0; color: var(--muted); }
+.library-delivery-items ul { max-height: 360px; overflow: auto; margin-top: 10px; }
+
 .reference-import-upload input { max-width: 100%; font: inherit; }
 .reference-import-upload input::file-selector-button { margin-right: 12px; }
 .reference-import { border-top: 1px solid var(--border); padding: 20px 0; }

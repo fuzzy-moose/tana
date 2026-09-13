@@ -48,6 +48,7 @@ func NewHandler(app *collector.App) http.Handler {
 	mux.Handle("POST /api/downloads", HandleSubmitDownload(app.Downloads))
 	mux.Handle("POST /api/downloads/batch", HandleSubmitDownloadBatch(app.Downloads))
 	mux.Handle("GET /api/downloads", HandleListDownloads(app.Downloads))
+	mux.Handle("GET /api/downloads/completed", HandleCompletedDownloads(app.Downloads))
 	mux.Handle("GET /api/downloads/{id}", HandleGetDownload(app.Downloads))
 	mux.Handle("POST /api/downloads/{id}/retry", HandleRetryDownload(app.Downloads))
 	mux.Handle("POST /api/downloads/{id}/cancel", HandleCancelDownload(app.Downloads))

@@ -31,6 +31,8 @@ function favorites(): { host: string, account_key: string, categories: FavoriteC
 function statusResponse(input: RequestInfo | URL, connection = connected(), favoriteStatus = favorites()) {
   switch (String(input)) {
     case '/api/collector/status': return Response.json(connection)
+    case '/api/libraries': return Response.json([])
+    case '/api/library-deliveries': return Response.json({ batches: [] })
     case '/api/collector/favorites/status': return Response.json(favoriteStatus)
     case '/api/collector/inventory/status': return Response.json({ gallery_references: 150, metadata_available: 100, metadata_pending: 45, metadata_failed: 5, fetches_pending: 3, fetches_failed: 0 })
     case '/api/collector/metadata/status': return Response.json({ metadata_errors: [{ gallery_id: 123, error: 'Gallery unavailable', at: '2026-09-06T09:00:00Z' }] })
@@ -183,6 +185,6 @@ test('inventory failure does not prevent navigating to downloads or managing a d
   await waitFor(() => expect(within(screen.getByRole('rowheader', { name: 'Gallery 7' }).closest('tr')!).getByText('Cancelled')).toBeTruthy())
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/downloads/7/cancel', expect.objectContaining({ method: 'POST' }))
   expect(fetchMock.mock.calls.slice(callsBeforeNavigation).every(([input]) =>
-    String(input) === '/api/collector/status' || String(input).startsWith('/api/collector/downloads'),
+    ['/api/collector/status', '/api/libraries', '/api/library-deliveries'].includes(String(input)) || String(input).startsWith('/api/collector/downloads'),
   )).toBe(true)
 })

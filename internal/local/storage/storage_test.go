@@ -33,7 +33,7 @@ func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 		t.Fatalf("registration did not survive reopen: %q %v", name, err)
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 4 {
 		t.Fatalf("schema version %d: %v", version, err)
 	}
 }

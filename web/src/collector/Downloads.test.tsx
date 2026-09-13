@@ -17,10 +17,16 @@ const listing = (jobs: DownloadJob[], page = jobs) => {
 }
 const row = (id: number) => within(screen.getByRole('rowheader', { name: `Gallery ${id}` }).closest('tr')!)
 const props = { available: true, refreshKey: 0 }
+const deliveryResponse = (input: RequestInfo | URL) => {
+  if (String(input) === '/api/library-deliveries') return Response.json({ batches: [] })
+  if (String(input) === '/api/libraries') return Response.json([])
+}
 
 test('submits a URL, reuses an existing job, cancels and explicitly retries it', async () => {
   let jobs: DownloadJob[] = []
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    const response = deliveryResponse(input)
+    if (response) return response
     if (init?.method === 'POST') {
       const path = String(input)
       jobs = [job(42, path.endsWith('/cancel') ? 'cancelled' : 'queued')]
@@ -55,7 +61,9 @@ test('shows retry diagnostics, offers retained ZIP retrieval, and deletes only a
     { ...job(8, 'queued'), failures: 2, error: 'transfer_failed', retry_at: '2026-09-11T09:05:00Z' },
     { ...job(9, 'failed'), failures: 5, error: 'invalid_zip' },
   ]
-  const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    const response = deliveryResponse(input)
+    if (response) return response
     if (init?.method === 'DELETE') {
       jobs = jobs.filter((item) => item.gallery_id !== 7)
       return new Response(null, { status: 204 })
@@ -85,6 +93,8 @@ test('shows retry diagnostics, offers retained ZIP retrieval, and deletes only a
 test('paginates and returns to the preceding page after deleting the last job', async () => {
   let jobs = Array.from({ length: 26 }, (_, i) => job(26 - i, 'cancelled'))
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
+    const response = deliveryResponse(input)
+    if (response) return response
     if (init?.method === 'DELETE') {
       jobs = jobs.filter((item) => item.gallery_id !== 1)
       return new Response(null, { status: 204 })
@@ -112,6 +122,8 @@ test('filters all downloads by state, resets pagination, and updates global coun
     job(3, 'queued'), job(2, 'queued'), job(1, 'running'),
   ]
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    const response = deliveryResponse(input)
+    if (response) return response
     if (init?.method === 'POST') {
       jobs = jobs.map((item) => item.gallery_id === 1 ? { ...item, state: 'cancelled' } : item)
       return Response.json(jobs.find((item) => item.gallery_id === 1))
@@ -160,7 +172,9 @@ test('filters all downloads by state, resets pagination, and updates global coun
 
 test('retains input on submission failure and retains jobs through collector failures', async () => {
   let offline = false
-  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (_input, init) => {
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
+    const response = deliveryResponse(input)
+    if (response) return response
     if (init?.method === 'POST') return Response.json({ error: 'download_token_conflict' }, { status: 409 })
     if (offline) return Response.json({ error: 'collector_unauthorized' }, { status: 502 })
     return Response.json(listing([job(7, 'completed')]))

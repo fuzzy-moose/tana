@@ -39,7 +39,7 @@ type Library struct {
 type Service struct {
 	repository Repository
 	dataDir    string
-	probe      *filesystemProbe
+	probe      *DirectoryProbe
 	logger     *slog.Logger
 	timeout    time.Duration
 
@@ -71,7 +71,7 @@ func New(ctx context.Context, repository Repository, dirFS func(string) fs.FS, d
 
 func newService(ctx context.Context, repository Repository, dirFS func(string) fs.FS, dir string, logger *slog.Logger) (*Service, error) {
 	s := &Service{
-		repository: repository, dataDir: dir, probe: newFilesystemProbe(dirFS),
+		repository: repository, dataDir: dir, probe: NewDirectoryProbe(dirFS),
 		logger: logger, timeout: checkTimeout, pending: make(map[int64]bool), wake: make(chan struct{}, checkWorkers),
 	}
 	roots, err := s.repository.List(ctx)
@@ -108,7 +108,7 @@ func (s *Service) Create(ctx context.Context, name, path string) (Library, error
 		return Library{}, ErrInvalidPath
 	}
 	root := filepath.Clean(path)
-	if err := s.probe.check(ctx, root); err != nil {
+	if err := s.probe.Check(ctx, root); err != nil {
 		if ctx.Err() != nil {
 			return Library{}, ctx.Err()
 		}
@@ -222,7 +222,7 @@ func (s *Service) check(ctx context.Context, id int64) {
 		return
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, s.timeout)
-	err = s.probe.check(probeCtx, root.Path)
+	err = s.probe.Check(probeCtx, root.Path)
 	cancel()
 	if ctx.Err() != nil {
 		return // Shutdown is not evidence of unavailability.

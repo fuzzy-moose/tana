@@ -184,7 +184,7 @@ func TestRegistrationTimeoutNeverSavesLateResult(t *testing.T) {
 }
 
 func TestFilesystemProbesBoundWorkAndShareStalledPaths(t *testing.T) {
-	p := newFilesystemProbe(os.DirFS)
+	p := NewDirectoryProbe(os.DirFS)
 	blocked := make(chan struct{})
 	var started atomic.Int32
 	finished := make(chan struct{}, 20)
@@ -199,7 +199,7 @@ func TestFilesystemProbesBoundWorkAndShareStalledPaths(t *testing.T) {
 	// Repeated requests for one stalled path must consume only one slot.
 	for range 3 {
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-		err := p.check(ctx, "same")
+		err := p.Check(ctx, "same")
 		cancel()
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatal(err)
@@ -213,7 +213,7 @@ func TestFilesystemProbesBoundWorkAndShareStalledPaths(t *testing.T) {
 		callers.Go(func() {
 			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 			defer cancel()
-			_ = p.check(ctx, string('A'+rune(i)))
+			_ = p.Check(ctx, string('A'+rune(i)))
 		})
 	}
 	callers.Wait()
@@ -253,7 +253,7 @@ func TestProbeAdmissionTimeoutPreservesObservation(t *testing.T) {
 	var release sync.Once
 	t.Cleanup(func() { release.Do(func() { close(blocked) }) })
 	for i := range maxFilesystemProbes {
-		go func() { finished <- s.probe.check(t.Context(), string('A'+rune(i))) }()
+		go func() { finished <- s.probe.Check(t.Context(), string('A'+rune(i))) }()
 	}
 	for range maxFilesystemProbes {
 		select {
