@@ -131,6 +131,23 @@ func TestReferenceImportParsingCheckpointsAndCountersSurviveRestart(t *testing.T
 	if checkpoint.References != importBatchRecords || checkpoint.Known != 1 || checkpoint.ProcessedBytes >= checkpoint.SizeBytes {
 		t.Fatalf("checkpoint = %+v", checkpoint)
 	}
+	paused, err := imports.Pause(t.Context(), item.ID)
+	if err != nil || !paused.Paused || paused.Status != "processing" {
+		t.Fatalf("pause = %+v, %v", paused, err)
+	}
+	// A parser may have read its next batch before the pause committed.
+	if err := imports.recordBatch(t.Context(), item.ID, checkpoint.ProcessedBytes, referenceImportBatch{
+		refs: []panda.GalleryRef{{ID: 999, Token: "unused"}}, bytes: 5, invalid: 2, done: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	parseImports(t, imports)
+	if got := readImport(t, imports, item.ID); !reflect.DeepEqual(got, paused) {
+		t.Fatalf("paused checkpoint advanced: %+v", got)
+	}
+	if info, err := os.Stat(imports.path(item.ID)); err != nil || info.Size() != item.SizeBytes {
+		t.Fatalf("paused upload not retained: %v, %v", info, err)
+	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +155,13 @@ func TestReferenceImportParsingCheckpointsAndCountersSurviveRestart(t *testing.T
 	imports = batchImports(t, db, imports.dir)
 	if err := imports.recover(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+	parseImports(t, imports)
+	if got := readImport(t, imports, item.ID); !reflect.DeepEqual(got, paused) {
+		t.Fatalf("restart resumed paused parsing: %+v", got)
+	}
+	if got, err := imports.Resume(t.Context(), item.ID); err != nil || got.Paused || got.ProcessedBytes != checkpoint.ProcessedBytes {
+		t.Fatalf("resume = %+v, %v", got, err)
 	}
 	parseImports(t, imports)
 	got := readImport(t, imports, item.ID)
@@ -301,6 +325,80 @@ func TestReferenceImportReusesInventoryDiscoveredWhileQueued(t *testing.T) {
 	}
 }
 
+func TestReferenceImportPauseSkipsClaimsAndLetsClaimedWorkFinish(t *testing.T) {
+	for _, background := range []bool{false, true} {
+		t.Run(fmt.Sprintf("background=%t", background), func(t *testing.T) {
+			db := openDB(t, t.TempDir())
+			imports := batchImports(t, db, t.TempDir())
+			first := acceptImport(t, imports, "1,token1\n")
+			second := acceptImport(t, imports, "2,token2\n")
+			if _, err := imports.Pause(t.Context(), first.ID); err != nil {
+				t.Fatal(err)
+			}
+			parseImports(t, imports)
+			if got := readImport(t, imports, first.ID); !got.Paused || got.ProcessedBytes != 0 {
+				t.Fatalf("paused upload parsed: %+v", got)
+			}
+			if got := readImport(t, imports, second.ID); got.Status != "validating" {
+				t.Fatalf("paused upload blocked later parsing: %+v", got)
+			}
+			if _, err := imports.Resume(t.Context(), first.ID); err != nil {
+				t.Fatal(err)
+			}
+			parseImports(t, imports)
+			for range 2 {
+				if got, err := imports.Pause(t.Context(), first.ID); err != nil || !got.Paused || got.Status != "validating" {
+					t.Fatalf("pause validation = %+v, %v", got, err)
+				}
+			}
+			s := batchService(t, db, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				var entries []panda.Metadata
+				for _, id := range requestedIDs(t, req) {
+					entries = append(entries, panda.Metadata{ID: id, Token: fmt.Sprintf("token%d", id)})
+				}
+				return metadataResponse(t, entries...), nil
+			}))
+			batch, err := s.claim(t.Context(), background)
+			if err != nil || batch == nil || !reflect.DeepEqual(batch.refs, []panda.GalleryRef{{ID: 2, Token: "token2"}}) {
+				t.Fatalf("paused import blocked later validation: %+v, %v", batch, err)
+			}
+			defer batch.Close()
+			if err := batch.Fetch(t.Context(), s.client); err != nil {
+				t.Fatal(err)
+			}
+			batch.Close()
+			if batch, err := s.claim(t.Context(), background); err != nil || batch != nil {
+				t.Fatalf("paused import claimed: %+v, %v", batch, err)
+			}
+			for range 2 {
+				if got, err := imports.Resume(t.Context(), first.ID); err != nil || got.Paused || got.Pending != 1 {
+					t.Fatalf("resume validation = %+v, %v", got, err)
+				}
+			}
+			batch, err = s.claim(t.Context(), background)
+			if err != nil || batch == nil || !reflect.DeepEqual(batch.refs, []panda.GalleryRef{{ID: 1, Token: "token1"}}) {
+				t.Fatalf("resumed import unavailable: %+v, %v", batch, err)
+			}
+			defer batch.Close()
+			if _, err := imports.Pause(t.Context(), first.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err := batch.Fetch(t.Context(), s.client); err != nil {
+				t.Fatal(err)
+			}
+			if got := readImport(t, imports, first.ID); got.Status != "completed" || got.Paused || got.Imported != 1 {
+				t.Fatalf("pause discarded claimed work: %+v", got)
+			}
+			if _, err := imports.Pause(t.Context(), first.ID); !errors.Is(err, ErrImportState) {
+				t.Fatalf("completed import paused: %v", err)
+			}
+			if _, err := imports.Resume(t.Context(), first.ID); !errors.Is(err, ErrImportState) {
+				t.Fatalf("completed import resumed: %v", err)
+			}
+		})
+	}
+}
+
 func TestReferenceImportReusesRelatedDiscoveryFromSameBatch(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	imports := batchImports(t, db, t.TempDir())
@@ -370,6 +468,9 @@ func TestReferenceImportCancellationAndRetryPreserveOtherOwners(t *testing.T) {
 		calls++
 		if calls == 1 {
 			// Cancelling an in-flight owner's work preserves the other owners.
+			if _, err := imports.Pause(t.Context(), first.ID); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := imports.Cancel(t.Context(), first.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -383,12 +484,12 @@ func TestReferenceImportCancellationAndRetryPreserveOtherOwners(t *testing.T) {
 	collectBatch(t, s)
 	cancelled := readImport(t, imports, first.ID)
 	unchanged := readImport(t, imports, third.ID)
-	if cancelled.Status != "cancelled" || cancelled.Cancelled != 2 || cancelled.Imported != 0 ||
+	if cancelled.Status != "cancelled" || cancelled.Paused || cancelled.Cancelled != 2 || cancelled.Imported != 0 ||
 		unchanged.Status != "completed" || unchanged.Imported != 1 || unchanged.Failed != 1 {
 		t.Fatalf("shared outcomes = cancelled %+v, third %+v", cancelled, unchanged)
 	}
 	retried, err := imports.Retry(t.Context(), second.ID)
-	if err != nil || retried.ID != second.ID || retried.Status != "validating" || retried.Pending != 1 || retried.Imported != 1 || retried.Failed != 0 {
+	if err != nil || retried.ID != second.ID || retried.Status != "validating" || retried.Paused || retried.Pending != 1 || retried.Imported != 1 || retried.Failed != 0 {
 		t.Fatalf("retry = %+v, %v", retried, err)
 	}
 	// A deliberate re-upload shares the pending retry and reuses known success.
@@ -406,6 +507,12 @@ func TestReferenceImportCancellationAndRetryPreserveOtherOwners(t *testing.T) {
 	}
 	if got := readImport(t, imports, first.ID); !reflect.DeepEqual(got, cancelled) {
 		t.Fatalf("another owner's retry changed cancellation: %+v", got)
+	}
+	if _, err := imports.Pause(t.Context(), first.ID); !errors.Is(err, ErrImportState) {
+		t.Fatalf("cancelled import paused: %v", err)
+	}
+	if _, err := imports.Resume(t.Context(), first.ID); !errors.Is(err, ErrImportState) {
+		t.Fatalf("cancelled import resumed: %v", err)
 	}
 	// Once a different import has confirmed it, retry uses inventory reuse.
 	got, err := imports.Retry(t.Context(), third.ID)

@@ -67,6 +67,14 @@ func HandleGetReferenceImport(service *metadata.ReferenceImports) http.Handler {
 	return handleReferenceImport(service.Get)
 }
 
+func HandlePauseReferenceImport(service *metadata.ReferenceImports) http.Handler {
+	return handleReferenceImport(service.Pause)
+}
+
+func HandleResumeReferenceImport(service *metadata.ReferenceImports) http.Handler {
+	return handleReferenceImport(service.Resume)
+}
+
 func HandleCancelReferenceImport(service *metadata.ReferenceImports) http.Handler {
 	return handleReferenceImport(service.Cancel)
 }

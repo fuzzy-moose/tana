@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { changeReferenceImport, listReferenceImports, referenceImportPageSize, uploadReferenceImport } from './referenceImports'
-import type { ReferenceImport } from './referenceImports'
+import type { ReferenceImport, ReferenceImportAction } from './referenceImports'
 
 export function useReferenceImports(available: boolean, refreshKey: number) {
   const [snapshot, setSnapshot] = useState<{ imports: ReferenceImport[], offset: number } | null>(null)
@@ -83,7 +83,7 @@ export function useReferenceImports(available: boolean, refreshKey: number) {
     }
   }
 
-  async function change(id: string, action: 'cancel' | 'retry') {
+  async function change(id: string, action: ReferenceImportAction) {
     if (mutation.current || !available) return
     const controller = new AbortController()
     mutation.current = controller

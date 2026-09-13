@@ -18,7 +18,7 @@ func (s *store) pendingImportRefs(ctx context.Context, reserved map[int64]bool) 
 	}
 	defer tx.Rollback()
 	rows, err := tx.QueryContext(ctx, `SELECT e.id, e.gallery_id, e.token FROM reference_import_entries e
-		WHERE e.import_id = (SELECT id FROM reference_imports WHERE status IN ('processing', 'validating') ORDER BY sequence LIMIT 1)
+		WHERE e.import_id = (SELECT id FROM reference_imports WHERE status IN ('processing', 'validating') AND paused = 0 ORDER BY sequence LIMIT 1)
 		AND e.status = 'pending' AND NOT EXISTS (
 			SELECT 1 FROM reference_import_entries older
 			WHERE older.import_id = e.import_id AND older.gallery_id = e.gallery_id AND older.status = 'pending' AND older.id < e.id

@@ -43,13 +43,14 @@ export default function ReferenceImports({ available, refreshKey }: { available:
       <div className="reference-import-history">{history.imports.map((item) => {
         const outstanding = item.status === 'processing' || item.status === 'validating'
         const resolved = item.known + item.imported + item.failed + item.cancelled
-        const fileState = item.status === 'processing' ? 'Processing file' : item.processed_bytes < item.size_bytes ? 'File processing stopped' : 'File processed'
+        const fileState = item.status === 'processing' ? item.paused ? 'File processing paused' : 'Processing file' : item.processed_bytes < item.size_bytes ? 'File processing stopped' : 'File processed'
         return <article className="reference-import" key={item.id} aria-label={`Import ${item.filename}`}>
           <div className="collector-section-heading">
             <h3>{item.filename}</h3>
-            <span className="collector-badge">{{ processing: 'Processing', validating: 'Validating', completed: 'Completed', cancelled: 'Cancelled' }[item.status]}</span>
+            <span className="collector-badge">{item.paused ? 'Paused' : { processing: 'Processing', validating: 'Validating', completed: 'Completed', cancelled: 'Cancelled' }[item.status]}</span>
           </div>
           <p className="field-help">Accepted {date(item.created_at)}{item.completed_at && ` · Finished ${date(item.completed_at)}`}</p>
+          {item.paused && <p className="field-help">Progress is saved. Resume to continue processing and validation. Validation already underway and references found by other collection may still resolve.</p>}
           <div className="reference-import-stages">
             <div>
               <h4>File processing</h4>
@@ -75,6 +76,7 @@ export default function ReferenceImports({ available, refreshKey }: { available:
             </div>
           </div>
           <div className="button-group">
+            {outstanding && <button className="button" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, item.paused ? 'resume' : 'pause')}>{item.paused ? 'Resume' : 'Pause'}</button>}
             {outstanding && <button className="button" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, 'cancel')}>Cancel</button>}
             {item.status === 'completed' && item.failed > 0 && <button className="button" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, 'retry')}>Retry failed</button>}
           </div>

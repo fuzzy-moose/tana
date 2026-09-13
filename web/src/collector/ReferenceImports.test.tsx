@@ -14,7 +14,7 @@ vi.mock('./referenceImports', async (importOriginal) => ({
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
 const validating: ReferenceImport = {
-  id: 'first', filename: 'favorites.txt', status: 'validating', created_at: '2026-09-11T10:00:00Z',
+  id: 'first', filename: 'favorites.txt', status: 'validating', paused: false, created_at: '2026-09-11T10:00:00Z',
   size_bytes: 1024, processed_bytes: 1024, references: 100, duplicates: 3, invalid: 2,
   known: 10, imported: 20, failed: 5, pending: 65, cancelled: 0,
 }
@@ -48,10 +48,58 @@ test('shows independent processing and validation progress, with cancellation an
   await user.click(within(active).getByRole('button', { name: 'Cancel' }))
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/first/cancel', expect.objectContaining({ method: 'POST' }))
   expect(within(active).queryByRole('button', { name: 'Cancel' })).toBeNull()
+  expect(within(active).queryByRole('button', { name: 'Pause' })).toBeNull()
   const failed = screen.getByRole('article', { name: 'Import failed.txt' })
+  expect(within(failed).queryByRole('button', { name: 'Pause' })).toBeNull()
+  expect(within(failed).queryByRole('button', { name: 'Resume' })).toBeNull()
   await user.click(within(failed).getByRole('button', { name: 'Retry failed' }))
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/second/retry', expect.objectContaining({ method: 'POST' }))
   expect(await within(failed).findByText('Validating')).toBeTruthy()
+})
+
+test.each(['processing', 'validating'] as const)('pauses and resumes a %s import without losing progress', async (status) => {
+  let item: ReferenceImport = { ...validating, status, processed_bytes: status === 'processing' ? 512 : 1024 }
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    if (init?.method === 'POST') {
+      item = { ...item, paused: String(input).endsWith('/pause') }
+      return Response.json(item)
+    }
+    return Response.json({ imports: [item] })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const user = userEvent.setup()
+  render(<ReferenceImports available refreshKey={0} />)
+  const active = await screen.findByRole('article', { name: 'Import favorites.txt' })
+  await user.click(within(active).getByRole('button', { name: 'Pause' }))
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/first/pause', expect.objectContaining({ method: 'POST' }))
+  expect(await within(active).findByText('Paused')).toBeTruthy()
+  expect(within(active).getByRole('button', { name: 'Cancel' })).toBeTruthy()
+  expect((within(active).getByRole('progressbar', { name: 'File processing for favorites.txt' }) as HTMLProgressElement).value).toBe(item.processed_bytes)
+  expect((within(active).getByRole('progressbar', { name: 'Reference validation for favorites.txt' }) as HTMLProgressElement).value).toBe(35)
+  if (status === 'processing') expect(within(active).getByText(/File processing paused/)).toBeTruthy()
+  await user.click(within(active).getByRole('button', { name: 'Resume' }))
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/first/resume', expect.objectContaining({ method: 'POST' }))
+  expect(await within(active).findByText(status === 'processing' ? 'Processing' : 'Validating')).toBeTruthy()
+  expect(within(active).getByRole('button', { name: 'Pause' })).toBeTruthy()
+  expect(within(active).queryByText('Paused')).toBeNull()
+})
+
+test('refreshes a conflicting pause request and disables resume while disconnected', async () => {
+  let item = validating
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (_input, init) => {
+    if (init?.method === 'POST') {
+      item = { ...item, paused: true }
+      return Response.json({ error: 'import_state_conflict' }, { status: 409 })
+    }
+    return Response.json({ imports: [item] })
+  }))
+  const user = userEvent.setup()
+  const { rerender } = render(<ReferenceImports available refreshKey={0} />)
+  await user.click(await screen.findByRole('button', { name: 'Pause' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('The import state changed.')
+  expect(await screen.findByRole('button', { name: 'Resume' })).toBeTruthy()
+  rerender(<ReferenceImports available={false} refreshKey={0} />)
+  expect((screen.getByRole('button', { name: 'Resume' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
 test('uploads every selected file independently and continues after a failed upload', async () => {

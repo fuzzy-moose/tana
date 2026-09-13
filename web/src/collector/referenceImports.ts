@@ -5,6 +5,7 @@ export interface ReferenceImport {
   id: string
   filename: string
   status: 'processing' | 'validating' | 'completed' | 'cancelled'
+  paused: boolean
   created_at: string
   completed_at?: string
   size_bytes: number
@@ -18,6 +19,8 @@ export interface ReferenceImport {
   pending: number
   cancelled: number
 }
+
+export type ReferenceImportAction = 'pause' | 'resume' | 'cancel' | 'retry'
 
 const base = '/api/collector/reference-imports'
 export const referenceImportPageSize = 10
@@ -35,7 +38,7 @@ export const listReferenceImports = (offset: number, signal: AbortSignal) => req
   `${base}?limit=${referenceImportPageSize + 1}&offset=${offset}`, { signal }, messages,
 )
 
-export const changeReferenceImport = (id: string, action: 'cancel' | 'retry', signal: AbortSignal) => request<ReferenceImport>(
+export const changeReferenceImport = (id: string, action: ReferenceImportAction, signal: AbortSignal) => request<ReferenceImport>(
   `${base}/${encodeURIComponent(id)}/${action}`, { method: 'POST', signal }, messages,
 )
 

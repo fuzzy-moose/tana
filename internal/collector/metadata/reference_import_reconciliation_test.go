@@ -25,6 +25,9 @@ func TestReferenceImportsReconcileWithoutValidationCapacity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if _, err := imports.Pause(t.Context(), item.ID); err != nil {
+			t.Fatal(err)
+		}
 		// Another collection path populates inventory, with metadata still pending.
 		seedRefs(t, db, 1, 2, 99)
 		worker, err := NewReferenceImports(t.Context(), db, imports.dir, slog.New(slog.DiscardHandler))
@@ -33,7 +36,7 @@ func TestReferenceImportsReconcileWithoutValidationCapacity(t *testing.T) {
 		}
 		defer worker.Close()
 		synctest.Wait()
-		if got := readImport(t, imports, item.ID); got.Status != "completed" || got.Known != 1 || got.Failed != 1 || got.Pending != 0 || got.CompletedAt == nil {
+		if got := readImport(t, imports, item.ID); got.Status != "completed" || got.Paused || got.Known != 1 || got.Failed != 1 || got.Pending != 0 || got.CompletedAt == nil {
 			t.Fatalf("inventory reconciliation waited for validation: %+v", got)
 		}
 		if got := readImport(t, imports, unmatched.ID); got.Pending != 1 {
@@ -130,6 +133,7 @@ func TestReferenceImportReconciliationUpgradeResumesPastUnmatchedEntries(t *test
 		DROP INDEX reference_import_entries_pending_gallery;
 		DROP INDEX gallery_refs_inventory;
 		DROP INDEX gallery_refs_recent_metadata_errors;
+		ALTER TABLE reference_imports DROP COLUMN paused;
 		PRAGMA user_version = 15`); err != nil {
 		t.Fatal(err)
 	}

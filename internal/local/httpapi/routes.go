@@ -36,6 +36,8 @@ func NewHandler(app *local.App) http.Handler {
 	mux.Handle("POST /api/collector/reference-imports", HandleCollectorSubmitReferenceImport(app.Collector))
 	mux.Handle("GET /api/collector/reference-imports", HandleCollectorListReferenceImports(app.Collector))
 	mux.Handle("GET /api/collector/reference-imports/{id}", HandleCollectorGetReferenceImport(app.Collector))
+	mux.Handle("POST /api/collector/reference-imports/{id}/pause", HandleCollectorPauseReferenceImport(app.Collector))
+	mux.Handle("POST /api/collector/reference-imports/{id}/resume", HandleCollectorResumeReferenceImport(app.Collector))
 	mux.Handle("POST /api/collector/reference-imports/{id}/cancel", HandleCollectorCancelReferenceImport(app.Collector))
 	mux.Handle("POST /api/collector/reference-imports/{id}/retry", HandleCollectorRetryReferenceImport(app.Collector))
 	downloads := HandleCollectorDownloads(app.Collector)

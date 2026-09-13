@@ -136,7 +136,7 @@ func (r *importReader) Read(p []byte) (int, error) {
 }
 
 const importColumns = `id, filename, status, created_at, completed_at, size_bytes,
-	processed_bytes, reference_count, duplicates, invalid, known, imported, failed, pending, cancelled`
+	processed_bytes, reference_count, duplicates, invalid, known, imported, failed, pending, cancelled, paused`
 
 type importScanner interface{ Scan(...any) error }
 
@@ -146,7 +146,7 @@ func scanImport(row importScanner) (collectorapi.ReferenceImport, error) {
 	var completed sql.NullInt64
 	err := row.Scan(&result.ID, &result.Filename, &result.Status, &created, &completed, &result.SizeBytes,
 		&result.ProcessedBytes, &result.References, &result.Duplicates, &result.Invalid, &result.Known,
-		&result.Imported, &result.Failed, &result.Pending, &result.Cancelled)
+		&result.Imported, &result.Failed, &result.Pending, &result.Cancelled, &result.Paused)
 	result.CreatedAt = time.UnixMilli(created).UTC()
 	result.CompletedAt = optionalTime(completed)
 	return result, err
@@ -182,6 +182,43 @@ func (s *ReferenceImports) List(ctx context.Context, limit, offset int64) ([]col
 	return result, rows.Err()
 }
 
+// Pause prevents new parsing checkpoints and validation claims. Already claimed
+// metadata work and inventory reconciliation may still settle pending outcomes.
+func (s *ReferenceImports) Pause(ctx context.Context, id string) (collectorapi.ReferenceImport, error) {
+	return s.setPaused(ctx, id, true)
+}
+
+func (s *ReferenceImports) Resume(ctx context.Context, id string) (collectorapi.ReferenceImport, error) {
+	return s.setPaused(ctx, id, false)
+}
+
+func (s *ReferenceImports) setPaused(ctx context.Context, id string, paused bool) (collectorapi.ReferenceImport, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return collectorapi.ReferenceImport{}, err
+	}
+	defer tx.Rollback()
+	item, err := readImportTx(ctx, tx, id)
+	if err != nil {
+		return collectorapi.ReferenceImport{}, err
+	}
+	if item.Status != "processing" && item.Status != "validating" {
+		return collectorapi.ReferenceImport{}, ErrImportState
+	}
+	if item.Paused == paused {
+		return item, nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE reference_imports SET paused = ? WHERE id = ?`, paused, id); err != nil {
+		return collectorapi.ReferenceImport{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return collectorapi.ReferenceImport{}, err
+	}
+	item.Paused = paused
+	s.signal()
+	return item, nil
+}
+
 func (s *ReferenceImports) Cancel(ctx context.Context, id string) (collectorapi.ReferenceImport, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -202,7 +239,7 @@ func (s *ReferenceImports) Cancel(ctx context.Context, id string) (collectorapi.
 		WHERE import_id = ? AND status = 'pending'`, id); err != nil {
 		return collectorapi.ReferenceImport{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE reference_imports SET status = 'cancelled', completed_at = ? WHERE id = ?`, time.Now().UnixMilli(), id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE reference_imports SET status = 'cancelled', paused = 0, completed_at = ? WHERE id = ?`, time.Now().UnixMilli(), id); err != nil {
 		return collectorapi.ReferenceImport{}, err
 	}
 	item, err = readImportTx(ctx, tx, id)
@@ -232,7 +269,7 @@ func (s *ReferenceImports) Retry(ctx context.Context, id string) (collectorapi.R
 	if item.Status != "completed" || item.Failed == 0 {
 		return collectorapi.ReferenceImport{}, ErrImportState
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE reference_imports SET status = 'validating', completed_at = NULL WHERE id = ?`, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE reference_imports SET status = 'validating', paused = 0, completed_at = NULL WHERE id = ?`, id); err != nil {
 		return collectorapi.ReferenceImport{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE reference_import_entries SET status = CASE
@@ -352,7 +389,7 @@ func (s *ReferenceImports) parseStep(ctx context.Context) (bool, error) {
 	// Deletion intent survives crashes between the final parsing checkpoint and
 	// unlink. Cancellation uses the same cleanup path, after the parser closes.
 	var cleanupID string
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM reference_imports WHERE has_file = 1 AND status != 'processing' LIMIT 1`).Scan(&cleanupID)
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM reference_imports WHERE has_file = 1 AND status != 'processing' AND paused = 0 LIMIT 1`).Scan(&cleanupID)
 	if err == nil {
 		if err := os.Remove(s.path(cleanupID)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, err
@@ -371,7 +408,7 @@ func (s *ReferenceImports) parseStep(ctx context.Context) (bool, error) {
 	}
 	var id string
 	var offset int64
-	err = s.db.QueryRowContext(ctx, `SELECT id, processed_bytes FROM reference_imports WHERE status = 'processing' ORDER BY sequence LIMIT 1`).Scan(&id, &offset)
+	err = s.db.QueryRowContext(ctx, `SELECT id, processed_bytes FROM reference_imports WHERE status = 'processing' AND paused = 0 ORDER BY sequence LIMIT 1`).Scan(&id, &offset)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -438,10 +475,11 @@ func (s *ReferenceImports) recordBatch(ctx context.Context, id string, offset in
 	defer tx.Rollback()
 	var current int64
 	var status string
-	if err := tx.QueryRowContext(ctx, `SELECT status, processed_bytes FROM reference_imports WHERE id = ?`, id).Scan(&status, &current); err != nil {
+	var paused bool
+	if err := tx.QueryRowContext(ctx, `SELECT status, processed_bytes, paused FROM reference_imports WHERE id = ?`, id).Scan(&status, &current, &paused); err != nil {
 		return err
 	}
-	if status != "processing" || current != offset {
+	if status != "processing" || paused || current != offset {
 		return nil
 	}
 	insert, err := tx.PrepareContext(ctx, `INSERT INTO reference_import_entries (import_id, gallery_id, token, status)
@@ -479,7 +517,7 @@ func (s *ReferenceImports) recordBatch(ctx context.Context, id string, offset in
 }
 
 func completeReferenceImports(ctx context.Context, tx *sql.Tx, at time.Time) error {
-	_, err := tx.ExecContext(ctx, `UPDATE reference_imports SET status = 'completed', completed_at = ?
+	_, err := tx.ExecContext(ctx, `UPDATE reference_imports SET status = 'completed', paused = 0, completed_at = ?
 		WHERE status = 'validating' AND pending = 0`, at.UnixMilli())
 	return err
 }

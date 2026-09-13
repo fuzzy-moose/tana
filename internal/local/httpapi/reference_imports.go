@@ -70,6 +70,14 @@ func HandleCollectorGetReferenceImport(client *collectorapi.Client) http.Handler
 	return handleCollectorReferenceImport(client, client.GetReferenceImport)
 }
 
+func HandleCollectorPauseReferenceImport(client *collectorapi.Client) http.Handler {
+	return handleCollectorReferenceImport(client, client.PauseReferenceImport)
+}
+
+func HandleCollectorResumeReferenceImport(client *collectorapi.Client) http.Handler {
+	return handleCollectorReferenceImport(client, client.ResumeReferenceImport)
+}
+
 func HandleCollectorCancelReferenceImport(client *collectorapi.Client) http.Handler {
 	return handleCollectorReferenceImport(client, client.CancelReferenceImport)
 }

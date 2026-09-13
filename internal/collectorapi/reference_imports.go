@@ -16,6 +16,7 @@ type ReferenceImport struct {
 	ID             string     `json:"id"`
 	Filename       string     `json:"filename"`
 	Status         string     `json:"status"`
+	Paused         bool       `json:"paused"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 	SizeBytes      int64      `json:"size_bytes"`
@@ -71,6 +72,18 @@ func referenceImportPath(id string) string { return "/api/reference-imports/" + 
 func (c *Client) GetReferenceImport(ctx context.Context, id string) (ReferenceImport, error) {
 	var result ReferenceImport
 	err := c.downloadRequest(ctx, http.MethodGet, referenceImportPath(id), nil, &result)
+	return result, err
+}
+
+func (c *Client) PauseReferenceImport(ctx context.Context, id string) (ReferenceImport, error) {
+	var result ReferenceImport
+	err := c.downloadRequest(ctx, http.MethodPost, referenceImportPath(id)+"/pause", nil, &result)
+	return result, err
+}
+
+func (c *Client) ResumeReferenceImport(ctx context.Context, id string) (ReferenceImport, error) {
+	var result ReferenceImport
+	err := c.downloadRequest(ctx, http.MethodPost, referenceImportPath(id)+"/resume", nil, &result)
 	return result, err
 }
 

@@ -65,6 +65,10 @@ func TestCollectorReferenceImportProxy(t *testing.T) {
 			_, _ = io.WriteString(w, `{"imports":[]}`)
 		case r.Method == "POST" && r.URL.Path == "/api/reference-imports/accepted/cancel":
 			_, _ = io.WriteString(w, `{"id":"accepted","status":"cancelled"}`)
+		case r.Method == "POST" && r.URL.Path == "/api/reference-imports/accepted/pause":
+			_, _ = io.WriteString(w, `{"id":"accepted","status":"validating","paused":true}`)
+		case r.Method == "POST" && r.URL.Path == "/api/reference-imports/accepted/resume":
+			_, _ = io.WriteString(w, `{"id":"accepted","status":"validating","paused":false}`)
 		case r.Method == "POST" && r.URL.Path == "/api/reference-imports/accepted/retry":
 			w.WriteHeader(409)
 			_, _ = io.WriteString(w, `{"error":"import_state_conflict"}`)
@@ -115,6 +119,8 @@ func TestCollectorReferenceImportProxy(t *testing.T) {
 		{"GET", "?offset=-1", "invalid_pagination", 400},
 		{"POST", "", "invalid_filename", 400},
 		{"GET", "/missing", "import_not_found", 404},
+		{"POST", "/accepted/pause", `"paused":true`, 200},
+		{"POST", "/accepted/resume", `"paused":false`, 200},
 		{"POST", "/accepted/cancel", "cancelled", 200},
 		{"POST", "/accepted/retry", "import_state_conflict", 409},
 	} {
@@ -124,8 +130,10 @@ func TestCollectorReferenceImportProxy(t *testing.T) {
 		}
 	}
 	handler = NewHandler(&local.App{Logger: slog.New(slog.DiscardHandler)})
-	w = request("GET", "", nil, 0)
-	if w.Code != 503 || !strings.Contains(w.Body.String(), "collector_not_configured") {
-		t.Fatalf("unconfigured collector: %d %s", w.Code, w.Body)
+	for _, tc := range []struct{ method, path string }{{"GET", ""}, {"POST", "/accepted/pause"}, {"POST", "/accepted/resume"}} {
+		w = request(tc.method, tc.path, nil, 0)
+		if w.Code != 503 || !strings.Contains(w.Body.String(), "collector_not_configured") {
+			t.Fatalf("unconfigured collector: %s %s: %d %s", tc.method, tc.path, w.Code, w.Body)
+		}
 	}
 }

@@ -41,6 +41,8 @@ func NewHandler(app *collector.App) http.Handler {
 	mux.Handle("POST /api/reference-imports", HandleAcceptReferenceImport(app.ReferenceImports))
 	mux.Handle("GET /api/reference-imports", HandleListReferenceImports(app.ReferenceImports))
 	mux.Handle("GET /api/reference-imports/{id}", HandleGetReferenceImport(app.ReferenceImports))
+	mux.Handle("POST /api/reference-imports/{id}/pause", HandlePauseReferenceImport(app.ReferenceImports))
+	mux.Handle("POST /api/reference-imports/{id}/resume", HandleResumeReferenceImport(app.ReferenceImports))
 	mux.Handle("POST /api/reference-imports/{id}/cancel", HandleCancelReferenceImport(app.ReferenceImports))
 	mux.Handle("POST /api/reference-imports/{id}/retry", HandleRetryReferenceImport(app.ReferenceImports))
 	mux.Handle("POST /api/downloads", HandleSubmitDownload(app.Downloads))

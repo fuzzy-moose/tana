@@ -56,7 +56,7 @@ func settleImportInventoryEntries(ctx context.Context, tx *sql.Tx, entries []imp
 	// Limit completion checks to this batch's owners. Counters, completion and
 	// the work checkpoint commit together, including the final pending entry.
 	for id := range owners {
-		if _, err := tx.ExecContext(ctx, `UPDATE reference_imports SET status = 'completed', completed_at = ?
+		if _, err := tx.ExecContext(ctx, `UPDATE reference_imports SET status = 'completed', paused = 0, completed_at = ?
 			WHERE id = ? AND status = 'validating' AND pending = 0`, time.Now().UnixMilli(), id); err != nil {
 			return err
 		}

@@ -1,0 +1,1 @@
+ALTER TABLE reference_imports ADD COLUMN paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1));
