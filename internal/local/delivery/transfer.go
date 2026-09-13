@@ -145,8 +145,18 @@ func (s *Service) download(b Batch, item *Item) error {
 	}()
 	ctx, cancel := context.WithCancelCause(s.ctx)
 	defer cancel(nil)
+	// OpenDownload can block while reading an error body, so arm cancellation
+	// before opening. Receiving archive bytes extends the deadline so large,
+	// active archives have no total transfer limit.
+	idle := time.AfterFunc(transferInactivityTimeout, func() {
+		cancel(fmt.Errorf("collector archive transfer inactive for %s", transferInactivityTimeout))
+	})
+	defer idle.Stop()
 	response, err := s.collector.OpenDownload(ctx, item.GalleryID, http.MethodGet, nil)
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			err = cause
+		}
 		return fmt.Errorf("retrieve collector archive: %w", err)
 	}
 	defer response.Body.Close()
@@ -154,12 +164,7 @@ func (s *Service) download(b Batch, item *Item) error {
 		return fmt.Errorf("collector archive returned HTTP %d", response.StatusCode)
 	}
 	hash := sha256.New()
-	// Cancel the request to interrupt a blocked body read; a context check before
-	// Read alone cannot release it. Receiving bytes extends the deadline so large,
-	// active archives have no total transfer limit.
-	idle := time.AfterFunc(transferInactivityTimeout, func() {
-		cancel(fmt.Errorf("collector archive transfer inactive for %s", transferInactivityTimeout))
-	})
+	idle.Reset(transferInactivityTimeout)
 	size, err := io.Copy(io.MultiWriter(file, hash), transferReader{contextReader{ctx: ctx, reader: response.Body}, idle})
 	idle.Stop()
 	if cause := context.Cause(ctx); cause != nil {
