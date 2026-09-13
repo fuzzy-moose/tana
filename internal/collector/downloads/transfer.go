@@ -21,8 +21,7 @@ type Transfer interface {
 
 type HTTPTransfer struct{ client *http.Client }
 
-// NewHTTPTransfer never shares Panda cookies with archive hosts. Its transport
-// may still use the collector's shared ban state.
+// NewHTTPTransfer never shares Panda cookies with archive hosts.
 func NewHTTPTransfer(client *http.Client) *HTTPTransfer {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Minute}

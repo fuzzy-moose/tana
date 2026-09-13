@@ -1,4 +1,4 @@
-// Package pandaban persists the cooldown shared by Panda metadata, favorites, and downloads.
+// Package pandaban persists independent Panda request group cooldowns.
 package pandaban
 
 import (
@@ -12,16 +12,21 @@ import (
 
 type State struct {
 	q        *dbgen.Queries
+	id       int64
 	mu       sync.Mutex
 	observed time.Time
 }
 
-func New(db *sql.DB) *State { return &State{q: dbgen.New(db)} }
+// New returns the main unauthenticated request group's ban state.
+func New(db *sql.DB) *State { return &State{q: dbgen.New(db), id: 1} }
+
+// NewAuthenticated returns the ban shared by favorites and archive preparation.
+func NewAuthenticated(db *sql.DB) *State { return &State{q: dbgen.New(db), id: 2} }
 
 func (s *State) Until(ctx context.Context) (time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	at, err := s.q.BanUntil(ctx)
+	at, err := s.q.BanUntil(ctx, s.id)
 	until := time.UnixMilli(at)
 	if s.observed.After(until) {
 		until = s.observed
@@ -36,5 +41,5 @@ func (s *State) Extend(ctx context.Context, until time.Time) error {
 	if until.After(s.observed) {
 		s.observed = until
 	}
-	return s.q.ExtendBan(ctx, until.UnixMilli())
+	return s.q.ExtendBan(ctx, dbgen.ExtendBanParams{ID: s.id, UntilAt: until.UnixMilli()})
 }

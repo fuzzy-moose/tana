@@ -10,21 +10,26 @@ import (
 )
 
 const banUntil = `-- name: BanUntil :one
-SELECT until_at FROM panda_ban WHERE id = 1
+SELECT until_at FROM panda_ban WHERE id = ?
 `
 
-func (q *Queries) BanUntil(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, banUntil)
+func (q *Queries) BanUntil(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, banUntil, id)
 	var until_at int64
 	err := row.Scan(&until_at)
 	return until_at, err
 }
 
 const extendBan = `-- name: ExtendBan :exec
-UPDATE panda_ban SET until_at = MAX(until_at, CAST(?1 AS INTEGER)) WHERE id = 1
+UPDATE panda_ban SET until_at = MAX(until_at, CAST(?1 AS INTEGER)) WHERE id = ?2
 `
 
-func (q *Queries) ExtendBan(ctx context.Context, untilAt int64) error {
-	_, err := q.db.ExecContext(ctx, extendBan, untilAt)
+type ExtendBanParams struct {
+	UntilAt int64
+	ID      int64
+}
+
+func (q *Queries) ExtendBan(ctx context.Context, arg ExtendBanParams) error {
+	_, err := q.db.ExecContext(ctx, extendBan, arg.UntilAt, arg.ID)
 	return err
 }

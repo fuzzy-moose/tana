@@ -63,6 +63,7 @@ export default function Favorites({ available, refreshKey }: { available: boolea
       <div className="collector-panel">
         <div className="collector-section-heading"><h2>Panda favorites</h2><span>{status.categories.reduce((sum, item) => sum + item.favorites, 0).toLocaleString()} collected favorites</span></div>
         <p className="collector-account">{status.host} · Account {status.account_key}</p>
+        {status.authenticated_cooldown_until && <p>Authenticated Panda requests (favorites and archive preparation) paused until {date(status.authenticated_cooldown_until)}.</p>}
         <form className="collector-sync" onSubmit={(event) => { event.preventDefault(); if (!disabled) void sync(category, full) }}>
           <label className="form-field">Favorite category
             <select className="text-input" value={category} onChange={(event) => setCategory(event.target.value)} disabled={disabled}>

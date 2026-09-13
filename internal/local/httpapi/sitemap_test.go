@@ -45,7 +45,7 @@ func TestSitemapControlsThroughLocalProxy(t *testing.T) {
 	}
 	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{
 		Logger: logger, Sitemap: sitemaps, Favorites: favs, Ban: ban,
-		Status: status.New(db, favs, ban), APIToken: "server-secret",
+		Status: status.New(db, favs, ban, pandaban.NewAuthenticated(db)), APIToken: "server-secret",
 	}))
 	defer upstream.Close()
 	client, err := collectorapi.NewClient(upstream.URL, "server-secret")

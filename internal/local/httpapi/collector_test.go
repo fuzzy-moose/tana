@@ -39,7 +39,7 @@ func TestCollectorConnectionDoesNotDependOnStatistics(t *testing.T) {
 	favs := favorites.New(ctx, db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "42"}, nil, logger)
 	defer favs.Close()
 	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{
-		Logger: logger, Favorites: favs, Status: status.New(db, favs, pandaban.New(db)), APIToken: "server-secret",
+		Logger: logger, Favorites: favs, Status: status.New(db, favs, pandaban.New(db), pandaban.NewAuthenticated(db)), APIToken: "server-secret",
 	}))
 	defer upstream.Close()
 	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
@@ -110,7 +110,7 @@ func TestLocalCollectorStatusAndSync(t *testing.T) {
 	favorites := favorites.New(t.Context(), db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "42"}, blockedFavorites{}, logger)
 	defer favorites.Close()
 	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{
-		Logger: logger, Favorites: favorites, Status: status.New(db, favorites, pandaban.New(db)), APIToken: "server-secret",
+		Logger: logger, Favorites: favorites, Status: status.New(db, favorites, pandaban.New(db), pandaban.NewAuthenticated(db)), APIToken: "server-secret",
 	}))
 	defer upstream.Close()
 	client, err := collectorapi.NewClient(upstream.URL, "server-secret")

@@ -56,6 +56,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("prepare Panda catalog: %w", err)
 	}
 	ban := pandaban.New(db)
+	authenticatedBan := pandaban.NewAuthenticated(db)
 	client, err := panda.NewClient(cfg.Panda.APIURL, &http.Client{
 		Timeout: time.Minute, Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, nil)),
 	})
@@ -69,14 +70,14 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	authClient, err := panda.NewAuthenticatedClient(cfg.AuthenticatedPanda, &http.Client{
-		Timeout: time.Minute, Transport: panda.RateLimitedTransport(authLimiter, panda.BanTransport(ban, nil)),
+		Timeout: time.Minute, Transport: panda.RateLimitedTransport(authLimiter, panda.BanTransport(authenticatedBan, nil)),
 	})
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	downloadService, err := downloads.New(ctx, db, cfg.DownloadDir, authClient,
-		downloads.NewHTTPTransfer(&http.Client{Timeout: 30 * time.Minute, Transport: panda.BanTransport(ban, nil)}), logger)
+		downloads.NewHTTPTransfer(nil), logger)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -130,7 +131,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		Downloads:        downloadService,
 		Sitemap:          sitemapService,
 		ReferenceImports: imports,
-		Status:           status.New(db, favoritesService, ban),
+		Status:           status.New(db, favoritesService, ban, authenticatedBan),
 		Ban:              ban,
 	}, nil
 }

@@ -134,6 +134,10 @@ func TestReferenceImportReconciliationUpgradeResumesPastUnmatchedEntries(t *test
 		DROP INDEX gallery_refs_inventory;
 		DROP INDEX gallery_refs_recent_metadata_errors;
 		ALTER TABLE reference_imports DROP COLUMN paused;
+		CREATE TABLE panda_ban_legacy (id INTEGER PRIMARY KEY CHECK (id = 1), until_at INTEGER NOT NULL DEFAULT 0);
+		INSERT INTO panda_ban_legacy SELECT id, until_at FROM panda_ban WHERE id = 1;
+		DROP TABLE panda_ban;
+		ALTER TABLE panda_ban_legacy RENAME TO panda_ban;
 		PRAGMA user_version = 15`); err != nil {
 		t.Fatal(err)
 	}

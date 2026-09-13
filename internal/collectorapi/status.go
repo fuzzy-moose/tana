@@ -66,10 +66,11 @@ func (c *Client) readStatus(ctx context.Context, path string, result any) error 
 }
 
 type FavoritesStatus struct {
-	Host       string                  `json:"host"`
-	AccountKey string                  `json:"account_key"`
-	Categories []FavoriteCategory      `json:"categories"`
-	Downloads  FavoriteDownloadsStatus `json:"downloads"`
+	Host                       string                  `json:"host"`
+	AccountKey                 string                  `json:"account_key"`
+	Categories                 []FavoriteCategory      `json:"categories"`
+	Downloads                  FavoriteDownloadsStatus `json:"downloads"`
+	AuthenticatedCooldownUntil *time.Time              `json:"authenticated_cooldown_until,omitempty"`
 }
 
 type FavoriteDownloadsStatus struct {

@@ -13,13 +13,14 @@ import (
 )
 
 type Service struct {
-	q         *dbgen.Queries
-	favorites *favorites.Service
-	ban       *pandaban.State
+	q                *dbgen.Queries
+	favorites        *favorites.Service
+	ban              *pandaban.State
+	authenticatedBan *pandaban.State
 }
 
-func New(db *sql.DB, favorites *favorites.Service, ban *pandaban.State) *Service {
-	return &Service{q: dbgen.New(db), favorites: favorites, ban: ban}
+func New(db *sql.DB, favorites *favorites.Service, ban, authenticatedBan *pandaban.State) *Service {
+	return &Service{q: dbgen.New(db), favorites: favorites, ban: ban, authenticatedBan: authenticatedBan}
 }
 
 func (s *Service) Favorites(ctx context.Context) (collectorapi.FavoritesStatus, error) {
@@ -27,11 +28,12 @@ func (s *Service) Favorites(ctx context.Context) (collectorapi.FavoritesStatus, 
 	if err != nil {
 		return result, err
 	}
-	until, err := s.ban.Until(ctx)
+	until, err := s.authenticatedBan.Until(ctx)
 	if err != nil {
 		return result, err
 	}
 	if until.After(time.Now()) {
+		result.AuthenticatedCooldownUntil = &until
 		for i := range result.Categories {
 			category := &result.Categories[i]
 			if category.State == "running" || category.State == "waiting_cooldown" {

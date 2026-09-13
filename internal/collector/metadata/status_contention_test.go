@@ -37,7 +37,7 @@ func TestStatusDuringLargeImportClaims(t *testing.T) {
 		t.Fatalf("unreserved import batch: %+v", batch)
 	}
 	defer batch.Close()
-	view := status.New(db, nil, pandaban.New(db))
+	view := status.New(db, nil, pandaban.New(db), pandaban.NewAuthenticated(db))
 	if _, err := view.Metadata(ctx); err != nil {
 		t.Fatalf("metadata status after import claim: %v", err)
 	}

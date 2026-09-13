@@ -47,6 +47,7 @@ export interface FavoritesStatus {
   account_key: string
   categories: FavoriteCategory[]
   downloads?: FavoriteDownloadsStatus
+  authenticated_cooldown_until?: string
 }
 
 export interface InventoryStatus {

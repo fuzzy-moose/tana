@@ -1,4 +1,4 @@
-import { getInventoryStatus, getMetadataStatus } from './api'
+import { getFavoritesStatus, getInventoryStatus, getMetadataStatus } from './api'
 import { useCollectorResource } from './useCollectorResource'
 import ResourceStatus from './ResourceStatus'
 
@@ -7,6 +7,7 @@ function date(value: string) { return new Date(value).toLocaleString() }
 export default function Overview({ available, refreshKey }: { available: boolean, refreshKey: number }) {
   const inventory = useCollectorResource(getInventoryStatus, available, refreshKey, 30000)
   const metadata = useCollectorResource(getMetadataStatus, available, refreshKey, 30000)
+  const favorites = useCollectorResource(getFavoritesStatus, available, refreshKey, 30000)
   const counts = inventory.data
   const diagnostics = metadata.data
 
@@ -26,9 +27,13 @@ export default function Overview({ available, refreshKey }: { available: boolean
     </section>
     <section className="collector-panel" aria-labelledby="diagnostics-title">
       <h2 id="diagnostics-title">Diagnostics</h2>
+      <ResourceStatus name="Authenticated Panda diagnostics" loaded={!!favorites.data} available={available} {...favorites} />
+      {favorites.data && <p>{favorites.data.authenticated_cooldown_until
+        ? `Authenticated Panda requests (favorites and archive preparation) paused until ${date(favorites.data.authenticated_cooldown_until)}.`
+        : 'No active authenticated Panda cooldown.'}</p>}
       <ResourceStatus name="Metadata diagnostics" loaded={!!diagnostics} available={available} {...metadata} />
       {diagnostics && <>
-        <p>{diagnostics.upstream_cooldown_until ? `Panda requests paused until ${date(diagnostics.upstream_cooldown_until)}.` : 'No active Panda cooldown.'}</p>
+        <p>{diagnostics.upstream_cooldown_until ? `Main unauthenticated Panda requests paused until ${date(diagnostics.upstream_cooldown_until)}.` : 'No active main unauthenticated Panda cooldown.'}</p>
         {diagnostics.metadata_retry_at && <p>Metadata retry after {date(diagnostics.metadata_retry_at)}.</p>}
         {diagnostics.metadata_last_error && <p className="error-message">Metadata collection: {diagnostics.metadata_last_error}</p>}
         {diagnostics.metadata_errors.length > 0 && <><h3>Recent metadata errors</h3><ul className="collector-errors">{diagnostics.metadata_errors.map((item) => <li key={item.gallery_id}><strong>Gallery {item.gallery_id}</strong><span>{item.error}</span><small>{item.at ? date(item.at) : '—'}</small></li>)}</ul></>}

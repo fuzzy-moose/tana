@@ -38,8 +38,15 @@ function statusResponse(input: RequestInfo | URL, connection = connected(), favo
   }
 }
 
-test('Collector overview loads only inventory and metadata statistics', async () => {
-  const fetchMock = vi.fn<typeof fetch>(async (input) => statusResponse(input))
+test('Collector overview loads inventory and request-group diagnostics', async () => {
+  const authenticatedUntil = '2026-09-15T10:00:00Z'
+  const mainUntil = '2026-09-15T12:00:00Z'
+  const fetchMock = vi.fn<typeof fetch>(async (input) => {
+    const response = statusResponse(input)
+    if (String(input) === '/api/collector/favorites/status') return Response.json({ ...await response.json(), authenticated_cooldown_until: authenticatedUntil })
+    if (String(input) === '/api/collector/metadata/status') return Response.json({ ...await response.json(), upstream_cooldown_until: mainUntil })
+    return response
+  })
   vi.stubGlobal('fetch', fetchMock)
   window.history.replaceState(null, '', '/#/collector')
   render(<App />)
@@ -47,9 +54,12 @@ test('Collector overview loads only inventory and metadata statistics', async ()
   expect(screen.getByRole('link', { name: 'Collector' }).getAttribute('aria-current')).toBe('page')
   expect(await screen.findByText('150')).toBeTruthy()
   expect(await screen.findByText('Gallery unavailable')).toBeTruthy()
+  expect(await screen.findByText(`Authenticated Panda requests (favorites and archive preparation) paused until ${new Date(authenticatedUntil).toLocaleString()}.`)).toBeTruthy()
+  expect(screen.getByText(`Main unauthenticated Panda requests paused until ${new Date(mainUntil).toLocaleString()}.`)).toBeTruthy()
   expect(within(screen.getByRole('navigation', { name: 'Collector navigation' })).getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe('page')
   expect(new Set(fetchMock.mock.calls.map(([input]) => String(input)))).toEqual(new Set([
     '/api/collector/status', '/api/collector/inventory/status', '/api/collector/metadata/status',
+    '/api/collector/favorites/status',
   ]))
 })
 

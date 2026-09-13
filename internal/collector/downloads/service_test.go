@@ -304,14 +304,17 @@ func TestInvalidZIPNeverPublished(t *testing.T) {
 	}
 }
 
-func TestExpiredURLTriggersFreshArchivePreparation(t *testing.T) {
+func TestExpiredURLRetriesPreparationAfterAuthenticatedBan(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	archive := zipBytes(t)
 	var calls atomic.Int64
 	s := startService(t, db, t.TempDir(),
 		archiveFunc(func(context.Context, panda.GalleryRef) (string, error) {
-			if calls.Add(1) == 1 {
+			switch calls.Add(1) {
+			case 1:
 				return "expired", nil
+			case 2:
+				return "", &panda.BanError{Until: time.Now().Add(time.Hour)}
 			}
 			return "fresh", nil
 		}),
@@ -329,8 +332,16 @@ func TestExpiredURLTriggersFreshArchivePreparation(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.signal()
+	job := waitJob(t, s, 1, func(j Job) bool { return j.Error == "panda_banned" })
+	if job.State != "queued" || job.Failures != 1 || job.RetryAt == nil || !job.RetryAt.After(time.Now()) {
+		t.Fatalf("fresh archive preparation did not wait for authenticated ban: %+v", job)
+	}
+	if _, err := db.Exec(`UPDATE panda_downloads SET retry_at = 0 WHERE gallery_id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	s.signal()
 	waitJob(t, s, 1, func(j Job) bool { return j.State == "completed" })
-	if calls.Load() != 2 {
+	if calls.Load() != 3 {
 		t.Fatalf("preparations: %d", calls.Load())
 	}
 }

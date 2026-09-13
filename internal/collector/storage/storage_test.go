@@ -111,3 +111,53 @@ func TestOpenPreservesCompletedFavoritesAsIncrementalBaseline(t *testing.T) {
 		t.Fatalf("download history=%d baseline=%q %v", observed, baseline, err)
 	}
 }
+
+func TestOpenKeepsLegacyBanOnlyForUnauthenticatedRequests(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "collector.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	files, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files[:19] {
+		ddl, err := migrations.ReadFile("migrations/" + file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(ddl)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE panda_ban SET until_at = 120000;
+ INSERT INTO favorite_categories (id, host, account_key, category, name, synced_at) VALUES (1, 'https://panda.test', '42', 2, 'Manga', 0);
+ INSERT INTO favorite_syncs (category_id, state, full, queued_at, retry_at) VALUES (1, 'queued', 0, 1000, 130000);
+ INSERT INTO panda_downloads (gallery_id, token, state, created_at, updated_at, retry_at) VALUES (1, '123456789a', 'queued', 1000, 1000, 140000);
+ PRAGMA user_version = 19;`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		migrated, _, err := Open(t.Context(), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var main, authenticated, favoritesRetry, downloadRetry int64
+		err = migrated.QueryRow(`SELECT
+ (SELECT until_at FROM panda_ban WHERE id = 1),
+ (SELECT until_at FROM panda_ban WHERE id = 2),
+ (SELECT retry_at FROM favorite_syncs WHERE category_id = 1),
+ (SELECT retry_at FROM panda_downloads WHERE gallery_id = 1)`).Scan(&main, &authenticated, &favoritesRetry, &downloadRetry)
+		if err := migrated.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err != nil || main != 120000 || authenticated != 0 || favoritesRetry != 130000 || downloadRetry != 140000 {
+			t.Fatalf("main=%d authenticated=%d favoritesRetry=%d downloadRetry=%d: %v", main, authenticated, favoritesRetry, downloadRetry, err)
+		}
+	}
+}

@@ -113,6 +113,9 @@ The time of the last successful retrieval of collected Panda metadata. Failed re
 **Panda metadata proxy channel**:
 An optional route for collecting Panda metadata from background gallery references and validating Panda reference imports through a fixed proxy, with its own upstream ban state.
 
+**Panda authenticated ban**:
+A temporary suspension shared by authenticated Panda requests, including favorites and archive preparation, independent of bans affecting unauthenticated Panda requests. It remains in force across account, cookie, and Panda host changes; archive file transfers are outside Panda ban coordination.
+
 **Metadata fetch job**:
 A durable request from Tana to retrieve fresh Panda metadata for supplied gallery references, with a pending, successful, or failed outcome for each reference. Queued references are not evidence of valid tokens or membership in the gallery reference inventory.
 

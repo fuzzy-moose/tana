@@ -24,7 +24,7 @@ func TestStatusViewsScopeFavoritesAndPartitionInventory(t *testing.T) {
 	favorites := favorites.New(ctx, db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "current"}, nil, slog.New(slog.DiscardHandler))
 	defer favorites.Close()
 	ban := pandaban.New(db)
-	service := New(db, favorites, ban)
+	service := New(db, favorites, ban, pandaban.NewAuthenticated(db))
 	emptyFavorites, err := service.Favorites(t.Context())
 	if err != nil || len(emptyFavorites.Categories) != 10 {
 		t.Fatalf("empty favorites: %+v, %v", emptyFavorites, err)
@@ -73,6 +73,9 @@ UPDATE metadata_retry SET last_error = 'upstream unavailable', next_attempt_at =
 	if err != nil {
 		t.Fatal(err)
 	}
+	if favoriteStatus.AuthenticatedCooldownUntil != nil {
+		t.Fatalf("main cooldown leaked to authenticated requests: %+v", favoriteStatus)
+	}
 	for i, category := range favoriteStatus.Categories {
 		if category.Category != i {
 			t.Fatalf("category: %+v", category)
@@ -81,8 +84,8 @@ UPDATE metadata_retry SET last_error = 'upstream unavailable', next_attempt_at =
 			if category.Name != "Manga" || category.Favorites != 2 || category.LastSyncedAt == nil || category.LastSyncedAt.UnixMilli() != 1234 {
 				t.Fatalf("current category: %+v", category)
 			}
-			if category.State != "waiting_cooldown" || category.RetryAt == nil || category.RetryAt.UnixMilli() != until.UnixMilli() {
-				t.Fatalf("shared cooldown missing from favorites: %+v", category)
+			if category.State != "running" || category.RetryAt != nil {
+				t.Fatalf("main cooldown paused favorites: %+v", category)
 			}
 		} else if category.State != "idle" || category.Favorites != 0 || category.LastSyncedAt != nil || category.Name != "" {
 			t.Fatalf("historical data leaked: %+v", category)
@@ -96,6 +99,42 @@ UPDATE metadata_retry SET last_error = 'upstream unavailable', next_attempt_at =
 		result.MetadataLastError != "upstream unavailable" || result.MetadataRetryAt == nil ||
 		len(result.MetadataErrors) != 4 || result.MetadataErrors[0].GalleryID != 4 || result.MetadataErrors[3].Error != "token_conflict" {
 		t.Fatalf("diagnostics: %+v", result)
+	}
+}
+
+func TestAuthenticatedCooldownUpdatesFavoritesOnly(t *testing.T) {
+	db, _, err := storage.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	favorites := favorites.New(ctx, db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "current"}, nil, slog.New(slog.DiscardHandler))
+	defer favorites.Close()
+	_, err = db.Exec(`INSERT INTO favorite_categories (id, host, account_key, category, name, synced_at) VALUES (1, 'https://panda.test', 'current', 2, 'Manga', 1000);
+		INSERT INTO favorite_syncs (category_id, state, full, queued_at) VALUES (1, 'running', 0, 1000);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ban := pandaban.NewAuthenticated(db)
+	until := time.Now().Add(time.Hour)
+	if err := ban.Extend(t.Context(), until); err != nil {
+		t.Fatal(err)
+	}
+	service := New(db, favorites, pandaban.New(db), ban)
+	result, err := service.Favorites(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	category := result.Categories[2]
+	if result.AuthenticatedCooldownUntil == nil || result.AuthenticatedCooldownUntil.UnixMilli() != until.UnixMilli() ||
+		category.State != "waiting_cooldown" || category.RetryAt == nil || category.RetryAt.UnixMilli() != until.UnixMilli() {
+		t.Fatalf("authenticated cooldown missing from favorites: %+v, %+v", result, category)
+	}
+	metadata, err := service.Metadata(t.Context())
+	if err != nil || metadata.UpstreamCooldownUntil != nil {
+		t.Fatalf("authenticated cooldown leaked to metadata: %+v, %v", metadata, err)
 	}
 }
 
@@ -114,7 +153,7 @@ func TestInventoryCountsRetainedMetadataAndMatchingRetries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := New(db, nil, nil).Inventory(t.Context())
+	got, err := New(db, nil, nil, nil).Inventory(t.Context())
 	want := collectorapi.InventoryStatus{GalleryReferences: 5, MetadataAvailable: 2, MetadataPending: 2, MetadataFailed: 1, FetchesPending: 5}
 	if err != nil || got != want {
 		t.Fatalf("inventory: %+v, %v; want %+v", got, err, want)
@@ -139,7 +178,7 @@ func TestRecentMetadataErrorsMergeLatestDistinctGalleries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := New(db, nil, pandaban.New(db)).Metadata(t.Context())
+	got, err := New(db, nil, pandaban.New(db), nil).Metadata(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
