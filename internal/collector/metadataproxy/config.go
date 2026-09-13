@@ -12,7 +12,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 )
 
-const defaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+const defaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0"
 
 func normalize(input collectorapi.MetadataProxyInput) (collectorapi.MetadataProxyInput, error) {
 	invalid := func() (collectorapi.MetadataProxyInput, error) { return input, collectorapi.ErrInvalidProxy }
