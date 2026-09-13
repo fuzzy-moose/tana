@@ -25,6 +25,12 @@ Registration of a source and its complete file inventory in the catalog. File co
 **Source file**:
 A file cataloged as part of a source, whether or not it is a supported image, reusable across galleries. Files at every path inside an archive belong to its inventory; a nested archive is an ordinary source file.
 
+**Superseded source**:
+A source containing an ancestor version of a Panda gallery for which a newer version is also present as a source in a registered Tana library. A Panda favorite or retained collector archive alone does not establish a local replacement.
+
+**Panda gallery ancestry**:
+The older gallery versions reachable by following a Panda gallery's parent references, directly or through intermediate versions. A relationship requires a complete chain of known parent references; intermediate versions need not have local sources.
+
 **Gallery metadata**:
 Descriptive information belonging to a gallery, including its title and tags. It may be supplied by metadata providers or edited by the user.
 
@@ -51,7 +57,7 @@ One favorites category belonging to a Panda account on a particular Panda host, 
 A stable identifier for a Panda account's collected favorite collections, independent of changes to its authentication and settings cookies.
 
 **Panda favorite**:
-A Panda gallery reference belonging to a favorite collection, together with the time it was favorited. The same upstream gallery may be discovered independently through other collection paths.
+A Panda gallery reference belonging to a favorite collection, together with the time it was favorited, regardless of discovery through other collection paths. Upstream favorites contain only the newest version of a gallery; previously collected membership can be stale.
 
 **Panda favorite sync**:
 Collection of a favorite collection's newest entries since its previously collected state, treating a changed favorite timestamp as a new occurrence. An initial sync collects the entire collection.

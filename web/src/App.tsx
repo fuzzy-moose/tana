@@ -3,6 +3,7 @@ import Galleries from './galleries/Galleries'
 import GalleryDetail from './galleries/GalleryDetail'
 import Reader from './galleries/Reader'
 import Libraries from './libraries/Libraries'
+import SourceCleanup from './libraries/SourceCleanup'
 import Collector from './collector/Collector'
 import PandaCatalog from './panda/PandaCatalog'
 import { useRoute } from './navigation'
@@ -26,7 +27,7 @@ function App() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="3" width="7" height="8" rx="1" /><rect x="14" y="3" width="7" height="8" rx="1" /><rect x="3" y="15" width="7" height="6" rx="1" /><rect x="14" y="15" width="7" height="6" rx="1" /></svg>
             Galleries
           </a>
-          <a className="nav-link" href="#/libraries" aria-current={route.kind === 'libraries' ? 'page' : undefined}>
+          <a className="nav-link" href="#/libraries" aria-current={route.kind === 'libraries' || route.kind === 'source-cleanup' ? 'page' : undefined}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 4h4v16H3zM7 6h4v14H7zM14 4l4-1 4 16-4 1z" /></svg>
             Libraries
           </a>
@@ -43,6 +44,7 @@ function App() {
       </aside>
       <main id="main-content" tabIndex={-1}>
         {route.kind === 'libraries' && <Libraries />}
+        {route.kind === 'source-cleanup' && <SourceCleanup />}
         {route.kind === 'collector' && <Collector page={route.page} />}
         {route.kind === 'panda' && <PandaCatalog search={route.search} page={route.page} includeExpunged={route.includeExpunged} />}
         {route.kind === 'galleries' && <Galleries key={route.search} search={route.search} page={route.page} />}

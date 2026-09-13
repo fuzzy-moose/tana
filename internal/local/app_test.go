@@ -193,6 +193,9 @@ func TestOptionalCollectorConfiguration(t *testing.T) {
 		enabled := false
 		if app != nil {
 			enabled = app.Collector != nil
+			if (app.Cleanup != nil) != enabled {
+				t.Error("source cleanup must follow collector configuration")
+			}
 			app.Close()
 		}
 		if (err != nil) != tt.invalid || enabled != tt.enabled {

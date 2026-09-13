@@ -45,6 +45,8 @@ func NewHandler(app *local.App) http.Handler {
 	mux.Handle("GET /api/galleries/{id}/pages/{number}/image", HandleGalleryImage(app.Galleries))
 	mux.Handle("POST /api/scans", HandleRequestScan(app.Scans))
 	mux.Handle("GET /api/scans/status", HandleScanStatus(app.Scans))
+	mux.Handle("GET /api/source-cleanup", HandlePreviewSourceCleanup(app.Cleanup))
+	mux.Handle("POST /api/source-cleanup", HandleExecuteSourceCleanup(app.Cleanup))
 	mux.Handle("POST /api/libraries", HandleCreateLibrary(app.Libraries))
 	mux.Handle("GET /api/libraries", HandleListLibraries(app.Libraries))
 	mux.Handle("GET /api/libraries/{id}", HandleGetLibrary(app.Libraries))

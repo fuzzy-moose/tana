@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
+	"github.com/fuzzy-moose/tana/internal/local/cleanup"
 	"github.com/fuzzy-moose/tana/internal/local/enrichment"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
@@ -24,6 +25,7 @@ type App struct {
 	Galleries *gallery.SQLiteRepository
 	Web       fs.FS
 	Collector *collectorapi.Client
+	Cleanup   *cleanup.Service
 
 	db         *sql.DB
 	enrichment *enrichment.Service
@@ -60,8 +62,10 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("open libraries: %w", err)
 	}
 	var enrich *enrichment.Service
+	var sourceCleanup *cleanup.Service
 	if collectorClient != nil {
 		enrich = enrichment.New(ctx, db, collectorClient, logger)
+		sourceCleanup = cleanup.New(db, collectorClient)
 	}
 	scans := scan.New(ctx, db, libraries, os.DirFS, logger, enrich)
 	return &App{
@@ -71,6 +75,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		Galleries:  gallery.NewSQLiteRepository(db),
 		Web:        web,
 		Collector:  collectorClient,
+		Cleanup:    sourceCleanup,
 		db:         db,
 		enrichment: enrich,
 	}, nil

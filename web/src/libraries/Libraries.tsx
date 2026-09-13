@@ -134,6 +134,7 @@ export default function Libraries() {
           <p>Manage the folders that hold your comics and manga.</p>
         </div>
         <div className="button-group">
+          <a className="button" href="#/libraries/source-cleanup">Clean up older versions</a>
           <button className="button" type="button" disabled={locked || scan.disabled || libraries.length === 0} onClick={() => void scan.start()}>Scan all</button>
           <button className="button" type="button" disabled={locked} onClick={refreshLibraries}>Refresh</button>
           <button ref={addButton} className="button button-primary" type="button" disabled={locked} onClick={(event) => openEditor({ type: 'add' }, event.currentTarget)}>Add library</button>
