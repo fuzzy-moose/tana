@@ -12,7 +12,7 @@ SELECT state, count(*) AS count FROM panda_downloads GROUP BY state;
 -- name: RecoverDownloads :many
 SELECT * FROM panda_downloads WHERE state IN ('running', 'cancelled', 'deleting');
 
--- name: EnqueueDownload :exec
+-- name: EnqueueDownload :execrows
 INSERT INTO panda_downloads (gallery_id, token, state, created_at, updated_at)
 VALUES (?, ?, 'queued', ?, ?) ON CONFLICT (gallery_id) DO NOTHING;
 

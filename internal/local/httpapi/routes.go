@@ -31,6 +31,8 @@ func NewHandler(app *local.App) http.Handler {
 	mux.Handle("POST /api/collector/favorites/{category}/sync", HandleCollectorSyncFavorites(app.Collector))
 	mux.Handle("GET /api/collector/favorites/download-settings", HandleCollectorFavoriteDownloadSettings(app.Collector))
 	mux.Handle("PUT /api/collector/favorites/download-settings", HandleCollectorFavoriteDownloadSettings(app.Collector))
+	mux.Handle("POST /api/collector/favorites/{category}/missing-downloads/preview", HandlePreviewMissingFavoriteDownloads(app.FavoriteDownloads))
+	mux.Handle("POST /api/collector/favorites/{category}/missing-downloads", HandleSubmitMissingFavoriteDownloads(app.FavoriteDownloads))
 	mux.Handle("POST /api/collector/reference-imports", HandleCollectorSubmitReferenceImport(app.Collector))
 	mux.Handle("GET /api/collector/reference-imports", HandleCollectorListReferenceImports(app.Collector))
 	mux.Handle("GET /api/collector/reference-imports/{id}", HandleCollectorGetReferenceImport(app.Collector))

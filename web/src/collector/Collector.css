@@ -105,6 +105,9 @@
 .collector-secondary { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
 .collector-panel h3 { font-size: 13px; font-weight: 500; margin: 24px 0 12px; }
 .favorite-download-settings { margin-top: 24px; border-top: 1px solid var(--border); }
+.missing-favorite-downloads { margin-top: 24px; padding: 20px; border: 1px solid var(--accent-border); border-radius: 8px; }
+.missing-favorite-downloads h3 { margin: 0; }
+.missing-favorite-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .favorite-download-categories { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 12px 0; border: 0; font-size: 13px; }
 .favorite-download-categories legend { padding: 0 0 8px; color: var(--muted); }
 .favorite-download-categories label { display: flex; align-items: center; gap: 8px; }

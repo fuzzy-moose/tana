@@ -3,6 +3,7 @@ import { getFavoritesStatus, syncFavorites } from './api'
 import type { FavoriteCategory } from './api'
 import { useCollectorResource } from './useCollectorResource'
 import FavoriteDownloads from './FavoriteDownloads'
+import MissingFavoriteDownloads from './MissingFavoriteDownloads'
 import ResourceStatus from './ResourceStatus'
 
 function date(value?: string) { return value ? new Date(value).toLocaleString() : '—' }
@@ -24,10 +25,12 @@ export default function Favorites({ available, refreshKey }: { available: boolea
   const [pending, setPending] = useState(false)
   const [notice, setNotice] = useState('')
   const [requestError, setRequestError] = useState('')
+  const [downloadCategory, setDownloadCategory] = useState<FavoriteCategory | null>(null)
+  const [downloadPending, setDownloadPending] = useState(false)
   const mutation = useRef<AbortController | null>(null)
   useEffect(() => () => mutation.current?.abort(), [])
   const status = favorites.data
-  const disabled = !available || favorites.stale || pending || !status
+  const disabled = !available || favorites.stale || pending || downloadPending || !status
 
   async function sync(category: string, full: boolean) {
     if (mutation.current || disabled) return
@@ -81,10 +84,12 @@ export default function Favorites({ available, refreshKey }: { available: boolea
         {notice && <p className="collector-notice" role="status">{notice}</p>}
         {requestError && <p className="error-message" role="alert">{requestError}</p>}
         {status.downloads && <FavoriteDownloads status={status.downloads} categories={status.categories} available={!disabled} onSaved={downloadSettingsSaved} />}
+        {downloadCategory && <MissingFavoriteDownloads key={downloadCategory.category} category={downloadCategory} available={!disabled}
+          onClose={() => setDownloadCategory(null)} onSubmittingChange={setDownloadPending} />}
         <div className="collector-table-scroll">
           <table className="collector-table">
             <caption className="collector-table-caption">Favorite categories for the current account</caption>
-            <thead><tr><th scope="col">Category</th><th scope="col">Favorites</th><th scope="col">Sync state</th><th scope="col">Sync progress</th><th scope="col">Last successful sync</th></tr></thead>
+            <thead><tr><th scope="col">Category</th><th scope="col">Favorites</th><th scope="col">Sync state</th><th scope="col">Sync progress</th><th scope="col">Last successful sync</th><th scope="col">Downloads</th></tr></thead>
             <tbody>{status.categories.map((item) => (
               <tr key={item.category}>
                 <th scope="row">{categoryName(item)}{item.name && <span className="collector-secondary">Category {item.category}</span>}</th>
@@ -99,6 +104,8 @@ export default function Favorites({ available, refreshKey }: { available: boolea
                   <span className="collector-secondary">{item.last_saved_at ? `Last save ${date(item.last_saved_at)}` : 'Awaiting first page'}</span>
                 </> : '—'}</td>
                 <td>{item.last_synced_at ? date(item.last_synced_at) : 'Never synced'}</td>
+                <td><button className="button" type="button" disabled={disabled || downloadCategory?.category === item.category}
+                  onClick={() => setDownloadCategory(item)}>Download missing…</button></td>
               </tr>
             ))}</tbody>
           </table>

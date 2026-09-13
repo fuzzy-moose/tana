@@ -155,6 +155,50 @@ func (q *Queries) DownloadBaselineState(ctx context.Context) (string, error) {
 	return baseline_state, err
 }
 
+const downloadCandidates = `-- name: DownloadCandidates :many
+SELECT f.gallery_id, f.token, CAST(coalesce(d.state, '') AS TEXT) AS state
+FROM favorites f
+JOIN favorite_categories c ON c.id = f.category_id
+LEFT JOIN panda_downloads d ON d.gallery_id = f.gallery_id
+WHERE c.host = ? AND c.account_key = ? AND c.category = ?
+ORDER BY f.gallery_id
+`
+
+type DownloadCandidatesParams struct {
+	Host       string
+	AccountKey string
+	Category   int64
+}
+
+type DownloadCandidatesRow struct {
+	GalleryID int64
+	Token     string
+	State     string
+}
+
+func (q *Queries) DownloadCandidates(ctx context.Context, arg DownloadCandidatesParams) ([]DownloadCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, downloadCandidates, arg.Host, arg.AccountKey, arg.Category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DownloadCandidatesRow{}
+	for rows.Next() {
+		var i DownloadCandidatesRow
+		if err := rows.Scan(&i.GalleryID, &i.Token, &i.State); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const downloadCategories = `-- name: DownloadCategories :many
 SELECT category FROM favorite_download_categories ORDER BY category
 `

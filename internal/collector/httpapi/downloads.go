@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collector/downloads"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
@@ -28,6 +29,31 @@ func HandleSubmitDownload(service *downloads.Service) http.Handler {
 		}
 		w.Header().Set("Location", "/api/downloads/"+strconv.FormatInt(job.GalleryID, 10))
 		server.WriteJSON(w, http.StatusAccepted, job)
+	})
+}
+
+func HandleSubmitDownloadBatch(service *downloads.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			References []panda.GalleryRef `json:"references"`
+		}
+		if !server.DecodeJSONLimit(w, r, &input, collectorapi.MaxDownloadBatchBytes) {
+			return
+		}
+		if input.References == nil {
+			downloadError(w, r, downloads.ErrInvalidReference)
+			return
+		}
+		// The complete request is received before admission starts. Its transaction
+		// survives a disconnect, with a deadline bounding collector-owned work.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+		defer cancel()
+		result, err := service.SubmitBatch(ctx, input.References)
+		if err != nil {
+			downloadError(w, r, err)
+			return
+		}
+		server.WriteJSON(w, http.StatusAccepted, result)
 	})
 }
 

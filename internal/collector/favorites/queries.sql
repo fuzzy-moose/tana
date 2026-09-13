@@ -15,6 +15,14 @@ RETURNING id;
 -- name: KnownFavorites :many
 SELECT gallery_id, committed_added_at FROM favorites WHERE category_id = ? AND committed_added_at IS NOT NULL;
 
+-- name: DownloadCandidates :many
+SELECT f.gallery_id, f.token, CAST(coalesce(d.state, '') AS TEXT) AS state
+FROM favorites f
+JOIN favorite_categories c ON c.id = f.category_id
+LEFT JOIN panda_downloads d ON d.gallery_id = f.gallery_id
+WHERE c.host = ? AND c.account_key = ? AND c.category = ?
+ORDER BY f.gallery_id;
+
 -- name: ReconcileFavorites :exec
 DELETE FROM favorites WHERE favorites.category_id = sqlc.arg(category_id) AND gallery_id NOT IN
     (SELECT gallery_id FROM favorite_sync_seen WHERE favorite_sync_seen.category_id = sqlc.arg(category_id));

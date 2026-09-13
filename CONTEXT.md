@@ -75,7 +75,7 @@ A gallery first observed as a favorite after the baseline is established, regard
 A favorite category configured to trigger collector downloads for new Panda favorites discovered during a manually started collection run. Enabling a category does not make previously observed favorites eligible.
 
 **Missing Panda favorite**:
-A Panda favorite with no corresponding source in the local Tana library. A download retained by the collector does not make the favorite locally present.
+A Panda favorite with no cataloged source for the same Panda gallery ID across any registered Tana library, including temporarily unavailable libraries. A source for a different gallery version or an archive retained by the collector does not make the favorite locally present.
 
 **Panda download job**:
 A durable request for the collector to obtain an upstream Panda gallery's original archive, identified by gallery ID. Repeated requests reuse the existing job or retained archive; failed jobs require explicit retry after bounded automatic retries are exhausted.

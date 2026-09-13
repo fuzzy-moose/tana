@@ -6,8 +6,28 @@ import (
 	"strconv"
 
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
+
+func HandleFavoriteDownloadCandidates(service *favorites.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		category, err := strconv.Atoi(r.PathValue("category"))
+		if err != nil || category < 0 || category > 9 {
+			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_category"})
+			return
+		}
+		result, err := service.DownloadCandidates(r.Context(), category)
+		if err != nil {
+			server.GetHTTPContext(r).Err = err
+			server.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, struct {
+			Favorites []collectorapi.FavoriteDownloadCandidate `json:"favorites"`
+		}{result})
+	})
+}
 
 func HandleSyncFavorites(service *favorites.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

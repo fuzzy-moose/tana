@@ -114,6 +114,7 @@ test('preserves favorites through connection failures, disables syncing, and rec
   expect(await screen.findByText(/stale/i)).toBeTruthy()
   expect(screen.getByText('42 collected favorites')).toBeTruthy()
   expect((screen.getByRole('button', { name: 'Sync favorites' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getAllByRole('button', { name: 'Download missing…' }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true)
   expect(screen.getByText('Unreachable')).toBeTruthy()
   result = connected()
   await user.click(screen.getByRole('button', { name: 'Refresh' }))

@@ -50,7 +50,7 @@ func (q *Queries) DeleteDownload(ctx context.Context, galleryID int64) error {
 	return err
 }
 
-const enqueueDownload = `-- name: EnqueueDownload :exec
+const enqueueDownload = `-- name: EnqueueDownload :execrows
 INSERT INTO panda_downloads (gallery_id, token, state, created_at, updated_at)
 VALUES (?, ?, 'queued', ?, ?) ON CONFLICT (gallery_id) DO NOTHING
 `
@@ -62,14 +62,17 @@ type EnqueueDownloadParams struct {
 	UpdatedAt int64
 }
 
-func (q *Queries) EnqueueDownload(ctx context.Context, arg EnqueueDownloadParams) error {
-	_, err := q.db.ExecContext(ctx, enqueueDownload,
+func (q *Queries) EnqueueDownload(ctx context.Context, arg EnqueueDownloadParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, enqueueDownload,
 		arg.GalleryID,
 		arg.Token,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getDownload = `-- name: GetDownload :one

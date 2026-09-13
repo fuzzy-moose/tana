@@ -1,3 +1,12 @@
+export class APIError extends Error {
+  readonly code?: string
+
+  constructor(message: string, code?: string) {
+    super(message)
+    this.code = code
+  }
+}
+
 export async function request<T>(path: string, init: RequestInit = {}, messages: Record<string, string> = {}): Promise<T> {
   let response: Response
   try {
@@ -12,7 +21,7 @@ export async function request<T>(path: string, init: RequestInit = {}, messages:
 
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    throw new Error(messages[body?.error] ?? `Tana could not complete the request (${response.status}). Try again.`)
+    throw new APIError(messages[body?.error] ?? `Tana could not complete the request (${response.status}). Try again.`, body?.error)
   }
   if (response.status === 204) return undefined as T
   try {

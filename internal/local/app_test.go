@@ -196,6 +196,9 @@ func TestOptionalCollectorConfiguration(t *testing.T) {
 			if (app.Cleanup != nil) != enabled {
 				t.Error("source cleanup must follow collector configuration")
 			}
+			if (app.FavoriteDownloads != nil) != enabled {
+				t.Error("missing favorite downloads must follow collector configuration")
+			}
 			app.Close()
 		}
 		if (err != nil) != tt.invalid || enabled != tt.enabled {

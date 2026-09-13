@@ -12,7 +12,7 @@ import './Collector.css'
 const pages: { page: CollectorPage, label: string, description: string }[] = [
   { page: 'overview', label: 'Overview', description: 'Follow collection inventory and Panda diagnostics.' },
   { page: 'downloads', label: 'Downloads', description: 'Manage queued downloads and archives retained on the collector.' },
-  { page: 'favorites', label: 'Favorites', description: 'Sync Panda favorites and choose categories for automatic downloads.' },
+  { page: 'favorites', label: 'Favorites', description: 'Sync Panda favorites, download missing favorites, and choose categories for automatic downloads.' },
   { page: 'sitemap', label: 'Sitemap', description: 'Collect Panda gallery references from sitemaps.' },
   { page: 'feeds', label: 'Raw feeds', description: 'Inspect feed processing errors and download captured feeds for local analysis.' },
   { page: 'imports', label: 'Reference imports', description: 'Import Panda gallery references and follow their progress.' },

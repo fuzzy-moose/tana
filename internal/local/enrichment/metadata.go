@@ -3,9 +3,6 @@ package enrichment
 import (
 	"fmt"
 	"html"
-	"path"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/fuzzy-moose/tana/internal/local/metadata"
@@ -14,22 +11,8 @@ import (
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
-var candidateSuffix = regexp.MustCompile(`\[([0-9]+)]$`)
-
 func candidateID(name string, kind source.Kind) int64 {
-	name = path.Base(name)
-	if kind == source.Archive {
-		name = strings.TrimSuffix(name, path.Ext(name))
-	}
-	match := candidateSuffix.FindStringSubmatch(name)
-	if match == nil {
-		return 0
-	}
-	id, err := strconv.ParseInt(match[1], 10, 64)
-	if err != nil || id <= 0 {
-		return 0
-	}
-	return id
+	return source.PandaCandidateID(name, kind)
 }
 
 func metadataValues(value panda.Metadata) (metadata.Values, []error) {
