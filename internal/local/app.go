@@ -16,6 +16,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/local/favoritedownloads"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/refresh"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
@@ -24,6 +25,7 @@ type App struct {
 	Logger            *slog.Logger
 	Libraries         *library.Service
 	Scans             *scan.Service
+	Refresh           *refresh.Service
 	Galleries         *gallery.SQLiteRepository
 	Web               fs.FS
 	Collector         *collectorapi.Client
@@ -89,6 +91,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		Logger:            logger,
 		Libraries:         libraries,
 		Scans:             scans,
+		Refresh:           refresh.New(db, os.DirFS),
 		Galleries:         gallery.NewSQLiteRepository(db),
 		Web:               web,
 		Collector:         collectorClient,

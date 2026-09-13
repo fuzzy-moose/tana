@@ -17,6 +17,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/local"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
 	"github.com/fuzzy-moose/tana/internal/local/library"
+	"github.com/fuzzy-moose/tana/internal/local/refresh"
 	"github.com/fuzzy-moose/tana/internal/local/scan"
 	"github.com/fuzzy-moose/tana/internal/local/storage"
 )
@@ -45,6 +46,7 @@ func testHandlerWithScanFS(t *testing.T, dirFS func(string) fs.FS) http.Handler 
 		Logger:    logger,
 		Libraries: libraries,
 		Scans:     scans,
+		Refresh:   refresh.New(db, dirFS),
 		Galleries: gallery.NewSQLiteRepository(db),
 	})
 }

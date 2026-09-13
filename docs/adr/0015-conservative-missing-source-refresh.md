@@ -1,0 +1,3 @@
+# Conservative missing-source refresh
+
+Library refresh removes catalog entries only for missing source paths, preserving entries when storage is unavailable or absence is uncertain. A readable library root does not establish that its storage is connected, so refresh blocks removal for a library when every cataloged source appears missing; this deliberately prevents cleanup even after intentional deletion of all its sources, to protect gallery metadata and reading progress from mistaken removal during storage outages. Eligible removals require a preview and explicit confirmation and follow the existing source deletion lifecycle; renamed or moved sources receive no identity preservation when their old entries are removed and their new paths are later scanned.

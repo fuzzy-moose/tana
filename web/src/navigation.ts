@@ -11,6 +11,7 @@ export type Route =
   | { kind: 'galleries', search: string, page: number }
   | { kind: 'panda', search: string, page: number, includeExpunged: boolean }
   | { kind: 'libraries' | 'source-cleanup' | 'not-found' }
+  | { kind: 'library-refresh', libraryID?: number }
   | { kind: 'collector', page: CollectorPage }
   | { kind: 'detail', id: number, page: number }
   | { kind: 'reader', id: number, page: number, lastPage?: number }
@@ -25,6 +26,12 @@ export function useRoute(): Route {
   if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', page, includeExpunged: params.get('include_expunged') === 'true' }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
   if (path === '/libraries/source-cleanup') return { kind: 'source-cleanup' }
+  if (path === '/libraries/refresh') return { kind: 'library-refresh' }
+  const refresh = path.match(/^\/libraries\/(\d+)\/refresh$/)
+  if (refresh) {
+    const libraryID = Number(refresh[1])
+    return Number.isSafeInteger(libraryID) && libraryID > 0 ? { kind: 'library-refresh', libraryID } : { kind: 'not-found' }
+  }
   if (path === '/collector') return { kind: 'collector', page: 'overview' }
   const collector = path.match(/^\/collector\/(downloads|favorites|sitemap|imports|proxies|feeds)$/)
   if (collector) return { kind: 'collector', page: collector[1] as CollectorPage }

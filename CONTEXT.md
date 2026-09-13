@@ -19,6 +19,9 @@ A `.cbz` or `.zip` archive, or a directory containing files and no subdirectorie
 **Scan**:
 Discovery of new sources in one or all registered libraries, followed by their import and automatic gallery creation where supported images exist.
 
+**Library refresh**:
+Removal of cataloged sources whose archives or directories are confirmed absent, preserving entries when storage is unavailable or absence is uncertain. Discovery of new sources and updates to existing source contents are outside its scope.
+
 **Import**:
 Registration of a source and its complete file inventory in the catalog. File contents remain at their existing locations.
 

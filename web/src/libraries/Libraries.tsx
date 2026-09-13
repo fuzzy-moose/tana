@@ -136,7 +136,8 @@ export default function Libraries() {
         <div className="button-group">
           <a className="button" href="#/libraries/source-cleanup">Clean up older versions</a>
           <button className="button" type="button" disabled={locked || scan.disabled || libraries.length === 0} onClick={() => void scan.start()}>Scan all</button>
-          <button className="button" type="button" disabled={locked} onClick={refreshLibraries}>Refresh</button>
+          <a className="button" href="#/libraries/refresh">Refresh all</a>
+          <button className="button" type="button" disabled={locked} onClick={refreshLibraries}>Reload list</button>
           <button ref={addButton} className="button button-primary" type="button" disabled={locked} onClick={(event) => openEditor({ type: 'add' }, event.currentTarget)}>Add library</button>
         </div>
       </div>
@@ -176,6 +177,7 @@ export default function Libraries() {
               </div>
               <div className="button-group" aria-label={`Actions for ${library.name}`}>
                 <button className="button" type="button" disabled={locked || scan.disabled} onClick={() => void scan.start(library.id)}>Scan</button>
+                <a className="button" href={`#/libraries/${library.id}/refresh`}>Refresh</a>
                 <button className="button" type="button" disabled={locked} onClick={() => void check(library)}>{busy === library.id && !editor ? 'Checking…' : 'Check availability'}</button>
                 <button className="button" type="button" disabled={locked} onClick={(event) => openEditor({ type: 'rename', library }, event.currentTarget)}>Rename</button>
                 <button className="button" type="button" disabled={locked} onClick={(event) => openEditor({ type: 'remove', library }, event.currentTarget)}>Remove</button>
