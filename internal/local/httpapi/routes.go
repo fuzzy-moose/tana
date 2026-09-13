@@ -22,6 +22,8 @@ func NewHandler(app *local.App) http.Handler {
 	mux.Handle("DELETE /api/collector/metadata/proxies/channels/{id}", proxies)
 	mux.Handle("GET /api/collector/catalog", HandleCollectorCatalog(app.Collector))
 	mux.Handle("GET /api/collector/catalog/completions", HandleCollectorCatalogCompletions(app.Collector))
+	mux.Handle("POST /api/collector/catalog/lookup", HandleCollectorGalleryLookup(app.Collector))
+	mux.Handle("GET /api/collector/metadata/fetches/{id}", HandleCollectorMetadataFetch(app.Collector))
 	mux.Handle("GET /api/collector/feed/status", HandleCollectorFeed(app.Collector))
 	mux.Handle("POST /api/collector/feed/refresh", HandleCollectorFeed(app.Collector))
 	mux.Handle("GET /api/collector/feed/captures", HandleCollectorFeedCaptures(app.Collector))

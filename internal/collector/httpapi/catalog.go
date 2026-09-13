@@ -61,6 +61,8 @@ func HandleCompleteCatalog(service *catalog.Service) http.Handler {
 
 func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, catalog.ErrInvalidGalleryReference):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_gallery_reference"})
 	case errors.Is(err, catalog.ErrInvalidQuery):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_query"})
 	case errors.Is(err, catalog.ErrInvalidPagination):

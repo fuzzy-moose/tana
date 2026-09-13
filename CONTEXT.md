@@ -47,6 +47,9 @@ _Avoid_: Connector
 **Panda gallery reference**:
 An upstream Panda gallery's ID together with the token needed to access it. The gallery ID alone determines identity; a gallery's token is assumed immutable.
 
+**Panda gallery lookup**:
+A lookup of collected Panda data by a manually supplied upstream gallery ID or Panda URL, independent of local galleries. Known references supply a token and Panda site link even without collected metadata; a pasted URL can supply a missing reference for validation and collection.
+
 **Panda gallery candidate**:
 A possible upstream Panda gallery ID inferred from a source's name. It may be unrelated to that source and does not supply an access token.
 

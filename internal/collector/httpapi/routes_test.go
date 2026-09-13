@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/collector"
+	"github.com/fuzzy-moose/tana/internal/collector/catalog"
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
@@ -124,7 +125,7 @@ func pausedHandler(t *testing.T) (http.Handler, *sql.DB) {
 	logger := slog.New(slog.DiscardHandler)
 	service := metadata.New(ctx, db, nil, logger)
 	t.Cleanup(service.Close)
-	return NewHandler(&collector.App{Logger: logger, Metadata: service, APIToken: "test-token"}), db
+	return NewHandler(&collector.App{Logger: logger, Catalog: catalog.New(db, "https://favorites.example.test"), Metadata: service, APIToken: "test-token"}), db
 }
 
 func apiRequest(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {

@@ -54,3 +54,23 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+.panda-lookup {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.panda-lookup form { display: grid; gap: 6px; }
+.panda-lookup .text-input { flex: 1; min-width: 0; }
+.panda-lookup p { margin-top: 8px; overflow-wrap: anywhere; }
+.panda-lookup a { color: var(--accent); }
+.panda-lookup-result { max-height: 30dvh; overflow-y: auto; }
+.panda-metadata { margin: 10px 0 0; }
+.panda-metadata > div { display: grid; grid-template-columns: minmax(100px, 160px) minmax(0, 1fr); gap: 12px; padding: 5px 0; }
+.panda-metadata dt { color: var(--muted); }
+.panda-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.panda-metadata pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

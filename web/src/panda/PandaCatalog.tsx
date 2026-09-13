@@ -7,6 +7,7 @@ import Pagination from '../pagination/Pagination'
 import { completePandaSearch, listPandaCatalog } from './api'
 import type { PandaCatalogResult } from './api'
 import PandaCard from './PandaCard'
+import PandaLookup from './PandaLookup'
 import { usePandaCollection } from './usePandaCollection'
 import '../galleries/Galleries.css'
 import './PandaCatalog.css'
@@ -74,6 +75,8 @@ export default function PandaCatalog({ search, page, includeExpunged }: PandaCat
       </div>
       <GallerySearch key={search} search={search} completeSearch={completePandaSearch} searchHref={pageHref} />
     </div>
+
+    <PandaLookup />
 
     <div className="panda-controls">
       <label><input type="checkbox" checked={includeExpunged} onChange={(event) => { window.location.hash = pandaListingLink(search, 1, event.target.checked) }} />Include expunged</label>

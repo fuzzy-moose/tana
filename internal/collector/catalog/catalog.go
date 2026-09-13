@@ -5,13 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/gallerysearch"
+	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
 var ErrInvalidQuery = gallerysearch.ErrInvalidQuery
@@ -68,7 +67,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 			return result, err
 		}
 		item.PostedAt = time.Unix(posted, 0).UTC()
-		item.URL = s.galleryOrigin + "/g/" + strconv.FormatInt(item.GalleryID, 10) + "/" + url.PathEscape(token) + "/"
+		item.URL = s.GalleryURL(panda.GalleryRef{ID: item.GalleryID, Token: token})
 		result.Items = append(result.Items, item)
 	}
 	if err := rows.Err(); err != nil {

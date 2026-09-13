@@ -23,20 +23,8 @@ const (
 
 var ErrInvalidBatch = errors.New("invalid metadata batch")
 
-type FetchJob struct {
-	ID          string       `json:"id"`
-	Status      string       `json:"status"`
-	CreatedAt   time.Time    `json:"created_at"`
-	CompletedAt *time.Time   `json:"completed_at,omitempty"`
-	Entries     []FetchEntry `json:"entries"`
-}
-
-type FetchEntry struct {
-	GalleryID   int64      `json:"gid"`
-	Status      string     `json:"status"`
-	Error       string     `json:"error,omitempty"`
-	RefreshedAt *time.Time `json:"refreshed_at,omitempty"`
-}
+type FetchJob = collectorapi.MetadataFetchJob
+type FetchEntry = collectorapi.MetadataFetchEntry
 
 func validateIDs(ids []int64, limit int) error {
 	if len(ids) == 0 || len(ids) > limit {
