@@ -30,7 +30,7 @@ func TestArchiveTransferOmitsCookiesAndChecksResponse(t *testing.T) {
 			return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("archive"))}, nil
 		})})
 		var dest bytes.Buffer
-		_, err = client.Copy(t.Context(), u.String(), &dest)
+		_, err = client.Copy(t.Context(), u.String(), &dest, func(int64) error { return nil })
 		if status == 200 {
 			if err != nil || dest.String() != "archive" {
 				t.Fatalf("transfer: %s, %v", &dest, err)
@@ -50,7 +50,27 @@ func TestArchiveTransferRejectsExternalRedirect(t *testing.T) {
 		calls++
 		return &http.Response{StatusCode: 302, Header: http.Header{"Location": {"https://other.test/archive"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})})
-	if _, err := client.Copy(t.Context(), "https://node.hath.network/archive", io.Discard); err == nil || calls != 1 {
+	if _, err := client.Copy(t.Context(), "https://node.hath.network/archive", io.Discard, func(int64) error { return nil }); err == nil || calls != 1 {
 		t.Fatalf("redirect followed: %d, %v", calls, err)
+	}
+}
+
+func TestArchiveTransferChecksContentLengthBeforeCopying(t *testing.T) {
+	client := NewHTTPTransfer(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Header.Get("Accept-Encoding") != "identity" {
+			t.Error("content length might describe compressed data")
+		}
+		return &http.Response{StatusCode: 200, ContentLength: 7, Header: make(http.Header),
+			Body: io.NopCloser(strings.NewReader("archive"))}, nil
+	})})
+	var dest bytes.Buffer
+	_, err := client.Copy(t.Context(), "https://node.hath.network/archive", &dest, func(size int64) error {
+		if size != 7 || dest.Len() != 0 {
+			t.Fatalf("admission received size %d after writing %d bytes", size, dest.Len())
+		}
+		return errStoragePaused
+	})
+	if !errors.Is(err, errStoragePaused) || dest.Len() != 0 {
+		t.Fatalf("rejected archive body was copied: %d bytes, %v", dest.Len(), err)
 	}
 }

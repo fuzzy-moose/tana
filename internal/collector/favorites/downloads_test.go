@@ -161,7 +161,7 @@ func TestBootstrapWaitsForFreshTraversalAfterInFlightSync(t *testing.T) {
 
 func TestDownloadEligibilitySurvivesSettingsChangesAndDeletion(t *testing.T) {
 	s := testStore(t)
-	jobs, err := downloads.New(t.Context(), s.db, t.TempDir(), nil, nil, slog.New(slog.DiscardHandler))
+	jobs, err := downloads.New(t.Context(), s.db, t.TempDir(), nil, nil, slog.New(slog.DiscardHandler), downloads.StorageConfig{PauseBelowBytes: 1, ResumeAtBytes: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

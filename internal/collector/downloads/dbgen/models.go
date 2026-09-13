@@ -5,13 +5,21 @@
 package dbgen
 
 type PandaDownload struct {
-	GalleryID int64
-	Token     string
-	State     string
-	CreatedAt int64
-	UpdatedAt int64
-	RetryAt   int64
-	Failures  int64
-	SizeBytes int64
-	LastError string
+	GalleryID         int64
+	Token             string
+	State             string
+	CreatedAt         int64
+	UpdatedAt         int64
+	RetryAt           int64
+	Failures          int64
+	SizeBytes         int64
+	LastError         string
+	ExpectedSizeBytes int64
+}
+
+type PandaDownloadStorage struct {
+	ID           int64
+	Reason       string
+	ArchiveBytes int64
+	GalleryID    int64
 }

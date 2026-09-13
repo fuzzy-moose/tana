@@ -77,7 +77,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	downloadService, err := downloads.New(ctx, db, cfg.DownloadDir, authClient,
-		downloads.NewHTTPTransfer(nil), logger)
+		downloads.NewHTTPTransfer(nil), logger, cfg.DownloadStorage)
 	if err != nil {
 		db.Close()
 		return nil, err

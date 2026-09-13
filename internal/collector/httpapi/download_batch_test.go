@@ -37,7 +37,7 @@ func TestDownloadBatchReceivesCompleteBodyBeforeDurableAcceptance(t *testing.T) 
 	}
 	defer db.Close()
 	logger := slog.New(slog.DiscardHandler)
-	service, err := downloads.New(t.Context(), db, t.TempDir(), waitingArchiveClient{}, nil, logger)
+	service, err := downloads.New(t.Context(), db, t.TempDir(), waitingArchiveClient{}, nil, logger, downloads.StorageConfig{PauseBelowBytes: 1, ResumeAtBytes: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

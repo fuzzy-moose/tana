@@ -46,7 +46,7 @@ func TestLocalCollectorDownloads(t *testing.T) {
 	defer db.Close()
 	dir := t.TempDir()
 	logger := slog.New(slog.DiscardHandler)
-	service, err := downloads.New(t.Context(), db, dir, blockedArchive{}, nil, logger)
+	service, err := downloads.New(t.Context(), db, dir, blockedArchive{}, nil, logger, downloads.StorageConfig{PauseBelowBytes: 1, ResumeAtBytes: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +86,9 @@ func TestLocalCollectorDownloads(t *testing.T) {
 	var list collectorapi.DownloadList
 	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || w.Code != 200 || len(list.Jobs) != 1 || list.Jobs[0].GalleryID != 42 {
 		t.Fatalf("list: %d %s, %v", w.Code, w.Body, err)
+	}
+	if list.Storage == nil || list.Storage.AvailableBytes == nil || list.Storage.PauseBelowBytes != 1 || list.Storage.ResumeAtBytes != 2 {
+		t.Fatalf("download storage status lost in local proxy: %+v", list.Storage)
 	}
 	for _, tc := range []struct {
 		method, path, body string
@@ -168,7 +171,7 @@ func TestLocalCollectorDownloadFilteringAndGlobalCounts(t *testing.T) {
 	}
 	defer db.Close()
 	logger := slog.New(slog.DiscardHandler)
-	service, err := downloads.New(t.Context(), db, t.TempDir(), blockedArchive{}, nil, logger)
+	service, err := downloads.New(t.Context(), db, t.TempDir(), blockedArchive{}, nil, logger, downloads.StorageConfig{PauseBelowBytes: 1, ResumeAtBytes: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

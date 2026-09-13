@@ -31,24 +31,26 @@ type ArchiveClient interface {
 }
 
 type Job struct {
-	GalleryID int64      `json:"gallery_id"`
-	State     string     `json:"state"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	RetryAt   *time.Time `json:"retry_at,omitempty"`
-	Failures  int64      `json:"failures"`
-	SizeBytes int64      `json:"size_bytes"`
-	Error     string     `json:"error,omitempty"`
+	GalleryID         int64      `json:"gallery_id"`
+	State             string     `json:"state"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	RetryAt           *time.Time `json:"retry_at,omitempty"`
+	Failures          int64      `json:"failures"`
+	SizeBytes         int64      `json:"size_bytes"`
+	ExpectedSizeBytes int64      `json:"expected_size_bytes,omitempty"`
+	Error             string     `json:"error,omitempty"`
 }
 
 type ListResult struct {
-	Jobs   []Job            `json:"jobs"`
-	Counts map[string]int64 `json:"counts"`
+	Jobs    []Job            `json:"jobs"`
+	Counts  map[string]int64 `json:"counts"`
+	Storage StorageStatus    `json:"storage"`
 }
 
 func publicJob(row dbgen.PandaDownload) Job {
 	j := Job{GalleryID: row.GalleryID, State: row.State, CreatedAt: time.UnixMilli(row.CreatedAt),
-		UpdatedAt: time.UnixMilli(row.UpdatedAt), Failures: row.Failures, SizeBytes: row.SizeBytes, Error: row.LastError}
+		UpdatedAt: time.UnixMilli(row.UpdatedAt), Failures: row.Failures, SizeBytes: row.SizeBytes, ExpectedSizeBytes: row.ExpectedSizeBytes, Error: row.LastError}
 	if row.RetryAt != 0 {
 		at := time.UnixMilli(row.RetryAt)
 		j.RetryAt = &at
@@ -57,10 +59,11 @@ func publicJob(row dbgen.PandaDownload) Job {
 }
 
 type activeJob struct {
-	id     int64
-	cancel context.CancelFunc
-	done   chan struct{}
-	err    error
+	id            int64
+	cancel        context.CancelFunc
+	done          chan struct{}
+	err           error
+	expectedBytes int64
 }
 
 type Service struct {
@@ -75,11 +78,23 @@ type Service struct {
 	workers  sync.WaitGroup
 	wake     chan struct{}
 	// Serialize state changes and file publication with cancellation/deletion.
-	mu     sync.Mutex
-	active *activeJob
+	mu             sync.Mutex
+	active         *activeJob
+	storageConfig  StorageConfig
+	space          func(string) (int64, error)
+	storage        dbgen.PandaDownloadStorage
+	savedStorage   dbgen.PandaDownloadStorage
+	availableBytes *int64
 }
 
-func New(ctx context.Context, db *sql.DB, dir string, client ArchiveClient, transfer Transfer, logger *slog.Logger) (*Service, error) {
+func New(ctx context.Context, db *sql.DB, dir string, client ArchiveClient, transfer Transfer, logger *slog.Logger, cfg StorageConfig) (*Service, error) {
+	return newService(ctx, db, dir, client, transfer, logger, cfg, availableSpace)
+}
+
+func newService(ctx context.Context, db *sql.DB, dir string, client ArchiveClient, transfer Transfer, logger *slog.Logger, cfg StorageConfig, space func(string) (int64, error)) (*Service, error) {
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -89,7 +104,17 @@ func New(ctx context.Context, db *sql.DB, dir string, client ArchiveClient, tran
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Service{db: db, q: dbgen.New(db), dir: abs, client: client, transfer: transfer, logger: logger,
-		ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
+		ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), storageConfig: cfg, space: space}
+	s.storage, err = s.q.GetDownloadStorage(ctx)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	s.savedStorage = s.storage
+	if err := s.checkStorage(ctx, false); err != nil {
+		cancel()
+		return nil, err
+	}
 	if err := s.recover(ctx); err != nil {
 		cancel()
 		return nil, err
@@ -155,9 +180,11 @@ func (s *Service) Get(ctx context.Context, id int64) (Job, error) {
 }
 
 func (s *Service) List(ctx context.Context, state string, limit, offset int64) (ListResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	result := ListResult{Jobs: []Job{}, Counts: map[string]int64{
 		"queued": 0, "running": 0, "completed": 0, "failed": 0, "cancelled": 0, "deleting": 0,
-	}}
+	}, Storage: s.storageStatus()}
 	if _, valid := result.Counts[state]; state != "" && !valid {
 		return result, ErrInvalidState
 	}
@@ -236,7 +263,10 @@ func (s *Service) Cancel(ctx context.Context, id int64) (Job, error) {
 			return Job{}, ctx.Err()
 		}
 	} else {
-		err = removeFile(s.path(id) + ".part")
+		err = s.removePartial(ctx, id, row.ExpectedSizeBytes)
+		if err == nil {
+			err = s.releaseArchive(ctx, id)
+		}
 		s.mu.Unlock()
 		if err != nil {
 			return Job{}, err
@@ -264,7 +294,10 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	if err := removeFile(s.path(id)); err != nil {
 		return err
 	}
-	if err := removeFile(s.path(id) + ".part"); err != nil {
+	if err := s.removePartial(ctx, id, row.ExpectedSizeBytes); err != nil {
+		return err
+	}
+	if err := s.releaseArchive(ctx, id); err != nil {
 		return err
 	}
 	if err := syncDirectory(s.dir); err != nil {
@@ -308,14 +341,22 @@ func syncDirectory(path string) error {
 // The rename can reach disk before the completion record. Recover that archive
 // instead of fetching it again; unfinished partial transfers restart from zero.
 func (s *Service) recover(ctx context.Context) error {
+	if err := s.saveStorage(ctx); err != nil {
+		return err
+	}
 	rows, err := s.q.RecoverDownloads(ctx)
 	if err != nil {
 		return err
 	}
 	for _, row := range rows {
 		path := s.path(row.GalleryID)
-		if err := removeFile(path + ".part"); err != nil {
+		if err := s.removePartial(ctx, row.GalleryID, row.ExpectedSizeBytes); err != nil {
 			return err
+		}
+		if row.State == "cancelled" || row.State == "deleting" {
+			if err := s.releaseArchive(ctx, row.GalleryID); err != nil {
+				return err
+			}
 		}
 		switch row.State {
 		case "deleting":
@@ -343,6 +384,9 @@ func (s *Service) recover(ctx context.Context) error {
 						return err
 					}
 					row.State, row.SizeBytes = "completed", info.Size()
+					if err := s.releaseArchive(ctx, row.GalleryID); err != nil {
+						return err
+					}
 				}
 			} else if !errors.Is(err, os.ErrNotExist) {
 				return err
@@ -368,16 +412,27 @@ func (s *Service) wait() {
 func (s *Service) run() {
 	for s.ctx.Err() == nil {
 		s.mu.Lock()
-		row, err := s.q.NextDownload(s.ctx, time.Now().UnixMilli())
+		err := s.checkStorage(s.ctx, true)
+		var row dbgen.PandaDownload
+		if err == nil {
+			if s.storage.Reason != "" {
+				err = errStoragePaused
+			} else {
+				row, err = s.q.NextDownload(s.ctx, time.Now().UnixMilli())
+			}
+		}
 		var ctx context.Context
 		var active *activeJob
+		if err == nil {
+			err = s.admitArchive(s.ctx, row.GalleryID, row.ExpectedSizeBytes)
+		}
 		if err == nil {
 			row.State = "running"
 			err = s.update(s.ctx, row)
 			if err == nil {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(s.ctx)
-				active = &activeJob{id: row.GalleryID, cancel: cancel, done: make(chan struct{})}
+				active = &activeJob{id: row.GalleryID, cancel: cancel, done: make(chan struct{}), expectedBytes: row.ExpectedSizeBytes}
 				s.active = active
 			}
 		}
@@ -385,7 +440,7 @@ func (s *Service) run() {
 		if err == nil {
 			err = s.execute(ctx, row, active)
 		}
-		if err != nil && !errors.Is(err, sql.ErrNoRows) && s.ctx.Err() == nil {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) && !errors.Is(err, errStoragePaused) && s.ctx.Err() == nil {
 			s.logger.Error("download_storage_failed", "error", err)
 			for s.ctx.Err() == nil {
 				s.wait()
@@ -412,12 +467,39 @@ func (s *Service) execute(ctx context.Context, row dbgen.PandaDownload, active *
 		s.mu.Unlock()
 	}()
 	path := s.path(row.GalleryID)
+	stopMonitor, monitorDone := make(chan struct{}), make(chan struct{})
+	go s.monitorStorage(ctx, stopMonitor, monitorDone)
 	size, cause := s.fetch(ctx, row, path+".part")
+	close(stopMonitor)
+	<-monitorDone
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.ctx.Err() == nil {
+		if err := s.checkStorage(s.ctx, false); err != nil {
+			return err
+		}
+	}
+	if s.storage.Reason != "" {
+		// Persist the full-size recovery requirement before removing any partial.
+		if err := s.saveStorage(s.ctx); err != nil {
+			return err
+		}
+		if err := s.removePartial(s.ctx, row.GalleryID, active.expectedBytes); err != nil {
+			return err
+		}
+		current, err := s.q.GetDownload(s.ctx, row.GalleryID)
+		if err != nil {
+			return err
+		}
+		if current.State == "running" {
+			current.State, current.RetryAt, current.LastError = "queued", 0, ""
+			return s.update(s.ctx, current)
+		}
+		return s.releaseArchive(s.ctx, row.GalleryID)
+	}
 	// Cancel may have committed while the network request was in progress.
 	if ctx.Err() != nil {
-		return removeFile(path + ".part")
+		return s.removePartial(s.ctx, row.GalleryID, active.expectedBytes)
 	}
 	if cause == nil {
 		cause = os.Rename(path+".part", path)
@@ -429,7 +511,7 @@ func (s *Service) execute(ctx context.Context, row dbgen.PandaDownload, active *
 			return s.update(s.ctx, row)
 		}
 	}
-	if err := removeFile(path + ".part"); err != nil {
+	if err := s.removePartial(s.ctx, row.GalleryID, active.expectedBytes); err != nil {
 		return err
 	}
 	row.State, row.LastError, row.RetryAt = "failed", failureCode(cause), 0
@@ -457,7 +539,21 @@ func (s *Service) fetch(ctx context.Context, row dbgen.PandaDownload, path strin
 	if err != nil {
 		return 0, err
 	}
-	size, err := s.transfer.Copy(ctx, address, file)
+	size, err := s.transfer.Copy(ctx, address, file, func(bytes int64) error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		bytes = max(0, bytes)
+		if err := s.q.SetDownloadExpectedSize(s.ctx, dbgen.SetDownloadExpectedSizeParams{
+			GalleryID: row.GalleryID, ExpectedSizeBytes: bytes, UpdatedAt: time.Now().UnixMilli(),
+		}); err != nil {
+			return err
+		}
+		s.active.expectedBytes = bytes
+		return s.admitArchive(s.ctx, row.GalleryID, bytes)
+	})
 	if err == nil {
 		err = file.Sync()
 	}

@@ -9,11 +9,20 @@ export interface DownloadJob {
   retry_at?: string
   failures: number
   size_bytes: number
+  expected_size_bytes?: number
   error?: string
 }
 
 export type DownloadFilter = DownloadJob['state'] | ''
 export type DownloadCounts = Record<DownloadJob['state'], number>
+
+export interface DownloadStorage {
+  paused: boolean
+  reason?: string
+  available_bytes: number | null
+  pause_below_bytes: number
+  resume_at_bytes: number
+}
 
 export const downloadMessages: Record<string, string> = {
   ...collectorMessages,
@@ -41,7 +50,7 @@ export function parseGalleryURL(value: string): { gid: number, token: string } {
 
 const base = '/api/collector/downloads'
 export const downloadPageSize = 25
-export const listDownloads = (offset: number, signal: AbortSignal, state: DownloadFilter = '') => request<{ jobs: DownloadJob[], counts: DownloadCounts }>(
+export const listDownloads = (offset: number, signal: AbortSignal, state: DownloadFilter = '') => request<{ jobs: DownloadJob[], counts: DownloadCounts, storage?: DownloadStorage }>(
   `${base}?limit=${downloadPageSize + 1}&offset=${offset}${state ? `&state=${state}` : ''}`, { signal }, downloadMessages,
 )
 export const submitDownload = (ref: { gid: number, token: string }, signal: AbortSignal) => request<DownloadJob>(base, {

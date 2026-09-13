@@ -42,7 +42,7 @@ func TestDownloadsAPI(t *testing.T) {
 	defer db.Close()
 	dir := t.TempDir()
 	logger := slog.New(slog.DiscardHandler)
-	service, err := downloads.New(t.Context(), db, dir, waitingArchiveClient{}, nil, logger)
+	service, err := downloads.New(t.Context(), db, dir, waitingArchiveClient{}, nil, logger, downloads.StorageConfig{PauseBelowBytes: 1, ResumeAtBytes: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

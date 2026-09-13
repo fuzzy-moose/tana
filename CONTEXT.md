@@ -92,6 +92,9 @@ A completed original archive owned and stored by the collector across restarts u
 **Cancelled Panda download job**:
 A Panda download job stopped by explicit request, with its partial archive removed. The job remains available for explicit retry.
 
+**Panda download storage pause**:
+A temporary suspension of new and active Panda downloads because available storage is low. Downloads resume automatically once free space reaches a higher recovery threshold.
+
 **Panda library delivery**:
 A user-requested transfer of a retained Panda archive into a selected Tana library, complete when the archive is safely saved and imported and its collector copy has been removed.
 

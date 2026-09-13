@@ -26,3 +26,12 @@ UPDATE panda_downloads SET state = ?, updated_at = ?, retry_at = ?, failures = ?
 
 -- name: DeleteDownload :exec
 DELETE FROM panda_downloads WHERE gallery_id = ?;
+
+-- name: GetDownloadStorage :one
+SELECT * FROM panda_download_storage WHERE id = 1;
+
+-- name: UpdateDownloadStorage :exec
+UPDATE panda_download_storage SET reason = ?, archive_bytes = ?, gallery_id = ? WHERE id = 1;
+
+-- name: SetDownloadExpectedSize :exec
+UPDATE panda_downloads SET expected_size_bytes = ?, updated_at = ? WHERE gallery_id = ?;

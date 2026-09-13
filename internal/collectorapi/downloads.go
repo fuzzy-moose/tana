@@ -15,19 +15,29 @@ import (
 )
 
 type DownloadJob struct {
-	GalleryID int64      `json:"gallery_id"`
-	State     string     `json:"state"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	RetryAt   *time.Time `json:"retry_at,omitempty"`
-	Failures  int64      `json:"failures"`
-	SizeBytes int64      `json:"size_bytes"`
-	Error     string     `json:"error,omitempty"`
+	GalleryID         int64      `json:"gallery_id"`
+	State             string     `json:"state"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	RetryAt           *time.Time `json:"retry_at,omitempty"`
+	Failures          int64      `json:"failures"`
+	SizeBytes         int64      `json:"size_bytes"`
+	ExpectedSizeBytes int64      `json:"expected_size_bytes,omitempty"`
+	Error             string     `json:"error,omitempty"`
 }
 
 type DownloadList struct {
-	Jobs   []DownloadJob    `json:"jobs"`
-	Counts map[string]int64 `json:"counts"`
+	Jobs    []DownloadJob    `json:"jobs"`
+	Counts  map[string]int64 `json:"counts"`
+	Storage *DownloadStorage `json:"storage,omitempty"`
+}
+
+type DownloadStorage struct {
+	Paused          bool   `json:"paused"`
+	Reason          string `json:"reason,omitempty"`
+	AvailableBytes  *int64 `json:"available_bytes"`
+	PauseBelowBytes int64  `json:"pause_below_bytes"`
+	ResumeAtBytes   int64  `json:"resume_at_bytes"`
 }
 
 func (c *Client) ListDownloads(ctx context.Context, state string, limit, offset int64) (DownloadList, error) {

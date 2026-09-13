@@ -16,7 +16,8 @@ var errExpiredURL = errors.New("archive URL expired")
 var errInvalidZIP = errors.New("invalid ZIP archive")
 
 type Transfer interface {
-	Copy(context.Context, string, io.Writer) (int64, error)
+	// Copy calls admit with the response size before writing any body bytes.
+	Copy(ctx context.Context, address string, dest io.Writer, admit func(int64) error) (int64, error)
 }
 
 type HTTPTransfer struct{ client *http.Client }
@@ -37,7 +38,7 @@ func NewHTTPTransfer(client *http.Client) *HTTPTransfer {
 	return &HTTPTransfer{client: &c}
 }
 
-func (t *HTTPTransfer) Copy(ctx context.Context, address string, dest io.Writer) (int64, error) {
+func (t *HTTPTransfer) Copy(ctx context.Context, address string, dest io.Writer, admit func(int64) error) (int64, error) {
 	u, err := url.Parse(address)
 	if err != nil || !panda.ValidArchiveURL(u) {
 		return 0, panda.ErrArchivePage
@@ -47,6 +48,7 @@ func (t *HTTPTransfer) Copy(ctx context.Context, address string, dest io.Writer)
 		return 0, err
 	}
 	req.Header.Set("User-Agent", "Tana")
+	req.Header.Set("Accept-Encoding", "identity")
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return 0, err
@@ -58,6 +60,9 @@ func (t *HTTPTransfer) Copy(ctx context.Context, address string, dest io.Writer)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return 0, &panda.HTTPError{StatusCode: resp.StatusCode, RetryAfter: resp.Header.Get("Retry-After")}
+	}
+	if err := admit(resp.ContentLength); err != nil {
+		return 0, err
 	}
 	return io.Copy(dest, resp.Body)
 }

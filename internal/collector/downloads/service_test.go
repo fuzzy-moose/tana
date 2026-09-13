@@ -26,7 +26,10 @@ func (f archiveFunc) GetArchiveURL(ctx context.Context, ref panda.GalleryRef) (s
 
 type transferFunc func(context.Context, string, io.Writer) (int64, error)
 
-func (f transferFunc) Copy(ctx context.Context, url string, w io.Writer) (int64, error) {
+func (f transferFunc) Copy(ctx context.Context, url string, w io.Writer, admit func(int64) error) (int64, error) {
+	if err := admit(-1); err != nil {
+		return 0, err
+	}
 	return f(ctx, url, w)
 }
 
@@ -59,7 +62,7 @@ func openDB(t *testing.T, dir string) *sql.DB {
 
 func startService(t *testing.T, db *sql.DB, dir string, client ArchiveClient, transfer Transfer) *Service {
 	t.Helper()
-	s, err := New(t.Context(), db, dir, client, transfer, slog.New(slog.DiscardHandler))
+	s, err := New(t.Context(), db, dir, client, transfer, slog.New(slog.DiscardHandler), StorageConfig{PauseBelowBytes: 1, ResumeAtBytes: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

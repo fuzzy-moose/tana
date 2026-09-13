@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { changeDownload, downloadPageSize, downloadState, listDownloads, parseGalleryURL, submitDownload } from './downloads'
-import type { DownloadCounts, DownloadFilter, DownloadJob } from './downloads'
+import type { DownloadCounts, DownloadFilter, DownloadJob, DownloadStorage } from './downloads'
 
 export function useDownloads(available: boolean, refreshKey: number) {
-  const [snapshot, setSnapshot] = useState<{ jobs: DownloadJob[], counts: DownloadCounts, offset: number, filter: DownloadFilter } | null>(null)
+  const [snapshot, setSnapshot] = useState<{ jobs: DownloadJob[], counts: DownloadCounts, storage?: DownloadStorage, offset: number, filter: DownloadFilter } | null>(null)
   const [offset, setOffset] = useState(0)
   const [filter, setFilter] = useState<DownloadFilter>('')
   const [checking, setChecking] = useState(true)
@@ -29,7 +29,7 @@ export function useDownloads(available: boolean, refreshKey: number) {
           setOffset((value) => Math.max(0, value - downloadPageSize))
           return
         }
-        setSnapshot({ jobs: result.jobs, counts: result.counts, offset, filter })
+        setSnapshot({ jobs: result.jobs, counts: result.counts, storage: result.storage, offset, filter })
         setError('')
       } catch (error) {
         if (!controller.signal.aborted) setError((error as Error).message)
@@ -72,6 +72,7 @@ export function useDownloads(available: boolean, refreshKey: number) {
   return {
     jobs: current?.jobs.slice(0, downloadPageSize) ?? [],
     counts: snapshot?.counts,
+    storage: snapshot?.storage,
     filter,
     selectFilter: (value: DownloadFilter) => { setFilter(value); setOffset(0); setError('') },
     hasNext: (current?.jobs.length ?? 0) > downloadPageSize,

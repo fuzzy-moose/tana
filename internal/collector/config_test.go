@@ -24,6 +24,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.Server.Addr != "127.0.0.1:8081" || cfg.DataDir != dir || cfg.DownloadDir != filepath.Join(dir, "downloads") ||
+		cfg.DownloadStorage.PauseBelowBytes != 5<<30 || cfg.DownloadStorage.ResumeAtBytes != 10<<30 ||
 		cfg.APIToken != "test-token" || cfg.Feed.URL != env["PANDA_FEED_URL"] || cfg.Panda.APIURL != env["PANDA_API_URL"] ||
 		cfg.Sitemap.URL != env["TANA_COLLECTOR_SITEMAP_URL"] ||
 		cfg.AuthenticatedPanda.FavoritesURL != env["PANDA_FAVORITES_URL"] || cfg.AuthenticatedPanda.ArchiverURL != env["PANDA_ARCHIVER_URL"] {
@@ -31,11 +32,14 @@ func TestLoadConfig(t *testing.T) {
 	}
 	env["TANA_COLLECTOR_DOWNLOAD_DIR"] = filepath.Join(t.TempDir(), "archives")
 	env["TANA_COLLECTOR_PORT"] = "9001"
+	env["TANA_COLLECTOR_DOWNLOAD_PAUSE_BELOW_BYTES"] = "1024"
+	env["TANA_COLLECTOR_DOWNLOAD_RESUME_AT_BYTES"] = "2048"
 	cfg, err = LoadConfig(getenv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DownloadDir != env["TANA_COLLECTOR_DOWNLOAD_DIR"] || cfg.Server.Addr != "127.0.0.1:9001" {
+	if cfg.DownloadDir != env["TANA_COLLECTOR_DOWNLOAD_DIR"] || cfg.Server.Addr != "127.0.0.1:9001" ||
+		cfg.DownloadStorage.PauseBelowBytes != 1024 || cfg.DownloadStorage.ResumeAtBytes != 2048 {
 		t.Fatal("collector configuration ignored overrides")
 	}
 	for _, key := range []string{"TANA_COLLECTOR_API_TOKEN", "PANDA_FEED_URL"} {

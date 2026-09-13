@@ -76,7 +76,7 @@ func (q *Queries) EnqueueDownload(ctx context.Context, arg EnqueueDownloadParams
 }
 
 const getDownload = `-- name: GetDownload :one
-SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error FROM panda_downloads WHERE gallery_id = ?
+SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error, expected_size_bytes FROM panda_downloads WHERE gallery_id = ?
 `
 
 func (q *Queries) GetDownload(ctx context.Context, galleryID int64) (PandaDownload, error) {
@@ -92,12 +92,29 @@ func (q *Queries) GetDownload(ctx context.Context, galleryID int64) (PandaDownlo
 		&i.Failures,
 		&i.SizeBytes,
 		&i.LastError,
+		&i.ExpectedSizeBytes,
+	)
+	return i, err
+}
+
+const getDownloadStorage = `-- name: GetDownloadStorage :one
+SELECT id, reason, archive_bytes, gallery_id FROM panda_download_storage WHERE id = 1
+`
+
+func (q *Queries) GetDownloadStorage(ctx context.Context) (PandaDownloadStorage, error) {
+	row := q.db.QueryRowContext(ctx, getDownloadStorage)
+	var i PandaDownloadStorage
+	err := row.Scan(
+		&i.ID,
+		&i.Reason,
+		&i.ArchiveBytes,
+		&i.GalleryID,
 	)
 	return i, err
 }
 
 const listDownloads = `-- name: ListDownloads :many
-SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error FROM panda_downloads
+SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error, expected_size_bytes FROM panda_downloads
 WHERE CAST(?1 AS TEXT) = '' OR state = ?1
 ORDER BY created_at DESC, gallery_id DESC LIMIT ?3 OFFSET ?2
 `
@@ -127,6 +144,7 @@ func (q *Queries) ListDownloads(ctx context.Context, arg ListDownloadsParams) ([
 			&i.Failures,
 			&i.SizeBytes,
 			&i.LastError,
+			&i.ExpectedSizeBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -142,7 +160,7 @@ func (q *Queries) ListDownloads(ctx context.Context, arg ListDownloadsParams) ([
 }
 
 const nextDownload = `-- name: NextDownload :one
-SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error FROM panda_downloads WHERE state = 'queued' AND retry_at <= ?
+SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error, expected_size_bytes FROM panda_downloads WHERE state = 'queued' AND retry_at <= ?
 ORDER BY created_at, gallery_id LIMIT 1
 `
 
@@ -159,12 +177,13 @@ func (q *Queries) NextDownload(ctx context.Context, retryAt int64) (PandaDownloa
 		&i.Failures,
 		&i.SizeBytes,
 		&i.LastError,
+		&i.ExpectedSizeBytes,
 	)
 	return i, err
 }
 
 const recoverDownloads = `-- name: RecoverDownloads :many
-SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error FROM panda_downloads WHERE state IN ('running', 'cancelled', 'deleting')
+SELECT gallery_id, token, state, created_at, updated_at, retry_at, failures, size_bytes, last_error, expected_size_bytes FROM panda_downloads WHERE state IN ('running', 'cancelled', 'deleting')
 `
 
 func (q *Queries) RecoverDownloads(ctx context.Context) ([]PandaDownload, error) {
@@ -186,6 +205,7 @@ func (q *Queries) RecoverDownloads(ctx context.Context) ([]PandaDownload, error)
 			&i.Failures,
 			&i.SizeBytes,
 			&i.LastError,
+			&i.ExpectedSizeBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -198,6 +218,21 @@ func (q *Queries) RecoverDownloads(ctx context.Context) ([]PandaDownload, error)
 		return nil, err
 	}
 	return items, nil
+}
+
+const setDownloadExpectedSize = `-- name: SetDownloadExpectedSize :exec
+UPDATE panda_downloads SET expected_size_bytes = ?, updated_at = ? WHERE gallery_id = ?
+`
+
+type SetDownloadExpectedSizeParams struct {
+	ExpectedSizeBytes int64
+	UpdatedAt         int64
+	GalleryID         int64
+}
+
+func (q *Queries) SetDownloadExpectedSize(ctx context.Context, arg SetDownloadExpectedSizeParams) error {
+	_, err := q.db.ExecContext(ctx, setDownloadExpectedSize, arg.ExpectedSizeBytes, arg.UpdatedAt, arg.GalleryID)
+	return err
 }
 
 const updateDownload = `-- name: UpdateDownload :exec
@@ -225,5 +260,20 @@ func (q *Queries) UpdateDownload(ctx context.Context, arg UpdateDownloadParams) 
 		arg.LastError,
 		arg.GalleryID,
 	)
+	return err
+}
+
+const updateDownloadStorage = `-- name: UpdateDownloadStorage :exec
+UPDATE panda_download_storage SET reason = ?, archive_bytes = ?, gallery_id = ? WHERE id = 1
+`
+
+type UpdateDownloadStorageParams struct {
+	Reason       string
+	ArchiveBytes int64
+	GalleryID    int64
+}
+
+func (q *Queries) UpdateDownloadStorage(ctx context.Context, arg UpdateDownloadStorageParams) error {
+	_, err := q.db.ExecContext(ctx, updateDownloadStorage, arg.Reason, arg.ArchiveBytes, arg.GalleryID)
 	return err
 }

@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/fuzzy-moose/tana/internal/appdata"
+	"github.com/fuzzy-moose/tana/internal/collector/downloads"
 	"github.com/fuzzy-moose/tana/internal/collector/feed"
 	"github.com/fuzzy-moose/tana/internal/collector/sitemap"
 	"github.com/fuzzy-moose/tana/internal/panda"
@@ -17,6 +18,7 @@ type Config struct {
 	Server             server.Config
 	DataDir            string
 	DownloadDir        string
+	DownloadStorage    downloads.StorageConfig
 	APIToken           string
 	Feed               feed.Config
 	Sitemap            sitemap.Config
@@ -62,6 +64,10 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	cfg.DownloadDir, err = filepath.Abs(cfg.DownloadDir)
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve collector downloads: %w", err)
+	}
+	cfg.DownloadStorage, err = downloads.LoadStorageConfig(getenv)
+	if err != nil {
+		return Config{}, err
 	}
 	return cfg, nil
 }

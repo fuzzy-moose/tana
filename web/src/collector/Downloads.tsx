@@ -37,6 +37,7 @@ export default function Downloads({ available, refreshKey }: { available: boolea
   )))
   const filterLabel = filters.find((filter) => filter.state === downloads.filter)!.label
   const total = downloads.counts ? Object.values(downloads.counts).reduce((sum, count) => sum + count, 0) : undefined
+  const storage = downloads.storage
 
   return (
     <section className="collector-panel" aria-labelledby="downloads-title">
@@ -45,6 +46,13 @@ export default function Downloads({ available, refreshKey }: { available: boolea
         <button className="button" type="button" disabled={!available || downloads.checking || downloads.pending} onClick={downloads.refresh}>Refresh downloads</button>
       </div>
       <p>Download original Panda archives to the collector, then add completed downloads to a Tana library. Save ZIP copies an archive to your device and keeps the collector copy.</p>
+      {storage?.paused && <p className="collector-notice" role="status">
+        {storage.reason === 'space_check_failed'
+          ? 'Downloads paused: the collector cannot check available storage.'
+          : 'Downloads paused: collector storage is low.'}
+        {' '}{storage.available_bytes === null ? 'Free space unknown.' : `${size(storage.available_bytes)} free.`}
+        {' '}Downloads resume automatically at {size(storage.resume_at_bytes)} free. Completed downloads can still be added to a library.
+      </p>}
       <form className="collector-sync" onSubmit={async (event) => {
         event.preventDefault()
         if (await downloads.submit(url)) setURL('')
@@ -64,7 +72,7 @@ export default function Downloads({ available, refreshKey }: { available: boolea
           <strong>{(state ? downloads.counts?.[state] : total)?.toLocaleString() ?? '—'}</strong>
         </button>)}
       </div>
-      {downloads.filter === 'queued' && <p className="field-help">Pending downloads are queued or waiting for an automatic retry or Panda cooldown.</p>}
+      {downloads.filter === 'queued' && <p className="field-help">Pending downloads are queued or waiting for storage space, an automatic retry, or Panda cooldown.</p>}
       {downloads.notice && <p className="collector-notice" role="status">{downloads.notice}</p>}
       {downloads.requestError && <p className="error-message" role="alert">{downloads.requestError}</p>}
       {downloads.error && <p className="error-message" role="alert">{downloads.error}</p>}
@@ -84,7 +92,7 @@ export default function Downloads({ available, refreshKey }: { available: boolea
               {job.failures > 0 && <span className="collector-secondary">{job.failures} failed {job.failures === 1 ? 'attempt' : 'attempts'}</span>}
               {job.retry_at && <span className="collector-secondary">Retry after {date(job.retry_at)}</span>}
             </td>
-            <td>{job.state === 'completed' ? size(job.size_bytes) : '—'}</td>
+            <td>{job.state === 'completed' ? size(job.size_bytes) : job.expected_size_bytes ? size(job.expected_size_bytes) : '—'}</td>
             <td><span>Added {date(job.created_at)}</span><span className="collector-secondary">Updated {date(job.updated_at)}</span></td>
             <td>
               <div className="button-group">

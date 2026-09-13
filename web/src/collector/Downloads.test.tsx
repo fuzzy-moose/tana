@@ -199,3 +199,29 @@ test('retains input on submission failure and retains jobs through collector fai
   await waitFor(() => expect(screen.queryByText(/Download status is stale/)).toBeNull())
   expect(row(7).getByRole('link', { name: 'Save ZIP' })).toBeTruthy()
 })
+
+test('shows storage recovery requirements while completed archives remain accessible', async () => {
+  let unknown = false
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => {
+    const response = deliveryResponse(input)
+    if (response) return response
+    return Response.json({
+      ...listing([job(7, 'completed'), { ...job(8, 'queued'), expected_size_bytes: 3 * 1024 ** 3 }]),
+      storage: {
+        paused: true, reason: unknown ? 'space_check_failed' : 'low_space',
+        available_bytes: unknown ? null : 4 * 1024 ** 3,
+        pause_below_bytes: 5 * 1024 ** 3, resume_at_bytes: 13 * 1024 ** 3,
+      },
+    })
+  }))
+  const view = render(<Downloads {...props} />)
+  await screen.findByText(/Downloads paused: collector storage is low/)
+  expect(screen.getByText(/4.0 GiB free/)).toBeTruthy()
+  expect(screen.getByText(/resume automatically at 13.0 GiB free/)).toBeTruthy()
+  expect(row(8).getByText('3.0 GiB')).toBeTruthy()
+  expect(row(7).getByRole('link', { name: 'Save ZIP' })).toBeTruthy()
+  unknown = true
+  view.rerender(<Downloads {...props} refreshKey={1} />)
+  await screen.findByText(/the collector cannot check available storage/)
+  expect(screen.getByText(/Free space unknown/)).toBeTruthy()
+})
