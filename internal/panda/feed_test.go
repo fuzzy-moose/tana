@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
@@ -81,6 +82,31 @@ func TestParseFeedEmpty(t *testing.T) {
 	got, err := panda.ParseFeed(strings.NewReader(atomFeed("")))
 	if err != nil || len(got) != 0 {
 		t.Fatalf("empty feed = %+v, %v", got, err)
+	}
+}
+
+func TestParseFeedIgnoresIllegalControlCharacters(t *testing.T) {
+	controls := "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f" +
+		"\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f"
+	input := atomFeed("<entry><title>Before"+controls+"After\t\n日本語</title><link href=\"https://example.test/g/7/token/\" /></entry>") + controls
+	want := []panda.FeedEntry{{GalleryRef: panda.GalleryRef{ID: 7, Token: "token"}, Title: "BeforeAfter\t\n日本語"}}
+	for _, tc := range []struct {
+		name   string
+		reader io.Reader
+	}{
+		{"buffered", strings.NewReader(input)},
+		{"one byte", iotest.OneByteReader(strings.NewReader(input))},
+		{"data with EOF", iotest.DataErrReader(strings.NewReader(input))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := panda.ParseFeed(tc.reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("entries = %+v, want %+v", got, want)
+			}
+		})
 	}
 }
 

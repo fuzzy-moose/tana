@@ -29,10 +29,10 @@ func TestLocalRawFeedCaptures(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	raw := []byte("<?xml version=\"1.0\"?>\r\n<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>bad\x1ddata</title></feed>\r\n")
+	raw := []byte("<?xml version=\"1.0\"?>\r\n<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>bad\x1ddata</feed>\r\n")
 	_, parseErr := panda.ParseFeed(bytes.NewReader(raw))
-	if parseErr == nil || !strings.Contains(parseErr.Error(), "illegal character code U+001D") {
-		t.Fatalf("expected illegal XML character: %v", parseErr)
+	if parseErr == nil {
+		t.Fatal("expected malformed XML failure")
 	}
 	if _, err := db.Exec(`INSERT INTO raw_feeds (id, captured_at, feed_url, body, processed_at, last_error) VALUES
 		(338, 1000, 'https://panda.test/feed', ?, 3000, NULL),

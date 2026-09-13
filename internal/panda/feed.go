@@ -38,7 +38,7 @@ func ParseFeed(r io.Reader) ([]FeedEntry, error) {
 		XMLName xml.Name    `xml:"http://www.w3.org/2005/Atom feed"`
 		Entries []feedEntry `xml:"http://www.w3.org/2005/Atom entry"`
 	}
-	decoder := xml.NewDecoder(r)
+	decoder := xml.NewDecoder(feedXMLReader{r})
 	if err := decoder.Decode(&feed); err != nil {
 		return nil, fmt.Errorf("panda: parse feed: %w", err)
 	}
@@ -73,6 +73,26 @@ func ParseFeed(r io.Reader) ([]FeedEntry, error) {
 		entries = append(entries, parsed)
 	}
 	return entries, nil
+}
+
+// Upstream feed text can contain stray control bytes forbidden by XML 1.0.
+// Filter those bytes while parsing; the captured raw feed remains untouched.
+type feedXMLReader struct{ io.Reader }
+
+func (r feedXMLReader) Read(p []byte) (int, error) {
+	for {
+		n, err := r.Reader.Read(p)
+		kept := 0
+		for _, b := range p[:n] {
+			if b >= 0x20 || b == '\t' || b == '\n' || b == '\r' {
+				p[kept] = b
+				kept++
+			}
+		}
+		if kept > 0 || err != nil || n == 0 {
+			return kept, err
+		}
+	}
 }
 
 func parseFeedGalleryRef(href string) (GalleryRef, error) {
