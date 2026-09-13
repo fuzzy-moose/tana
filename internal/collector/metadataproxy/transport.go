@@ -31,10 +31,11 @@ func (s *Service) client(ch channel, limiter *rate.Limiter) (*panda.Client, *htt
 		return nil
 	}
 	base := &proxyTransport{base: transport, userAgent: ch.UserAgent}
+	verified := &verifiedTransport{base: base, verify: s.verifyIP}
 	ban := &banState{service: s, id: ch.ID, endpoint: ch.Endpoint}
 	client, err := panda.NewClient(s.config.APIURL, &http.Client{
 		Timeout:   time.Minute,
-		Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, base)),
+		Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, verified)),
 	})
 	return client, transport, err
 }

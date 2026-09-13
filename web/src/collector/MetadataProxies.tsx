@@ -89,6 +89,7 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
       </div>
     </div>
     <p>Use fixed proxies to collect background metadata and validate reference imports. Each channel has its own pacing and Panda cooldown.</p>
+    <p className="field-help">Before collecting, proxies must pass an IP leak check with ip.wtf. Failed checks remove the proxy. Checks include the exit IP and exposed request headers, repeat hourly, and reset after channel edits or a collector restart.</p>
     <ResourceStatus name="Proxy channels" loaded={!!resource.data} available={available} error={resource.error} stale={resource.stale} at={resource.at} />
     {resource.data && <>
       <label className="proxy-toggle">

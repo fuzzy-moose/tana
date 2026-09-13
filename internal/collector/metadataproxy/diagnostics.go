@@ -27,6 +27,12 @@ func failure(err error) (string, bool) {
 	if errors.Is(err, errProxyAuth) {
 		return errProxyAuth.Error(), true
 	}
+	if errors.Is(err, errProxyIPLeak) {
+		return errProxyIPLeak.Error(), false
+	}
+	if errors.Is(err, errProxyIPCheck) {
+		return errProxyIPCheck.Error(), false
+	}
 	op, isOp := errors.AsType[*net.OpError](err)
 	socks := isOp && strings.Contains(op.Op, "socks")
 	if socks {

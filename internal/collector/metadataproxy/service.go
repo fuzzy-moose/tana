@@ -3,6 +3,7 @@ package metadataproxy
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -24,6 +25,7 @@ type Service struct {
 	mu       sync.Mutex
 	runtime  map[string]*channelRuntime
 	observed map[string]int64
+	verifyIP func(context.Context, http.RoundTripper) error
 }
 
 type channelRuntime struct {
@@ -36,6 +38,11 @@ type channelRuntime struct {
 }
 
 func New(ctx context.Context, db *sql.DB, metadataService *metadata.Service, config panda.Config, logger *slog.Logger) (*Service, error) {
+	return newService(ctx, db, metadataService, config, logger, newIPVerifier().verify)
+}
+
+func newService(ctx context.Context, db *sql.DB, metadataService *metadata.Service, config panda.Config, logger *slog.Logger,
+	verifyIP func(context.Context, http.RoundTripper) error) (*Service, error) {
 	if _, err := panda.NewRateLimiter(config.RateInterval, 1); err != nil {
 		return nil, err
 	}
@@ -44,7 +51,7 @@ func New(ctx context.Context, db *sql.DB, metadataService *metadata.Service, con
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Service{db: db, metadata: metadataService, config: config, logger: logger, cancel: cancel,
-		wake: make(chan struct{}, 1), runtime: make(map[string]*channelRuntime), observed: make(map[string]int64)}
+		wake: make(chan struct{}, 1), runtime: make(map[string]*channelRuntime), observed: make(map[string]int64), verifyIP: verifyIP}
 	if _, _, err := s.channels(ctx); err != nil {
 		cancel()
 		return nil, err
@@ -182,6 +189,12 @@ func (s *Service) fetch(ctx context.Context, runtime *channelRuntime, batch *met
 	if err == nil {
 		_, err = s.db.ExecContext(ctx, `UPDATE metadata_proxy_channels SET failures = 0, retry_at = 0,
 			last_error = '', last_success_at = ? WHERE id = ?`, time.Now().UnixMilli(), ch.ID)
+	} else if errors.Is(err, errProxyIPLeak) || errors.Is(err, errProxyIPCheck) {
+		code, _ := failure(err)
+		s.logger.Warn("metadata_proxy_verification_failed", "channel_id", ch.ID, "error", code)
+		// A check using old settings must not remove an edited channel.
+		_, err = s.db.ExecContext(ctx, `UPDATE metadata_proxy_channels SET deleting = 1, enabled = 0,
+			revision = revision + 1 WHERE id = ? AND revision = ?`, ch.ID, ch.Revision)
 	} else {
 		code, auth := failure(err)
 		s.logger.Warn("metadata_proxy_batch_failed", "channel_id", ch.ID, "error", code)

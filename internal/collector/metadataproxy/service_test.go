@@ -1,6 +1,7 @@
 package metadataproxy
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,11 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 func testService(t *testing.T, dir, apiURL string) *Service {
 	t.Helper()
+	return testServiceWithIPCheck(t, dir, apiURL, func(context.Context, http.RoundTripper) error { return nil })
+}
+
+func testServiceWithIPCheck(t *testing.T, dir, apiURL string, verify func(context.Context, http.RoundTripper) error) *Service {
+	t.Helper()
 	db, _, err := storage.Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +50,7 @@ func testService(t *testing.T, dir, apiURL string) *Service {
 		t.Fatal(err)
 	}
 	main := metadata.New(t.Context(), db, mainClient, logger)
-	s, err := New(t.Context(), db, main, panda.Config{APIURL: apiURL, RateInterval: 10 * time.Millisecond}, logger)
+	s, err := newService(t.Context(), db, main, panda.Config{APIURL: apiURL, RateInterval: 10 * time.Millisecond}, logger, verify)
 	if err != nil {
 		t.Fatal(err)
 	}
