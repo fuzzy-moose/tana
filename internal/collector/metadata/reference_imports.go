@@ -338,6 +338,17 @@ func (s *ReferenceImports) run() {
 }
 
 func (s *ReferenceImports) step(ctx context.Context) (bool, error) {
+	// Both reconciliation paths and parsing get a bounded turn, even while
+	// uploads or inventory arrive continuously.
+	reconciled, err := s.reconcileInventory(ctx)
+	if err != nil {
+		return false, err
+	}
+	parsed, err := s.parseStep(ctx)
+	return reconciled || parsed, err
+}
+
+func (s *ReferenceImports) parseStep(ctx context.Context) (bool, error) {
 	// Deletion intent survives crashes between the final parsing checkpoint and
 	// unlink. Cancellation uses the same cleanup path, after the parser closes.
 	var cleanupID string

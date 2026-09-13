@@ -69,7 +69,7 @@ func TestBackgroundReservationsShareWorkWithoutChangingMainCooldown(t *testing.T
 	}
 }
 
-func TestBackgroundImportsWaitForInventoryButNotExplicitJobs(t *testing.T) {
+func TestBackgroundImportsUseSpareCapacityAfterInventoryReservations(t *testing.T) {
 	db := openDB(t, t.TempDir())
 	s := batchService(t, db, nil)
 	imports := batchImports(t, db, t.TempDir())
@@ -78,26 +78,26 @@ func TestBackgroundImportsWaitForInventoryButNotExplicitJobs(t *testing.T) {
 	seedRefs(t, db, 1)
 	fetchJob(t, s, panda.GalleryRef{ID: 88, Token: "explicit88"})
 	inventory, err := s.ClaimBackground(t.Context())
-	if err != nil || inventory == nil || inventory.refs[0].ID != 1 {
+	if err != nil || inventory == nil || inventory.Size() != 1 || inventory.refs[0].ID != 1 {
 		t.Fatalf("inventory: %+v, %v", inventory, err)
 	}
 	defer inventory.Close()
-	if batch, err := s.ClaimBackground(t.Context()); err != nil || batch != nil {
-		t.Fatalf("imports bypassed in-flight inventory: %+v, %v", batch, err)
-	}
-	if _, err := db.Exec(`UPDATE gallery_refs SET metadata_attempted_at = 1`); err != nil {
-		t.Fatal(err)
-	}
 	// Reserve one imported gallery through the main explicit queue as well.
 	fetchJob(t, s, panda.GalleryRef{ID: 99, Token: "other99"})
 	main, err := s.claim(t.Context(), false)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || main == nil || main.Size() != 2 || main.refs[0].ID != 88 || main.refs[1].ID != 99 {
+		t.Fatalf("main explicit reservation: %+v, %v", main, err)
 	}
 	defer main.Close()
+	if batch, err := s.claim(t.Context(), false); err != nil || batch != nil {
+		t.Fatalf("main bypassed explicit jobs: %+v, %v", batch, err)
+	}
 	batch, err := s.ClaimBackground(t.Context())
 	if err != nil || batch == nil || batch.Size() != 1 || batch.refs[0].ID != 100 {
 		t.Fatalf("independent import reservation: %+v, %v", batch, err)
 	}
-	batch.Close()
+	defer batch.Close()
+	if extra, err := s.ClaimBackground(t.Context()); err != nil || extra != nil {
+		t.Fatalf("reserved work selected again: %+v, %v", extra, err)
+	}
 }

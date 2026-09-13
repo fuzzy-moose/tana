@@ -10,14 +10,14 @@ import (
 )
 
 // pendingImportRefs chooses at most one token per gallery from the oldest
-// outstanding import. Inventory, including in-flight work, takes priority.
+// outstanding import. Claimable inventory takes priority in proxy channels.
 func (s *store) pendingImportRefs(ctx context.Context, reserved map[int64]bool) ([]panda.GalleryRef, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT e.gallery_id, e.token FROM reference_import_entries e
+	rows, err := tx.QueryContext(ctx, `SELECT e.id, e.gallery_id, e.token FROM reference_import_entries e
 		WHERE e.import_id = (SELECT id FROM reference_imports WHERE status IN ('processing', 'validating') ORDER BY sequence LIMIT 1)
 		AND e.status = 'pending' AND NOT EXISTS (
 			SELECT 1 FROM reference_import_entries older
@@ -27,14 +27,17 @@ func (s *store) pendingImportRefs(ctx context.Context, reserved map[int64]bool) 
 		return nil, err
 	}
 	refs := []panda.GalleryRef{}
+	entryIDs := make(map[int64]int64)
 	for rows.Next() {
+		var id int64
 		var ref panda.GalleryRef
-		if err := rows.Scan(&ref.ID, &ref.Token); err != nil {
+		if err := rows.Scan(&id, &ref.ID, &ref.Token); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		if !reserved[ref.ID] && len(refs) < panda.MaxBatchSize {
 			refs = append(refs, ref)
+			entryIDs[ref.ID] = id
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -54,8 +57,13 @@ func (s *store) pendingImportRefs(ctx context.Context, reserved map[int64]bool) 
 			pending = append(pending, ref)
 		} else if err != nil {
 			return nil, err
-		} else if err := settleImportedGallery(ctx, tx, ref.ID, token); err != nil {
-			return nil, err
+		} else {
+			// Only settle selected entries under the dispatch lock. The import
+			// worker reconciles other owners and conflicting tokens separately.
+			if _, err := tx.ExecContext(ctx, `UPDATE reference_import_entries SET status = CASE WHEN token = ? THEN 'known' ELSE 'failed' END
+				WHERE id = ? AND status = 'pending'`, token, entryIDs[ref.ID]); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := completeReferenceImports(ctx, tx, time.Now()); err != nil {
@@ -80,7 +88,9 @@ func completeImportedReference(ctx context.Context, tx *sql.Tx, ref panda.Galler
 }
 
 func settleImportedGallery(ctx context.Context, tx *sql.Tx, galleryID int64, token string) error {
+	// Conflicting-token fanout must not turn a metadata response into a large
+	// reconciliation sweep. The durable inventory queue finishes the remainder.
 	_, err := tx.ExecContext(ctx, `UPDATE reference_import_entries SET status = CASE WHEN token = ? THEN 'known' ELSE 'failed' END
-		WHERE gallery_id = ? AND status = 'pending'`, token, galleryID)
+		WHERE id IN (SELECT id FROM reference_import_entries WHERE gallery_id = ? AND status = 'pending' LIMIT ?)`, token, galleryID, importBatchRecords)
 	return err
 }

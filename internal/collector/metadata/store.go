@@ -182,7 +182,9 @@ func (s *store) pendingRefsFor(ctx context.Context, background bool, reserved ma
 			refs = append(refs, panda.GalleryRef{ID: row.GalleryID, Token: row.Token})
 		}
 	}
-	if len(rows) != 0 {
+	// Proxy capacity can validate imports while other workers hold inventory.
+	// The main fetcher retains its ordering until inventory is drained.
+	if len(refs) != 0 || (!background && len(rows) != 0) {
 		return refs, nil
 	}
 	return s.pendingImportRefs(ctx, reserved)
