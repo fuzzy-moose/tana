@@ -8,6 +8,21 @@ import type { MetadataProxyInput, MetadataProxyStatus } from './metadataProxies'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
 
+test('distinguishes proxy rejection, invalid responses and collector storage failures', async () => {
+  const state: MetadataProxyStatus = {
+    enabled: true, rate_interval_ms: 2500, default_user_agent: 'Browser default',
+    channels: ['proxy_http_403', 'metadata_invalid_response', 'collector_storage_full'].map((last_error, i) => ({
+      id: String(i), name: `Proxy ${i}`, proxy_url: `http://proxy${i}.example:8080`, username: '', user_agent: '',
+      enabled: true, has_password: false, state: 'waiting_retry', batch_size: 0, last_error,
+    })),
+  }
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(state)))
+  render(<MetadataProxies available refreshKey={0} />)
+  expect((await screen.findByRole('article', { name: 'Proxy 0' })).textContent).toContain('rejected the connection tunnel with HTTP 403')
+  expect(screen.getByRole('article', { name: 'Proxy 1' }).textContent).toContain('invalid or incomplete Panda metadata')
+  expect(screen.getByRole('article', { name: 'Proxy 2' }).textContent).toContain('Collector storage is full')
+})
+
 test('configures shared proxy channels, retaining write-only passwords on edit', async () => {
   const state: MetadataProxyStatus = { enabled: false, channels: [], rate_interval_ms: 2500, default_user_agent: 'Browser default' }
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {

@@ -125,7 +125,7 @@ func (b *Batch) fetch(ctx context.Context, client *panda.Client, main bool) erro
 	for i, entry := range entries {
 		token, ok := wanted[entry.ID]
 		if !ok {
-			return fmt.Errorf("unexpected or duplicate Panda gallery %d", entry.ID)
+			return fmt.Errorf("%w: unexpected or duplicate Panda gallery %d", panda.ErrMetadataResponse, entry.ID)
 		}
 		if entry.Error == "" && entry.Token != token {
 			entries[i] = panda.Metadata{ID: entry.ID, Error: "token_mismatch"}
@@ -133,7 +133,7 @@ func (b *Batch) fetch(ctx context.Context, client *panda.Client, main bool) erro
 		delete(wanted, entry.ID)
 	}
 	if len(wanted) != 0 {
-		return fmt.Errorf("Panda response omitted %d galleries", len(wanted))
+		return fmt.Errorf("%w: Panda response omitted %d galleries", panda.ErrMetadataResponse, len(wanted))
 	}
 	if err := s.store.complete(ctx, refs, entries, time.Now(), main); err != nil {
 		return err

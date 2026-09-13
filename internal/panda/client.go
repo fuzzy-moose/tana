@@ -5,12 +5,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 )
 
 const MaxBatchSize = 25
+
+// These categories let callers report response failures without exposing
+// upstream response content, which may include credentials or private data.
+var ErrMetadataResponse = errors.New("panda: invalid metadata response")
+var ErrMetadataAPI = errors.New("panda: metadata API error")
 
 type Client struct {
 	httpClient *http.Client
@@ -91,13 +97,13 @@ func (c *Client) GetMetadata(ctx context.Context, galleries []GalleryRef) ([]Met
 		Error    string     `json:"error"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("panda: decode response: %w", err)
+		return nil, fmt.Errorf("%w: decode response: %w", ErrMetadataResponse, err)
 	}
 	if response.Error != "" {
-		return nil, fmt.Errorf("panda: API error: %s", response.Error)
+		return nil, fmt.Errorf("%w: %s", ErrMetadataAPI, response.Error)
 	}
 	if len(response.Metadata) != len(galleries) {
-		return nil, fmt.Errorf("panda: expected %d metadata entries, got %d", len(galleries), len(response.Metadata))
+		return nil, fmt.Errorf("%w: expected %d metadata entries, got %d", ErrMetadataResponse, len(galleries), len(response.Metadata))
 	}
 	return response.Metadata, nil
 }

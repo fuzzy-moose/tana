@@ -79,11 +79,27 @@ export function proxyState(state: MetadataProxyChannel['state']) {
 
 export function proxyFailure(error: string) {
   if (error.startsWith('upstream_http_')) return `Upstream returned HTTP ${error.slice('upstream_http_'.length)}.`
+  if (error.startsWith('proxy_http_')) return `The proxy rejected the connection tunnel with HTTP ${error.slice('proxy_http_'.length)}. Check its access rules and HTTPS support.`
   return {
     proxy_authentication_required: 'Proxy authentication failed. Update the URL or credentials to resume.',
     panda_banned: 'Panda has temporarily banned this proxy.',
     proxy_timeout: 'The proxy request timed out.',
-    metadata_proxy_failed: 'Metadata retrieval failed. Check the proxy connection and collector storage.',
+    proxy_dns_failed: 'A hostname on the proxy route could not be resolved. Check the proxy address and collector DNS.',
+    proxy_connection_refused: 'A connection on the proxy route was refused. Check the proxy address, port and destination access.',
+    proxy_connection_closed: 'The connection closed before metadata retrieval finished. The proxy or upstream may have dropped it.',
+    proxy_connection_rejected: 'The SOCKS proxy rejected the connection under its access rules.',
+    proxy_unreachable: 'The proxy route could not reach its destination. Check network access from the collector and proxy.',
+    proxy_connection_failed: 'The proxy route failed to connect or transfer data. Check proxy availability and network access.',
+    proxy_tls_failed: 'TLS negotiation or certificate verification failed on the proxy route. Check certificates and HTTPS support.',
+    proxy_protocol_error: 'The proxy route returned an unexpected TLS response. Check whether the proxy requires HTTP, HTTPS or SOCKS5.',
+    proxy_socks_failed: 'SOCKS negotiation failed. Check that the address and port support SOCKS5 and allow the destination.',
+    metadata_invalid_response: 'The proxy route returned invalid or incomplete Panda metadata. A proxy error page or incompatible response may be the cause.',
+    metadata_api_error: 'The Panda API reported an error while retrieving metadata through this proxy.',
+    collector_storage_busy: 'The collector database is busy or locked. Metadata collection will retry.',
+    collector_storage_full: 'Collector storage is full. Free disk space on the collector.',
+    collector_storage_readonly: 'The collector database is read-only. Check its storage permissions and mount settings.',
+    collector_storage_failed: 'The collector could not read or save metadata in its database. Check collector storage.',
+    metadata_proxy_failed: 'Metadata retrieval failed; no further details are available.',
   }[error] ?? 'Metadata retrieval failed.'
 }
 
