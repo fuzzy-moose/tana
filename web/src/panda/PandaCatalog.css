@@ -1,3 +1,12 @@
+.panda-catalog .gallery-toolbar { flex-wrap: wrap; gap: var(--space-2); }
+.panda-catalog .gallery-toolbar > :not(.gallery-search) { flex-shrink: 0; }
+.panda-catalog .gallery-toolbar > .rt-Button { margin: 0; }
+.panda-catalog .gallery-search { flex: 1 1 200px; min-width: 200px; max-width: 480px; }
+
+@media (max-width: 900px) {
+  .panda-catalog .gallery-search { order: 1; flex-basis: 100%; min-width: 0; max-width: none; }
+}
+
 .panda-card > p { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .panda-lookup-input { flex: 1; min-width: 0; }
 .panda-lookup-result { overflow-wrap: anywhere; }

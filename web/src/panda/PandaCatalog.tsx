@@ -85,6 +85,14 @@ export default function PandaCatalog({ search, page, includeExpunged, categories
         {result && <Badge color="gray">{result.total.toLocaleString()} {result.total === 1 ? 'gallery' : 'galleries'}</Badge>}
       </Flex>
       <GallerySearch key={search} search={search} completeSearch={completePandaSearch} searchHref={pageHref} />
+      <PandaCategoryFilter categories={categories} onChange={(next) => { window.location.hash = pandaListingLink(search, 1, includeExpunged, next, bypassDefault) }} />
+      <PandaDefaultFilter filter={defaultFilter} error={defaultError} bypassed={bypassDefault} onRetry={() => setAttempt((value) => value + 1)} onSave={(filter) => {
+        setDefaultFilter(filter)
+        if (page !== 1 || bypassDefault) window.location.hash = pandaListingLink(search, 1, includeExpunged, categories)
+        else setAttempt((value) => value + 1)
+      }} />
+      {(defaultConfigured || bypassDefault) && <Button asChild variant="ghost" color="gray"><a href={pandaListingLink(search, 1, includeExpunged, categories, !bypassDefault)}>{bypassDefault ? 'Apply default' : 'Bypass default'}</a></Button>}
+      {(filtered || includeExpunged) && <Button asChild variant="ghost" color="gray"><a href={clearHref}>Clear all filters</a></Button>}
       <Flex align="center" gap="2">
         {loading && result && <Spinner aria-label="Loading results" />}
         <DropdownMenu.Root>
@@ -99,17 +107,6 @@ export default function PandaCatalog({ search, page, includeExpunged, categories
         </DropdownMenu.Root>
       </Flex>
     </div>
-
-    <Flex align="center" gap="3" wrap="wrap">
-      <PandaCategoryFilter categories={categories} onChange={(next) => { window.location.hash = pandaListingLink(search, 1, includeExpunged, next, bypassDefault) }} />
-      <PandaDefaultFilter filter={defaultFilter} error={defaultError} bypassed={bypassDefault} onRetry={() => setAttempt((value) => value + 1)} onSave={(filter) => {
-        setDefaultFilter(filter)
-        if (page !== 1 || bypassDefault) window.location.hash = pandaListingLink(search, 1, includeExpunged, categories)
-        else setAttempt((value) => value + 1)
-      }} />
-      {(defaultConfigured || bypassDefault) && <Button asChild variant="ghost" color="gray"><a href={pandaListingLink(search, 1, includeExpunged, categories, !bypassDefault)}>{bypassDefault ? 'Apply default' : 'Bypass default'}</a></Button>}
-      {(filtered || includeExpunged) && <Button asChild variant="ghost" color="gray"><a href={clearHref}>Clear all filters</a></Button>}
-    </Flex>
 
     {error && <Callout.Root size="1" color="red" role="alert">
       <Callout.Icon><ExclamationTriangleIcon /></Callout.Icon>
