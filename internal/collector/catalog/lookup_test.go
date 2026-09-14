@@ -31,7 +31,7 @@ func TestLookupReturnsRetainedMetadataAndInventoryReferences(t *testing.T) {
 		result.URL != "https://favorites.example.test/g/2/pending%2Ftoken/" || result.Metadata != nil || result.RefreshedAt != nil || result.Unverified || result.FetchJob != nil {
 		t.Fatalf("known reference = %+v, %v", result, err)
 	}
-	page, err := s.List(t.Context(), collectorapi.CatalogOptions{Page: 1, PageSize: 24, IncludeExpunged: true})
+	page, err := s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 24, IncludeExpunged: true})
 	retained, lookupErr := s.Lookup(t.Context(), 1)
 	if err != nil || lookupErr != nil || len(page.Items) != 1 || page.Items[0].URL != retained.URL {
 		t.Fatalf("link convention = %+v, %+v, %v, %v", page, retained, err, lookupErr)

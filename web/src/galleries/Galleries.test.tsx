@@ -133,26 +133,25 @@ test('clamps a saved page after galleries disappear and supports an empty search
   expect(screen.queryByRole('navigation', { name: 'Gallery pages' })).toBeNull()
 })
 
-test('fits Panda pages to the viewport and preserves the search and filter when resizing', async () => {
-  window.history.replaceState(null, '', '#/panda?q=manga&page=3&include_expunged=true&category=manga&category=artist+cg&bypass_default=true')
+test('fits Panda pages to the viewport while keeping the cursor and filters', async () => {
+  const hash = '#/panda?q=manga&cursor=saved-anchor&include_expunged=true&category=manga&category=artist+cg&bypass_default=true'
+  window.history.replaceState(null, '', hash)
   fetchMock.mockImplementation(async (input) => {
     const url = new URL(String(input), 'http://localhost')
     if (url.pathname === '/api/panda/default-filter') return Response.json({ query: '-l:japanese$', categories: [] })
+    expect(url.searchParams.get('cursor')).toBe('saved-anchor')
     const pageSize = Number(url.searchParams.get('page_size'))
-    const page = Number(url.searchParams.get('page'))
-    const first = (page - 1) * pageSize
-    return Response.json({ items: Array.from({ length: pageSize }, (_, index) => ({ gallery_id: first + index, title: `Panda ${first + index}`, page_count: 20, posted_at: '2026-09-12T10:00:00Z', url: 'https://panda.example/g/1/token/' })), total: 40, page, page_size: pageSize, total_pages: Math.ceil(40 / pageSize) })
+    return Response.json({ items: Array.from({ length: pageSize }, (_, index) => ({ gallery_id: 16 + index, title: `Panda ${16 + index}`, page_count: 20, posted_at: '2026-09-12T10:00:00Z', url: 'https://panda.example/g/1/token/' })), page_size: pageSize, next_cursor: 'next', previous_cursor: 'previous' })
   })
   render(<App />)
   await screen.findByRole('heading', { name: 'Panda 16' })
   expect(within(screen.getByRole('list', { name: 'Panda galleries' })).getAllByRole('listitem')).toHaveLength(8)
   resize(716, 975)
-  await screen.findByRole('heading', { name: 'Panda 12' })
-  expect(within(screen.getByRole('list', { name: 'Panda galleries' })).getAllByRole('listitem')).toHaveLength(12)
-  expect(window.location.hash).toBe('#/panda?q=manga&page=2&include_expunged=true&category=manga&category=artist+cg&bypass_default=true')
+  await waitFor(() => expect(within(screen.getByRole('list', { name: 'Panda galleries' })).getAllByRole('listitem')).toHaveLength(12))
+  expect(window.location.hash).toBe(hash)
   resize(716, 646)
-  await screen.findByRole('heading', { name: 'Panda 16' })
-  expect(window.location.hash).toBe('#/panda?q=manga&page=3&include_expunged=true&category=manga&category=artist+cg&bypass_default=true')
+  await waitFor(() => expect(within(screen.getByRole('list', { name: 'Panda galleries' })).getAllByRole('listitem')).toHaveLength(8))
+  expect(window.location.hash).toBe(hash)
 })
 
 test('selects multiple categories and favorite-time sorting, retaining both during search and pagination', async () => {

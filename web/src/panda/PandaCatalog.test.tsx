@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import App from '../App'
 
 vi.mock('../galleries/useGalleryLayout', () => ({
+  useGalleryGrid: () => ({ pageSize: 8, cardHeight: 317, viewportRef: null, cardRef: null }),
   useGalleryLayout: () => ({ pageSize: 8, cardHeight: 317, viewportRef: null, cardRef: null }),
   replaceListingPage: (search: string, page: number, pageHref: (query: string, page: number) => string) => {
     window.history.replaceState(null, '', pageHref(search, page))
@@ -37,12 +38,12 @@ beforeEach(() => {
     if (url.pathname === '/api/collector/catalog/completions') return Response.json({ start: 0, end: 5, items: [
       { namespace: 'parody', value: 'fate/stay night', term: 'parody:"fate/stay night$"' },
     ] })
-    const page = Math.min(Number(url.searchParams.get('page')), 2)
+    const page = url.searchParams.get('cursor') === 'next-token' ? 2 : 1
     const query = url.searchParams.get('q')
     if (query === 'title:blue$') return Response.json({ error: 'invalid_query' }, { status: 400 })
     return Response.json({
       items: [{ gallery_id: page, title: `${query || 'Upload'} ${catalogVersion} page ${page}`, thumbnail_url: 'https://covers.example/cover.jpg', page_count: 20, posted_at: '2026-09-12T10:00:00Z', url: `https://panda.example/g/${page}/token/` }],
-      total: 9, page, page_size: 8, total_pages: 2,
+      page_size: 8, next_cursor: page === 1 ? 'next-token' : undefined, previous_cursor: page === 2 ? 'previous-token' : undefined,
     })
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -50,7 +51,7 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
-test('browses collected covers with local search, expunged filter, and numbered pagination', async () => {
+test('browses collected covers with local search, expunged filter, and cursor pagination', async () => {
   render(<App />)
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
   expect(screen.getByRole('link', { name: 'Panda', current: 'page' })).toBeTruthy()
@@ -59,18 +60,30 @@ test('browses collected covers with local search, expunged filter, and numbered 
   expect(gallery.getAttribute('target')).toBe('_blank')
   expect(gallery.querySelector('img')?.getAttribute('src')).toBe('https://covers.example/cover.jpg')
   expect(gallery.querySelector('time')?.getAttribute('datetime')).toBe('2026-09-12T10:00:00Z')
-  expect(screen.getByText('9 galleries')).toBeTruthy()
-  expect(catalogRequests()[0][0]).toBe('/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false')
+  expect(screen.getByRole('button', { name: 'Previous' }).hasAttribute('disabled')).toBe(true)
+  expect(catalogRequests()[0][0]).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false')
 
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'p:fate' } })
   fireEvent.submit(screen.getByRole('search'))
   await screen.findByRole('heading', { name: 'p:fate 1 page 1' })
   await userEvent.click(screen.getByRole('button', { name: 'Options' }))
   await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Include expunged' }))
-  await waitFor(() => expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=p%3Afate&page=1&page_size=8&include_expunged=true'))
+  await waitFor(() => expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=p%3Afate&cursor=&page_size=8&include_expunged=true'))
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
   await screen.findByRole('heading', { name: 'p:fate 1 page 2' })
-  expect(window.location.hash).toBe('#/panda?q=p%3Afate&page=2&include_expunged=true')
+  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=next-token&include_expunged=true')
+  expect(screen.getByRole('button', { name: 'Next' }).hasAttribute('disabled')).toBe(true)
+  // Cursor links work after reloading, without an in-memory history of pages.
+  cleanup()
+  render(<App />)
+  await screen.findByRole('heading', { name: 'p:fate 1 page 2' })
+  fireEvent.click(screen.getByRole('link', { name: 'Previous' }))
+  await screen.findByRole('heading', { name: 'p:fate 1 page 1' })
+  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=previous-token&include_expunged=true')
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: '-language:translated' } })
+  fireEvent.submit(screen.getByRole('search'))
+  await screen.findByRole('heading', { name: '-language:translated 1 page 1' })
+  expect(new URLSearchParams(window.location.hash.split('?')[1]).has('cursor')).toBe(false)
 })
 
 test('Panda autocomplete uses the collected vocabulary and preserves raw tag characters', async () => {
@@ -88,7 +101,7 @@ test('Panda autocomplete uses the collected vocabulary and preserves raw tag cha
 test('reloads only on request and keeps collection tools on dedicated pages', async () => {
   render(<App />)
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
-  expect(catalogRequests().map(([input]) => String(input))).toEqual(['/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false'])
+  expect(catalogRequests().map(([input]) => String(input))).toEqual(['/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false'])
   expect(screen.queryByRole('textbox', { name: 'Look up gallery' })).toBeNull()
   catalogVersion = 2
   await userEvent.click(screen.getByRole('button', { name: 'Options' }))
@@ -101,9 +114,9 @@ test('reloads only on request and keeps collection tools on dedicated pages', as
 
 test('edits a shared default separately from the current query and applies it only on save', async () => {
   defaultFilter = { query: '-l:japanese$', categories: ['manga'] }
-  window.history.replaceState(null, '', '#/panda?q=artist%3Aname&category=doujinshi')
+  window.history.replaceState(null, '', '#/panda?q=artist%3Aname&cursor=next-token&category=doujinshi')
   render(<App />)
-  await screen.findByRole('heading', { name: 'artist:name 1 page 1' })
+  await screen.findByRole('heading', { name: 'artist:name 1 page 2' })
   expect(screen.getByRole('button', { name: 'Default filter Active' })).toBeTruthy()
   expect(screen.queryByLabelText('Default search')).toBeNull()
 
@@ -121,7 +134,7 @@ test('edits a shared default separately from the current query and applies it on
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(defaultFilter).toEqual({ query: '-l:japanese$ -l:chinese$', categories: ['manga', 'western'] })
   await waitFor(() => expect(catalogRequests()).toHaveLength(2))
-  expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=artist%3Aname&page=1&page_size=8&include_expunged=false&category=doujinshi')
+  expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=artist%3Aname&cursor=&page_size=8&include_expunged=false&category=doujinshi')
   expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('artist:name')
 })
 
@@ -137,18 +150,18 @@ test('preserves category and default bypass URL filters across search, paging, b
   await screen.findByRole('heading', { name: 'new search 1 page 1' })
   fireEvent.keyDown(window, { key: 'ArrowRight' })
   await screen.findByRole('heading', { name: 'new search 1 page 2' })
-  expect(window.location.hash).toBe('#/panda?q=new+search&page=2&include_expunged=true&category=manga&category=doujinshi&bypass_default=true')
+  expect(window.location.hash).toBe('#/panda?q=new+search&cursor=next-token&include_expunged=true&category=manga&category=doujinshi&bypass_default=true')
   act(() => window.history.back())
   await waitFor(() => expect(window.location.hash).toBe('#/panda?q=new+search&include_expunged=true&category=manga&category=doujinshi&bypass_default=true'))
   await screen.findByRole('heading', { name: 'new search 1 page 1' })
   await userEvent.click(screen.getByRole('link', { name: 'Clear all filters' }))
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
   expect(window.location.hash).toBe('#/panda?bypass_default=true')
-  expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false&bypass_default=true')
+  expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false&bypass_default=true')
   expect(defaultFilter).toEqual({ query: '-l:japanese$', categories: ['manga', 'doujinshi'] })
   await userEvent.click(screen.getByRole('link', { name: 'Apply default' }))
   await screen.findByRole('button', { name: 'Default filter Active' })
-  await waitFor(() => expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false'))
+  await waitFor(() => expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false'))
 })
 
 test('retains results during outages and failed searches, retries, and shows unavailable on a fresh visit', async () => {
@@ -160,7 +173,7 @@ test('retains results during outages and failed searches, retries, and shows una
   expect((await screen.findByRole('alert')).textContent).toContain('Results are stale.')
   expect(screen.getByRole('heading', { name: 'Upload 1 page 1' })).toBeTruthy()
   offline = false
-  const retryResponse = await fetchMock.getMockImplementation()!('/api/collector/catalog?q=new+search&page=1')
+  const retryResponse = await fetchMock.getMockImplementation()!('/api/collector/catalog?q=new+search&cursor=')
   let resolveRetry!: (response: Response) => void
   const normalFetch = fetchMock.getMockImplementation()!
   fetchMock.mockImplementation((input, init) => String(input).startsWith('/api/collector/catalog?')

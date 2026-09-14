@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,9 +27,13 @@ func New(db *sql.DB, galleryOrigin string) *Service {
 }
 
 func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions) (collectorapi.CatalogResult, error) {
-	result := collectorapi.CatalogResult{Items: []collectorapi.CatalogItem{}, Page: options.Page, PageSize: options.PageSize}
-	if options.Page < 1 || options.PageSize < 1 || options.PageSize > 100 {
+	result := collectorapi.CatalogResult{Items: []collectorapi.CatalogItem{}, PageSize: options.PageSize}
+	if options.PageSize < 1 || options.PageSize > 100 {
 		return result, ErrInvalidPagination
+	}
+	cursor, err := decodeCursor(options.Cursor)
+	if err != nil {
+		return result, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -69,18 +74,28 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if !options.IncludeExpunged {
 		predicate += " AND g.expunged = 0"
 	}
-	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM catalog_galleries g WHERE "+predicate, args...).Scan(&result.Total); err != nil {
-		return result, err
+	if options.Cursor != "" {
+		comparison := "<"
+		if cursor.Before {
+			comparison = ">"
+		}
+		if cursor.Inclusive {
+			comparison += "="
+		}
+		predicate += " AND (g.posted, g.gallery_id) " + comparison + " (?, ?)"
+		args = append(args, cursor.Posted, cursor.GalleryID)
 	}
-	result.TotalPages = max(1, int((result.Total+int64(options.PageSize)-1)/int64(options.PageSize)))
-	result.Page = min(options.Page, result.TotalPages)
-	pageQuery, pageArgs := catalogPageQuery(predicate, args, pageCategories)
+	pageQuery, pageArgs := catalogPageQuery(predicate, args, pageCategories, cursor.Before)
+	order := "DESC"
+	if cursor.Before {
+		order = "ASC"
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT g.gallery_id, g.title, g.thumbnail_url, g.page_count, g.posted, r.token
 		FROM (`+pageQuery+`) page
 		JOIN catalog_galleries g ON g.gallery_id = page.gallery_id
 		JOIN gallery_refs r ON r.gallery_id = page.gallery_id
-		ORDER BY page.posted DESC, page.gallery_id DESC`,
-		append(pageArgs, result.PageSize, int64(result.Page-1)*int64(result.PageSize))...)
+		ORDER BY page.posted `+order+`, page.gallery_id `+order,
+		append(pageArgs, result.PageSize+1)...)
 	if err != nil {
 		return result, err
 	}
@@ -99,16 +114,41 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
+	more := len(result.Items) > result.PageSize
+	if more {
+		result.Items = result.Items[:result.PageSize]
+	}
+	if cursor.Before {
+		slices.Reverse(result.Items)
+	}
+	hasOpposite := options.Cursor != "" && !cursor.Inclusive
+	if len(result.Items) > 0 {
+		if (!cursor.Before && more) || (cursor.Before && hasOpposite) {
+			result.NextCursor = itemCursor(result.Items[len(result.Items)-1], false)
+		}
+		if (cursor.Before && more) || (!cursor.Before && hasOpposite) {
+			result.PreviousCursor = itemCursor(result.Items[0], true)
+		}
+	} else if options.Cursor != "" {
+		// Recover from an emptied page without skipping its anchor if it still exists.
+		cursor.Before = !cursor.Before
+		cursor.Inclusive = true
+		if cursor.Before {
+			result.PreviousCursor = cursor.encode()
+		} else {
+			result.NextCursor = cursor.encode()
+		}
+	}
 	return result, tx.Commit()
 }
 
-func catalogPageQuery(predicate string, args []any, categories []string) (string, []any) {
+func catalogPageQuery(predicate string, args []any, categories []string, before bool) (string, []any) {
 	query := "SELECT g.gallery_id, g.posted FROM catalog_galleries g WHERE " + predicate
 	pageArgs := args
 	if len(categories) > 1 {
 		// Merge ordered category scans so LIMIT can stop them before reading every match.
 		branches := make([]string, 0, len(categories))
-		pageArgs = make([]any, 0, len(categories)*(len(args)+1)+2)
+		pageArgs = make([]any, 0, len(categories)*(len(args)+1)+1)
 		for _, category := range categories {
 			branches = append(branches, query+" AND g.category = ?")
 			pageArgs = append(pageArgs, args...)
@@ -116,7 +156,11 @@ func catalogPageQuery(predicate string, args []any, categories []string) (string
 		}
 		query = strings.Join(branches, " UNION ALL ")
 	}
-	return query + " ORDER BY posted DESC, gallery_id DESC LIMIT ? OFFSET ?", pageArgs
+	order := "DESC"
+	if before {
+		order = "ASC"
+	}
+	return query + " ORDER BY posted " + order + ", gallery_id " + order + " LIMIT ?", pageArgs
 }
 
 func catalogMatch(term gallerysearch.Term) (string, []any) {
@@ -128,8 +172,16 @@ func catalogMatch(term gallerysearch.Term) (string, []any) {
 	}
 	if term.Field != "title" {
 		match, values := gallerysearch.TagPredicate(term, "t.value_lower", "t.namespace")
-		fields = append(fields, `g.gallery_id IN (SELECT gt.gallery_id FROM catalog_tags t
-			JOIN catalog_gallery_tags gt ON gt.tag_id = t.id WHERE `+match+")")
+		if term.Prefix == "-" {
+			// Probe the candidate's assignments; even a common excluded tag must not
+			// enumerate all of its galleries before the first page can be returned.
+			fields = append(fields, `EXISTS (SELECT 1 FROM catalog_gallery_tags gt
+				WHERE gt.gallery_id = g.gallery_id AND gt.tag_id IN
+				(SELECT t.id FROM catalog_tags t WHERE `+match+"))")
+		} else {
+			fields = append(fields, `g.gallery_id IN (SELECT gt.gallery_id FROM catalog_tags t
+				JOIN catalog_gallery_tags gt ON gt.tag_id = t.id WHERE `+match+")")
+		}
 		args = append(args, values...)
 	}
 	return strings.Join(fields, " OR "), args

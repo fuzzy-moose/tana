@@ -16,20 +16,15 @@ func HandleCatalog(service *catalog.Service) http.Handler {
 		options := collectorapi.CatalogOptions{
 			Query: r.URL.Query().Get("q"), Categories: r.URL.Query()["category"],
 			DefaultQuery: r.URL.Query().Get("default_q"), DefaultCategories: r.URL.Query()["default_category"],
-			Page: 1, PageSize: 24,
+			Cursor: r.URL.Query().Get("cursor"), PageSize: 24,
 		}
-		for _, parameter := range []struct {
-			name string
-			dest *int
-		}{{"page", &options.Page}, {"page_size", &options.PageSize}} {
-			if r.URL.Query().Has(parameter.name) {
-				value, err := strconv.Atoi(r.URL.Query().Get(parameter.name))
-				if err != nil {
-					catalogError(w, r, catalog.ErrInvalidPagination)
-					return
-				}
-				*parameter.dest = value
+		if r.URL.Query().Has("page_size") {
+			value, err := strconv.Atoi(r.URL.Query().Get("page_size"))
+			if err != nil {
+				catalogError(w, r, catalog.ErrInvalidPagination)
+				return
 			}
+			options.PageSize = value
 		}
 		if r.URL.Query().Has("include_expunged") {
 			var err error

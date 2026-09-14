@@ -19,11 +19,11 @@ func TestPandaCatalogThroughLocalProxy(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/catalog":
-			if r.URL.Query().Get("q") != `p:"show z$"` || r.URL.Query().Get("page") != "2" ||
+			if r.URL.Query().Get("q") != `p:"show z$"` || r.URL.Query().Get("cursor") != "next-token" ||
 				r.URL.Query().Get("page_size") != "12" || r.URL.Query().Get("include_expunged") != "true" {
 				t.Errorf("catalog query changed: %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"items":[{"gallery_id":42,"title":"Show Z","thumbnail_url":"https://images.test/42.jpg","page_count":20,"posted_at":"2026-09-12T00:00:00Z","url":"https://panda.test/g/42/token/"}],"total":13,"page":2,"page_size":12,"total_pages":2}`))
+			_, _ = w.Write([]byte(`{"items":[{"gallery_id":42,"title":"Show Z","thumbnail_url":"https://images.test/42.jpg","page_count":20,"posted_at":"2026-09-12T00:00:00Z","url":"https://panda.test/g/42/token/"}],"page_size":12,"previous_cursor":"previous-token"}`))
 		case "/api/catalog/completions":
 			if r.URL.Query().Get("q") != "p:show" || r.URL.Query().Get("cursor") != "6" {
 				t.Errorf("completion query changed: %s", r.URL.RawQuery)
@@ -52,11 +52,11 @@ func TestPandaCatalogThroughLocalProxy(t *testing.T) {
 		method, path, body, want string
 		code                     int
 	}{
-		{"GET", "/api/collector/catalog?q=p%3A%22show+z%24%22&page=2&page_size=12&include_expunged=true", "", `"gallery_id":42`, 200},
+		{"GET", "/api/collector/catalog?q=p%3A%22show+z%24%22&cursor=next-token&page_size=12&include_expunged=true", "", `"gallery_id":42`, 200},
 		{"GET", "/api/collector/catalog/completions?q=p%3Ashow&cursor=6", "", `"namespace":"parody"`, 200},
 		{"GET", "/api/collector/feed/status", "", `"processing_pending":2`, 200},
 		{"POST", "/api/collector/feed/refresh", `{}`, `"capture_active":true`, 202},
-		{"GET", "/api/collector/catalog?page=0", "", "invalid_pagination", 400},
+		{"GET", "/api/collector/catalog?page_size=0", "", "invalid_pagination", 400},
 		{"GET", "/api/collector/catalog?page_size=101", "", "invalid_pagination", 400},
 		{"GET", "/api/collector/catalog?include_expunged=garbage", "", "invalid_query", 400},
 		{"GET", "/api/collector/catalog/completions?q=x&cursor=-1", "", "invalid_query", 400},

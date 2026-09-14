@@ -18,7 +18,7 @@ type CatalogOptions struct {
 	Categories        []string
 	DefaultQuery      string
 	DefaultCategories []string
-	Page              int
+	Cursor            string
 	PageSize          int
 	IncludeExpunged   bool
 }
@@ -33,11 +33,10 @@ type CatalogItem struct {
 }
 
 type CatalogResult struct {
-	Items      []CatalogItem `json:"items"`
-	Total      int64         `json:"total"`
-	Page       int           `json:"page"`
-	PageSize   int           `json:"page_size"`
-	TotalPages int           `json:"total_pages"`
+	Items          []CatalogItem `json:"items"`
+	PageSize       int           `json:"page_size"`
+	NextCursor     string        `json:"next_cursor,omitempty"`
+	PreviousCursor string        `json:"previous_cursor,omitempty"`
 }
 
 type CatalogCompletion = gallerysearch.Completion
@@ -48,13 +47,13 @@ func (c *Client) Catalog(ctx context.Context, options CatalogOptions) (CatalogRe
 		"category":         options.Categories,
 		"default_q":        {options.DefaultQuery},
 		"default_category": options.DefaultCategories,
-		"page":             {strconv.Itoa(options.Page)},
+		"cursor":           {options.Cursor},
 		"page_size":        {strconv.Itoa(options.PageSize)},
 		"include_expunged": {strconv.FormatBool(options.IncludeExpunged)},
 	}
 	var result CatalogResult
 	err := c.catalogRequest(ctx, "/api/catalog?"+params.Encode(), &result)
-	if err == nil && (result.Items == nil || result.Total < 0 || result.Page < 1 || result.PageSize < 1 || result.PageSize > 100 || result.TotalPages < 1) {
+	if err == nil && (result.Items == nil || result.PageSize < 1 || result.PageSize > 100 || len(result.Items) > result.PageSize) {
 		err = fmt.Errorf("collector returned an invalid catalog page")
 	}
 	return result, err

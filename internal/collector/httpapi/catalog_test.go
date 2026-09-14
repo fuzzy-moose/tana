@@ -23,7 +23,7 @@ func TestCatalogPaginationAndQueryValidation(t *testing.T) {
 		code string
 	}{
 		{"/api/catalog", ""},
-		{"/api/catalog?page=0", "invalid_pagination"},
+		{"/api/catalog?cursor=invalid", "invalid_pagination"},
 		{"/api/catalog?page_size=101", "invalid_pagination"},
 		{"/api/catalog?page_size=words", "invalid_pagination"},
 		{"/api/catalog?include_expunged=maybe", "invalid_query"},
@@ -48,7 +48,7 @@ func TestCatalogPaginationAndQueryValidation(t *testing.T) {
 				}
 				if tc.path == "/api/catalog" {
 					var result collectorapi.CatalogResult
-					if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Items == nil || result.Total != 0 || result.Page != 1 || result.PageSize != 24 || result.TotalPages != 1 {
+					if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Items == nil || len(result.Items) != 0 || result.PageSize != 24 || result.NextCursor != "" || result.PreviousCursor != "" {
 						t.Fatalf("empty catalog = %+v, %v", result, err)
 					}
 				}

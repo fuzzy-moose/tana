@@ -13,10 +13,9 @@ export interface PandaGallery {
 
 export interface PandaCatalogResult {
   items: PandaGallery[]
-  total: number
-  page: number
   page_size: number
-  total_pages: number
+  next_cursor?: string
+  previous_cursor?: string
 }
 
 export interface FeedStatus {
@@ -49,14 +48,15 @@ export function savePandaDefaultFilter(filter: PandaDefaultFilter) {
   }, { ...collectorMessages, invalid_query: 'Invalid search query.', invalid_category: 'Unknown Panda gallery category.' })
 }
 
-export function listPandaCatalog(search: string, page: number, pageSize: number, includeExpunged: boolean, categories: string[], bypassDefault: boolean, signal?: AbortSignal) {
-  const params = new URLSearchParams({ q: search, page: String(page), page_size: String(pageSize), include_expunged: String(includeExpunged) })
+export function listPandaCatalog(search: string, cursor: string, pageSize: number, includeExpunged: boolean, categories: string[], bypassDefault: boolean, signal?: AbortSignal) {
+  const params = new URLSearchParams({ q: search, cursor, page_size: String(pageSize), include_expunged: String(includeExpunged) })
   for (const category of categories) params.append('category', category)
   if (bypassDefault) params.set('bypass_default', 'true')
   return request<PandaCatalogResult>(`/api/collector/catalog?${params}`, { signal }, {
     ...collectorMessages,
     invalid_query: 'Invalid search query.',
     invalid_category: 'Unknown Panda gallery category.',
+    invalid_pagination: 'Invalid catalog position. Return to the newest galleries.',
   })
 }
 

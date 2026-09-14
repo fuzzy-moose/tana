@@ -61,11 +61,11 @@ func TestCatalogSendsIndependentDefaultFilters(t *testing.T) {
 			!reflect.DeepEqual(query["default_category"], []string{"manga", "artist cg"}) {
 			t.Fatalf("catalog filters = %v", query)
 		}
-		body, _ := json.Marshal(CatalogResult{Items: []CatalogItem{}, Page: 1, PageSize: 24, TotalPages: 1})
+		body, _ := json.Marshal(CatalogResult{Items: []CatalogItem{}, PageSize: 24})
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
 	})
 	_, err = client.Catalog(t.Context(), CatalogOptions{
-		Query: "~red ~blue", DefaultQuery: "-l:japanese$", Page: 1, PageSize: 24,
+		Query: "~red ~blue", DefaultQuery: "-l:japanese$", PageSize: 24,
 		Categories: []string{"manga", "doujinshi"}, DefaultCategories: []string{"manga", "artist cg"},
 	})
 	if err != nil {

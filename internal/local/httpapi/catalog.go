@@ -15,9 +15,8 @@ func HandleCollectorCatalog(client *collectorapi.Client, defaults ...*catalogfil
 		if !catalogCollectorConfigured(w, client) {
 			return
 		}
-		page, ok := positiveQuery(r, "page", 1)
 		pageSize, sizeOK := positiveQuery(r, "page_size", 24)
-		if !ok || !sizeOK || pageSize > 100 {
+		if !sizeOK || pageSize > 100 {
 			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_pagination"})
 			return
 		}
@@ -31,7 +30,7 @@ func HandleCollectorCatalog(client *collectorapi.Client, defaults ...*catalogfil
 			}
 		}
 		options := collectorapi.CatalogOptions{
-			Query: r.URL.Query().Get("q"), Page: int(page), PageSize: int(pageSize), IncludeExpunged: includeExpunged,
+			Query: r.URL.Query().Get("q"), Cursor: r.URL.Query().Get("cursor"), PageSize: int(pageSize), IncludeExpunged: includeExpunged,
 			Categories: r.URL.Query()["category"],
 		}
 		bypassDefault := false

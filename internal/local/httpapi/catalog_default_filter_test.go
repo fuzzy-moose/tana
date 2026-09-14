@@ -26,7 +26,7 @@ func TestCatalogDefaultFilterPersistenceAndBypass(t *testing.T) {
 			_, _ = w.Write([]byte(`{"error":"invalid_query"}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"items":[],"total":0,"page":1,"page_size":1,"total_pages":1}`))
+		_, _ = w.Write([]byte(`{"items":[],"page_size":1}`))
 	}))
 	defer upstream.Close()
 	client, err := collectorapi.NewClient(upstream.URL, "test-token")

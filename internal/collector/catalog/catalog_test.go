@@ -88,7 +88,7 @@ func TestCatalogSearchOrderingAndPagination(t *testing.T) {
 		{"missing", []int64{}},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
-			result, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: tc.query, Page: 1, PageSize: 100})
+			result, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: tc.query, PageSize: 100})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -96,21 +96,25 @@ func TestCatalogSearchOrderingAndPagination(t *testing.T) {
 			for _, item := range result.Items {
 				got = append(got, item.GalleryID)
 			}
-			if !reflect.DeepEqual(got, tc.want) || result.Total != int64(len(tc.want)) {
-				t.Fatalf("got %v total %d, want %v", got, result.Total, tc.want)
+			if !reflect.DeepEqual(got, tc.want) || result.NextCursor != "" {
+				t.Fatalf("got %v, want %v", got, tc.want)
 			}
 		})
 	}
-	result, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: "red", Page: 999, PageSize: 1})
-	if err != nil || result.Total != 2 || result.Page != 2 || result.TotalPages != 2 || len(result.Items) != 1 {
+	first, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: "red", PageSize: 1})
+	if err != nil || first.NextCursor == "" || first.PreviousCursor != "" {
+		t.Fatalf("first filtered page: %+v, %v", first, err)
+	}
+	result, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: "red", Cursor: first.NextCursor, PageSize: 1})
+	if err != nil || result.NextCursor != "" || result.PreviousCursor == "" || len(result.Items) != 1 {
 		t.Fatalf("filtered page: %+v, %v", result, err)
 	}
 	item := result.Items[0]
 	if item.PageCount != 12 || item.PostedAt.Unix() != 300 || item.URL != "https://favorites.example.test/g/1/token1/" || item.ThumbnailURL != entries[1].ThumbnailURL {
 		t.Fatalf("browse fields: %+v", item)
 	}
-	result, err = s.List(t.Context(), collectorapi.CatalogOptions{Page: 1, PageSize: 100, IncludeExpunged: true})
-	if err != nil || result.Total != 4 || result.Items[0].GalleryID != 3 || result.Items[1].Title != "日本語のみ" {
+	result, err = s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 100, IncludeExpunged: true})
+	if err != nil || len(result.Items) != 4 || result.Items[0].GalleryID != 3 || result.Items[1].Title != "日本語のみ" {
 		t.Fatalf("expunged/title fallback: %+v, %v", result, err)
 	}
 }
@@ -125,27 +129,27 @@ func TestCatalogProjectionUpdatesAndRawTagCompletions(t *testing.T) {
 		if err != nil || len(completion.Items) != 1 {
 			t.Fatalf("%q completions: %+v, %v", query, completion, err)
 		}
-		result, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: completion.Items[0].Term, Page: 1, PageSize: 24})
-		if err != nil || result.Total != 1 {
+		result, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: completion.Items[0].Term, PageSize: 24})
+		if err != nil || len(result.Items) != 1 {
 			t.Fatalf("raw completion query %q: %+v, %v", completion.Items[0].Term, result, err)
 		}
 	}
 	entry.Title, entry.Tags, entry.Expunged = "Updated", []string{"other:new"}, true
 	retain(t, db, entry, true)
-	result, err := s.List(t.Context(), collectorapi.CatalogOptions{Page: 1, PageSize: 24})
-	if err != nil || result.Total != 0 {
+	result, err := s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 24})
+	if err != nil || len(result.Items) != 0 {
 		t.Fatalf("updated availability: %+v, %v", result, err)
 	}
-	result, err = s.List(t.Context(), collectorapi.CatalogOptions{Page: 1, PageSize: 24, IncludeExpunged: true})
-	if err != nil || result.Total != 1 || result.Items[0].Title != "Updated" {
+	result, err = s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 24, IncludeExpunged: true})
+	if err != nil || len(result.Items) != 1 || result.Items[0].Title != "Updated" {
 		t.Fatalf("updated projection: %+v, %v", result, err)
 	}
 	completion, err := s.Complete(t.Context(), "a:odd", 5)
 	if err != nil || len(completion.Items) != 1 || completion.Items[0].Value != raw {
 		t.Fatalf("retained raw vocabulary: %+v, %v", completion, err)
 	}
-	result, err = s.List(t.Context(), collectorapi.CatalogOptions{Query: completion.Items[0].Term, Page: 1, PageSize: 24, IncludeExpunged: true})
-	if err != nil || result.Total != 0 {
+	result, err = s.List(t.Context(), collectorapi.CatalogOptions{Query: completion.Items[0].Term, PageSize: 24, IncludeExpunged: true})
+	if err != nil || len(result.Items) != 0 {
 		t.Fatalf("obsolete assignments retained: %+v, %v", result, err)
 	}
 }
@@ -171,8 +175,8 @@ func TestCatalogDecodesTitlesForDisplayAndSearch(t *testing.T) {
 		{`title:"夏 & 冬"`, `Rock & Roll "ÉTÉ"`},
 		{`title:"日本語 & 続編"`, "日本語 & 続編"},
 	} {
-		result, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: tc.query, Page: 1, PageSize: 24})
-		if err != nil || result.Total != 1 || result.Items[0].Title != tc.title {
+		result, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: tc.query, PageSize: 24})
+		if err != nil || len(result.Items) != 1 || result.Items[0].Title != tc.title {
 			t.Errorf("%s: %+v, %v; want %q", tc.query, result, err, tc.title)
 		}
 	}
@@ -202,16 +206,16 @@ func TestBackfillBatchesAndResumes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	result, err := s.List(t.Context(), collectorapi.CatalogOptions{Page: 1, PageSize: 100})
-	if err != nil || result.Total != 101 || len(result.Items) != 100 || result.Items[0].GalleryID != 101 {
+	result, err := s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 100})
+	if err != nil || result.NextCursor == "" || len(result.Items) != 100 || result.Items[0].GalleryID != 101 {
 		t.Fatalf("resumed backfill: %+v, %v", result, err)
 	}
-	for _, options := range []collectorapi.CatalogOptions{{Page: 0, PageSize: 24}, {Page: 1, PageSize: 0}, {Page: 1, PageSize: 101}} {
+	for _, options := range []collectorapi.CatalogOptions{{Cursor: "invalid", PageSize: 24}, {PageSize: 0}, {PageSize: 101}} {
 		if _, err := s.List(t.Context(), options); !errors.Is(err, ErrInvalidPagination) {
 			t.Fatalf("invalid pagination: %v", err)
 		}
 	}
-	if _, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: `"unfinished`, Page: 1, PageSize: 24}); !errors.Is(err, ErrInvalidQuery) {
+	if _, err := s.List(t.Context(), collectorapi.CatalogOptions{Query: `"unfinished`, PageSize: 24}); !errors.Is(err, ErrInvalidQuery) {
 		t.Fatalf("invalid query: %v", err)
 	}
 }

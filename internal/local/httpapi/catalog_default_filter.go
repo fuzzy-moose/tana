@@ -30,7 +30,7 @@ func HandlePandaDefaultFilter(store *catalogfilter.Store, client *collectorapi.C
 				if !catalogCollectorConfigured(w, client) {
 					return
 				}
-				if _, err := client.Catalog(r.Context(), collectorapi.CatalogOptions{Query: filter.Query, Page: 1, PageSize: 1}); err != nil {
+				if _, err := client.Catalog(r.Context(), collectorapi.CatalogOptions{Query: filter.Query, PageSize: 1}); err != nil {
 					writeCatalogCollectorError(w, err)
 					return
 				}

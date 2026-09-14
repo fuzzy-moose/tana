@@ -32,7 +32,7 @@ func TestCatalogCategoryAndDefaultFilters(t *testing.T) {
 		{"categories search and exclusions", collectorapi.CatalogOptions{Query: "~red ~blue", Categories: []string{"manga", "doujinshi"}, DefaultQuery: "-l:japanese$ ~green ~yellow"}, []int64{1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.options.Page, tc.options.PageSize = 1, 100
+			tc.options.PageSize = 100
 			result, err := service.List(t.Context(), tc.options)
 			if err != nil {
 				t.Fatal(err)
@@ -41,15 +41,15 @@ func TestCatalogCategoryAndDefaultFilters(t *testing.T) {
 			for _, item := range result.Items {
 				got = append(got, item.GalleryID)
 			}
-			if !reflect.DeepEqual(got, tc.want) || result.Total != int64(len(tc.want)) {
-				t.Fatalf("got %v total %d, want %v", got, result.Total, tc.want)
+			if !reflect.DeepEqual(got, tc.want) || result.NextCursor != "" {
+				t.Fatalf("got %v, want %v", got, tc.want)
 			}
 		})
 	}
 	for _, options := range []collectorapi.CatalogOptions{
 		{Categories: []string{"unknown"}}, {DefaultCategories: []string{"unknown"}},
 	} {
-		options.Page, options.PageSize = 1, 24
+		options.PageSize = 24
 		if _, err := service.List(t.Context(), options); !errors.Is(err, panda.ErrInvalidCategory) {
 			t.Fatalf("invalid category: %v", err)
 		}
@@ -76,6 +76,8 @@ func TestCatalogCategoryPagination(t *testing.T) {
 		options collectorapi.CatalogOptions
 		want    []int64
 	}{
+		{"all", collectorapi.CatalogOptions{}, []int64{4, 90, 6, 3, 5, 9, 1, 2}},
+		{"exclusion only", collectorapi.CatalogOptions{Query: "-l:japanese$"}, []int64{4, 90, 6, 5, 9, 1, 2}},
 		{"selected", collectorapi.CatalogOptions{Categories: []string{" manga ", "doujinshi", "MANGA"}}, []int64{6, 3, 5, 9, 1, 2}},
 		{"default", collectorapi.CatalogOptions{DefaultCategories: []string{"manga", "doujinshi"}}, []int64{6, 3, 5, 9, 1, 2}},
 		{"include expunged", collectorapi.CatalogOptions{Categories: []string{"manga", "doujinshi"}, IncludeExpunged: true}, []int64{8, 6, 3, 5, 9, 1, 2}},
@@ -84,24 +86,39 @@ func TestCatalogCategoryPagination(t *testing.T) {
 		{"search", collectorapi.CatalogOptions{Categories: []string{"manga", "doujinshi"}, Query: "red", DefaultQuery: "-l:japanese$"}, []int64{6, 5, 1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			const pageSize = 2
-			pages := max(1, (len(tc.want)+pageSize-1)/pageSize)
-			for page := 1; page <= pages+1; page++ {
+			for _, pageSize := range []int{1, 2} {
 				options := tc.options
-				options.Page, options.PageSize = page, pageSize
-				result, err := service.List(t.Context(), options)
-				if err != nil {
-					t.Fatal(err)
+				options.PageSize = pageSize
+				var pages []collectorapi.CatalogResult
+				for start := 0; ; start += pageSize {
+					result, err := service.List(t.Context(), options)
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := tc.want[start:min(start+pageSize, len(tc.want))]
+					assertCatalogIDs(t, result, want)
+					if (result.NextCursor != "") != (start+pageSize < len(tc.want)) ||
+						(result.PreviousCursor != "") != (start > 0) {
+						t.Fatalf("incorrect boundaries at %d: %+v", start, result)
+					}
+					pages = append(pages, result)
+					options.Cursor = result.NextCursor
+					if options.Cursor == "" {
+						break
+					}
 				}
-				actualPage := min(page, pages)
-				start := (actualPage - 1) * pageSize
-				want := tc.want[start:min(start+pageSize, len(tc.want))]
-				got := make([]int64, 0, len(result.Items))
-				for _, item := range result.Items {
-					got = append(got, item.GalleryID)
-				}
-				if !reflect.DeepEqual(got, want) || result.Total != int64(len(tc.want)) || result.Page != actualPage || result.TotalPages != pages {
-					t.Fatalf("page %d: IDs %v, result %+v; want IDs %v, total %d, page %d/%d", page, got, result, want, len(tc.want), actualPage, pages)
+				options.Cursor = pages[len(pages)-1].PreviousCursor
+				for page := len(pages) - 2; page >= 0; page-- {
+					result, err := service.List(t.Context(), options)
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := tc.want[page*pageSize : min((page+1)*pageSize, len(tc.want))]
+					assertCatalogIDs(t, result, want)
+					if result.NextCursor == "" || (result.PreviousCursor != "") != (page > 0) {
+						t.Fatalf("incorrect reverse boundaries at %d: %+v", page, result)
+					}
+					options.Cursor = result.PreviousCursor
 				}
 			}
 		})

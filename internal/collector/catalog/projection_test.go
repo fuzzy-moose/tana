@@ -61,8 +61,8 @@ func TestFailedBackfillResumesAfterReopen(t *testing.T) {
 	if err := s.Backfill(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	result, err := s.List(t.Context(), collectorapi.CatalogOptions{Page: 1, PageSize: 24})
-	if err != nil || result.Total != 1 || result.Items[0].Title != "Recovered projection" {
+	result, err := s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 24})
+	if err != nil || len(result.Items) != 1 || result.Items[0].Title != "Recovered projection" {
 		t.Fatalf("recovered backfill: %+v, %v", result, err)
 	}
 }

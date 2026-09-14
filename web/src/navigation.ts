@@ -10,7 +10,7 @@ export type GallerySort = 'title' | 'favorited_desc' | 'favorited_asc'
 
 export type Route =
   | { kind: 'galleries', search: string, page: number, categories: string[], sort: GallerySort }
-  | { kind: 'panda', search: string, page: number, includeExpunged: boolean, categories: string[], bypassDefault: boolean }
+  | { kind: 'panda', search: string, cursor: string, includeExpunged: boolean, categories: string[], bypassDefault: boolean }
   | { kind: 'libraries' | 'source-cleanup' | 'panda-lookup' | 'not-found' }
   | { kind: 'library-refresh', libraryID?: number }
   | { kind: 'collector', page: CollectorPage }
@@ -28,7 +28,7 @@ export function useRoute(): Route {
   const page = Number.isSafeInteger(value) && value > 0 ? value : 1
   const sort = params.get('sort')
   if (!path || path === '/' || path === '/galleries') return { kind: 'galleries', search: params.get('q') ?? '', page, categories, sort: sort === 'favorited_desc' || sort === 'favorited_asc' ? sort : 'title' }
-  if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', page, includeExpunged: params.get('include_expunged') === 'true', categories, bypassDefault: params.get('bypass_default') === 'true' }
+  if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', cursor: params.get('cursor') ?? '', includeExpunged: params.get('include_expunged') === 'true', categories, bypassDefault: params.get('bypass_default') === 'true' }
   if (path === '/panda/lookup') return { kind: 'panda-lookup' }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
   if (path === '/libraries/source-cleanup') return { kind: 'source-cleanup' }
@@ -72,10 +72,10 @@ export function listingLink(search: string, page = 1, categories: string[] = [],
   return `#/galleries${params.size ? `?${params}` : ''}`
 }
 
-export function pandaListingLink(search: string, page = 1, includeExpunged = false, categories: string[] = [], bypassDefault = false) {
+export function pandaListingLink(search: string, cursor = '', includeExpunged = false, categories: string[] = [], bypassDefault = false) {
   const params = new URLSearchParams()
   if (search) params.set('q', search)
-  if (page > 1) params.set('page', String(page))
+  if (cursor) params.set('cursor', cursor)
   if (includeExpunged) params.set('include_expunged', 'true')
   for (const category of categories) params.append('category', category)
   if (bypassDefault) params.set('bypass_default', 'true')
