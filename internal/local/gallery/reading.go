@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fuzzy-moose/tana/internal/gallerysearch"
 	"github.com/fuzzy-moose/tana/internal/local/gallery/dbgen"
 	"github.com/fuzzy-moose/tana/internal/local/source"
 	"github.com/fuzzy-moose/tana/internal/local/tag"
@@ -24,12 +25,14 @@ type Summary struct {
 
 type Detail struct {
 	Summary
-	Tags []DetailTag `json:"tags"`
+	Tags             []DetailTag `json:"tags"`
+	PandaCandidateID int64       `json:"panda_candidate_id,omitempty"`
 }
 
 type DetailTag struct {
 	Namespace string `json:"namespace"`
 	Value     string `json:"value"`
+	Term      string `json:"term"`
 }
 
 func (r *SQLiteRepository) Detail(ctx context.Context, id int64) (Detail, error) {
@@ -43,9 +46,13 @@ func (r *SQLiteRepository) Detail(ctx context.Context, id int64) (Detail, error)
 	}
 	result := Detail{Summary: summary, Tags: make([]DetailTag, 0, len(tags))}
 	for _, t := range tags {
-		result.Tags = append(result.Tags, DetailTag{Namespace: t.Namespace.Name, Value: t.Value})
+		result.Tags = append(result.Tags, DetailTag{
+			Namespace: t.Namespace.Name, Value: t.Value,
+			Term: gallerysearch.SuggestionTerm("", t.Namespace.Name, t.Value),
+		})
 	}
-	return result, nil
+	result.PandaCandidateID, err = r.pandaCandidateID(ctx, id)
+	return result, err
 }
 
 func (r *SQLiteRepository) Summary(ctx context.Context, id int64) (Summary, error) {

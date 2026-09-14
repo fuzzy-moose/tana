@@ -62,6 +62,31 @@ test('keeps empty galleries visible and disables reading in their detail view', 
   expect(screen.queryByRole('link', { name: 'Read gallery' })).toBeNull()
 })
 
+test('opens the gallery listing with every selected detail tag in the search', async () => {
+  const fetchMock = vi.fn<typeof fetch>(async (input) => {
+    const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/galleries/1') return Response.json({
+      id: 1, title: 'Manga', page_count: 0, tags: [
+        { namespace: 'artist', value: 'alpha', term: 'artist:alpha$' },
+        { namespace: 'other', value: 'all ages', term: 'other:"all ages$"' },
+      ],
+    })
+    return Response.json({ items: [], total: 0, page: 1, page_size: 24 })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  window.history.replaceState(null, '', '#/galleries/1')
+  const user = userEvent.setup()
+  render(<App />)
+  await user.click(await screen.findByRole('button', { name: 'alpha' }))
+  await user.click(screen.getByRole('button', { name: 'all ages' }))
+  await user.click(screen.getByRole('link', { name: 'Search selected tags (2)' }))
+  await screen.findByRole('heading', { name: 'Galleries' })
+  expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('artist:alpha$ other:"all ages$"')
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+    '/api/galleries?q=artist%3Aalpha%24+other%3A%22all+ages%24%22&page=1&page_size=24', expect.anything(),
+  ))
+})
+
 test('invalid submitted syntax shows a generic error and preserves the query for correction', async () => {
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => {
     const url = new URL(String(input), 'http://localhost')

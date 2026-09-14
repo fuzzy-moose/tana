@@ -8,7 +8,8 @@ export interface Gallery {
 }
 
 export interface GalleryDetails extends Gallery {
-  tags: { namespace: string, value: string }[]
+  tags: TagSuggestion[]
+  panda_candidate_id?: number
 }
 
 export interface GalleryListing {

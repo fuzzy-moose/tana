@@ -9,6 +9,54 @@ import (
 	"github.com/fuzzy-moose/tana/internal/local/source"
 )
 
+func TestDetailPandaCandidateUsesLinkedSource(t *testing.T) {
+	_, libraries, sources, galleries := openRepositories(t)
+	l, err := libraries.Create(t.Context(), "Library", filepath.Join(t.TempDir(), "Root [44]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		kind source.Kind
+		want int64
+	}{
+		{"Book [11].cbz", source.Archive, 11},
+		{"Book [22]", source.Directory, 22},
+		{".", source.Directory, 44},
+		{"Book", source.Directory, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := sources.Create(t.Context(), l.ID, tc.name, tc.kind, []string{"1.jpg"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			g, err := galleries.CreateFromSource(t.Context(), s.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := galleries.Rename(t.Context(), g.ID, "Edited title [99]"); err != nil {
+				t.Fatal(err)
+			}
+			detail, err := galleries.Detail(t.Context(), g.ID)
+			if err != nil || detail.PandaCandidateID != tc.want {
+				t.Fatalf("detail candidate: %d, %v; want %d", detail.PandaCandidateID, err, tc.want)
+			}
+			pages, err := galleries.Pages(t.Context(), g.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manual, err := galleries.Create(t.Context(), "Manual [11]", []int64{pages[0].SourceFileID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			detail, err = galleries.Detail(t.Context(), manual.ID)
+			if err != nil || detail.PandaCandidateID != 0 {
+				t.Fatalf("manual gallery candidate: %d, %v", detail.PandaCandidateID, err)
+			}
+		})
+	}
+}
+
 func TestPandaBrowseFiltersBeforePaginationAndKeepsMissingFavoriteTimesLast(t *testing.T) {
 	_, libraries, sources, galleries := openRepositories(t)
 	newer, older := int64(200), int64(100)

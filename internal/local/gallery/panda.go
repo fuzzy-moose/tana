@@ -2,6 +2,8 @@ package gallery
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"path/filepath"
 
 	"github.com/fuzzy-moose/tana/internal/local/source"
@@ -40,6 +42,23 @@ type PandaFact struct {
 type PandaCandidate struct {
 	SourceID int64
 	PandaID  int64
+}
+
+func (r *SQLiteRepository) pandaCandidateID(ctx context.Context, galleryID int64) (int64, error) {
+	var name, kind, libraryPath string
+	err := r.db.QueryRowContext(ctx, `SELECT s.path, s.kind, l.path
+		FROM galleries g JOIN sources s ON s.id = g.source_id
+		JOIN libraries l ON l.id = s.library_id WHERE g.id = ?`, galleryID).Scan(&name, &kind, &libraryPath)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if name == "." {
+		name = filepath.Base(libraryPath)
+	}
+	return source.PandaCandidateID(name, source.Kind(kind)), nil
 }
 
 func (r *SQLiteRepository) PandaCandidates(ctx context.Context, search string) ([]PandaCandidate, error) {

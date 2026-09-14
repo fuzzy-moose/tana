@@ -27,11 +27,11 @@ func TestGalleryDetailTags(t *testing.T) {
 			name:     "grouped alphabetical tags",
 			metadata: "Tags: language:japanese, artist:zeta, all ages, artist:alpha, custom:example\nAttribution\n",
 			want: []gallery.DetailTag{
-				{Namespace: "artist", Value: "alpha"},
-				{Namespace: "artist", Value: "zeta"},
-				{Namespace: "custom", Value: "example"},
-				{Namespace: "language", Value: "japanese"},
-				{Namespace: "other", Value: "all ages"},
+				{Namespace: "artist", Value: "alpha", Term: "artist:alpha$"},
+				{Namespace: "artist", Value: "zeta", Term: "artist:zeta$"},
+				{Namespace: "custom", Value: "example", Term: "custom:example$"},
+				{Namespace: "language", Value: "japanese", Term: "language:japanese$"},
+				{Namespace: "other", Value: "all ages", Term: `other:"all ages$"`},
 			},
 		},
 	} {

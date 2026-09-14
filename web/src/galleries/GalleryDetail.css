@@ -33,7 +33,19 @@
 }
 
 .gallery-detail-tags > li {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.gallery-detail-tag {
   max-width: 100%;
   min-width: 0;
   white-space: normal;
+  cursor: pointer;
+}
+
+.gallery-detail-tag:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 2px;
 }
