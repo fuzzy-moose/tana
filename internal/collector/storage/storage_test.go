@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -33,7 +32,7 @@ func TestOpenBackfillsFeedSightingsFromRetainedCaptures(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// Reopening twice must retain the backfill, processed state, and raw bytes.
+	// Backfill sightings before discarding processed payloads; failed feeds survive.
 	for range 2 {
 		db, _, err = Open(t.Context(), dir)
 		if err != nil {
@@ -50,8 +49,11 @@ func TestOpenBackfillsFeedSightingsFromRetainedCaptures(t *testing.T) {
 		}
 		var saved []byte
 		var processed int64
-		if err := db.QueryRow(`SELECT body, processed_at FROM raw_feeds WHERE id = 1`).Scan(&saved, &processed); err != nil || !bytes.Equal(saved, body) || processed != 101 {
-			t.Fatalf("capture changed: %q, %d, %v", saved, processed, err)
+		if err := db.QueryRow(`SELECT body, processed_at FROM raw_feeds WHERE id = 1`).Scan(&saved, &processed); err != nil || len(saved) != 0 || processed != 101 {
+			t.Fatalf("processed capture cleanup: %q, %d, %v", saved, processed, err)
+		}
+		if err := db.QueryRow(`SELECT body FROM raw_feeds WHERE id = 3`).Scan(&saved); err != nil || string(saved) != "<malformed" {
+			t.Fatalf("unprocessed capture changed: %q, %v", saved, err)
 		}
 		var status string
 		if err := db.QueryRow(`SELECT status FROM feed_continuity_checks`).Scan(&status); err != nil || status != "overlap" {

@@ -71,7 +71,11 @@ func TestDestinationCheckDoesNotBlockBatchControls(t *testing.T) {
 				}
 			}
 			catalog.release <- struct{}{}
-			if err := <-done; !errors.Is(err, ErrInvalid) {
+			wantErr := ErrInvalid
+			if action == "retry" {
+				wantErr = ErrNotFound
+			}
+			if err := <-done; !errors.Is(err, wantErr) {
 				t.Fatalf("stale %s: %v", action, err)
 			}
 		})

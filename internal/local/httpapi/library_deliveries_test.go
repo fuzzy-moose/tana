@@ -112,19 +112,23 @@ func TestLibraryDeliveryAPITransfersImportsThenDeletes(t *testing.T) {
 		t.Fatalf("incorrect snapshot: %s", w.Body)
 	}
 	deadline := time.Now().Add(5 * time.Second)
+	var listed struct {
+		Batches []delivery.Batch `json:"batches"`
+	}
 	for time.Now().Before(deadline) {
-		w = request(t, h, "GET", fmt.Sprintf("/api/library-deliveries/%d", batch.ID), "", 200)
-		if err := json.Unmarshal(w.Body.Bytes(), &batch); err != nil {
+		w = request(t, h, "GET", "/api/library-deliveries", "", 200)
+		if err := json.Unmarshal(w.Body.Bytes(), &listed); err != nil {
 			t.Fatal(err)
 		}
-		if batch.State == "completed" {
+		if len(listed.Batches) == 0 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if batch.State != "completed" {
-		t.Fatalf("delivery did not complete: %+v", batch)
+	if len(listed.Batches) != 0 {
+		t.Fatalf("delivery did not complete: %+v", listed.Batches)
 	}
+	request(t, h, "GET", fmt.Sprintf("/api/library-deliveries/%d", batch.ID), "", 404)
 	mu.Lock()
 	defer mu.Unlock()
 	want := []string{"/api/downloads/7/file", "delete 7", "/api/downloads/8/file", "delete 8"}

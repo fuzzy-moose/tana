@@ -28,6 +28,10 @@ type queryer interface {
 }
 
 func saveMetadata(ctx context.Context, db executor, b *Batch) error {
+	if b.State == "completed" {
+		_, err := db.ExecContext(ctx, "DELETE FROM panda_deliveries WHERE id = ?", b.ID)
+		return err
+	}
 	b.UpdatedAt = time.Now().UTC()
 	record := persistedBatch{Batch: *b, Root: b.root}
 	record.Batch.Items = nil
@@ -282,9 +286,6 @@ func (s *Service) pause(b Batch, err error) error {
 const unfinishedStates = "('queued', 'transferring', 'transferred', 'saved', 'importing')"
 
 func finish(ctx context.Context, db queryer, b *Batch) error {
-	if b.State == "stopped" || b.State == "paused" {
-		return nil
-	}
 	var unfinished, failed bool
 	err := db.QueryRowContext(ctx, `SELECT
 		EXISTS(SELECT 1 FROM panda_delivery_items WHERE delivery_id = ? AND state IN `+unfinishedStates+`),
@@ -292,9 +293,12 @@ func finish(ctx context.Context, db queryer, b *Batch) error {
 	if err != nil || unfinished {
 		return err
 	}
-	b.State = "completed"
 	if failed {
-		b.State = "completed_with_errors"
+		if b.State != "stopped" && b.State != "paused" {
+			b.State = "completed_with_errors"
+		}
+	} else {
+		b.State = "completed"
 	}
 	return nil
 }

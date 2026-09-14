@@ -244,6 +244,10 @@ func (s *Service) step() (bool, error) {
 		// Advance a whole archive before the next one, even after Stop is requested.
 		if b.StopRequested && b.CurrentGalleryID == 0 {
 			b.State = "stopped"
+			if err := finish(s.ctx, s.db, &b); err != nil {
+				s.mu.Unlock()
+				return false, err
+			}
 			err := saveMetadata(s.ctx, s.db, &b)
 			s.mu.Unlock()
 			return true, err

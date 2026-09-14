@@ -134,7 +134,11 @@ func (f *fixture) drain(id int64) Batch {
 			f.t.Fatal(err)
 		}
 		if !more {
-			return f.get(id)
+			b, err := f.service.Get(f.t.Context(), id)
+			if err != nil && !errors.Is(err, ErrNotFound) {
+				f.t.Fatal(err)
+			}
+			return b
 		}
 	}
 	f.t.Fatal("worker did not settle")
@@ -150,12 +154,27 @@ func (f *fixture) get(id int64) Batch {
 	return b
 }
 
-func TestDeliverySequentiallyImportsBeforeDeleting(t *testing.T) {
+func (f *fixture) assertRemoved(id int64) {
+	f.t.Helper()
+	if _, err := f.service.Get(f.t.Context(), id); !errors.Is(err, ErrNotFound) {
+		f.t.Fatalf("finished delivery remains: %v", err)
+	}
+	var items int
+	if err := f.db.QueryRow("SELECT count(*) FROM panda_delivery_items WHERE delivery_id = ?", id).Scan(&items); err != nil || items != 0 {
+		f.t.Fatalf("finished delivery checkpoints: %d, %v", items, err)
+	}
+}
+
+func TestDeliverySequentiallyImportsBeforeDeletingAndCleansUpBatch(t *testing.T) {
 	f := newFixture(t)
 	b := f.start(7, 8, 7)
-	b = f.drain(b.ID)
-	if b.State != "completed" || len(b.Items) != 2 {
+	if len(b.Items) != 2 {
 		t.Fatalf("batch: %+v", b)
+	}
+	f.drain(b.ID)
+	f.assertRemoved(b.ID)
+	if batches, err := f.service.List(t.Context()); err != nil || len(batches) != 0 {
+		t.Fatalf("finished deliveries listed: %+v, %v", batches, err)
 	}
 	want := []string{"transfer:7", "import:7", "delete:7", "transfer:8", "import:8", "delete:8"}
 	if !reflect.DeepEqual(f.events, want) {
@@ -199,6 +218,36 @@ func TestDeliverySkipsCatalogedGalleryAndPreservesCollision(t *testing.T) {
 	}
 }
 
+func TestStopAfterLastArchiveCleansUpFinishedBatch(t *testing.T) {
+	for _, cleanupFailure := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cleanupFailure=%v", cleanupFailure), func(t *testing.T) {
+			f := newFixture(t)
+			if cleanupFailure {
+				f.collector.deleteError[7] = errors.New("collector unavailable")
+			}
+			b := f.start(7)
+			if _, err := f.service.step(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.service.Stop(t.Context(), b.ID); err != nil {
+				t.Fatal(err)
+			}
+			stopped := f.drain(b.ID)
+			if cleanupFailure {
+				if stopped.State != "stopped" || stopped.Items[0].State != "cleanup_pending" {
+					t.Fatalf("cleanup lost after stop: %+v", stopped)
+				}
+				delete(f.collector.deleteError, 7)
+				if _, err := f.service.RetryCleanup(t.Context(), b.ID); err != nil {
+					t.Fatal(err)
+				}
+				f.drain(b.ID)
+			}
+			f.assertRemoved(b.ID)
+		})
+	}
+}
+
 func TestRetryImportReusesSavedArchiveAcrossRestart(t *testing.T) {
 	f := newFixture(t)
 	f.imports.errors[7] = errors.New("import failed")
@@ -213,10 +262,8 @@ func TestRetryImportReusesSavedArchiveAcrossRestart(t *testing.T) {
 	if _, err := f.service.Retry(t.Context(), b.ID); err != nil {
 		t.Fatal(err)
 	}
-	b = f.drain(b.ID)
-	if b.State != "completed" {
-		t.Fatalf("batch: %+v", b)
-	}
+	f.drain(b.ID)
+	f.assertRemoved(b.ID)
 	want := []string{"transfer:7", "import:7", "transfer:8", "import:8", "delete:8", "import:7", "delete:7"}
 	if !reflect.DeepEqual(f.events, want) {
 		t.Fatalf("events: %v", f.events)
@@ -278,8 +325,9 @@ func TestCleanupFailureContinuesAndRetriesOnlyCleanup(t *testing.T) {
 	if _, err := f.service.RetryCleanup(t.Context(), b.ID); err != nil {
 		t.Fatal(err)
 	}
-	b = f.drain(b.ID)
-	if b.State != "completed" || f.events[len(f.events)-1] != "delete:7" || len(f.events) != before+1 {
+	f.drain(b.ID)
+	f.assertRemoved(b.ID)
+	if f.events[len(f.events)-1] != "delete:7" || len(f.events) != before+1 {
 		t.Fatalf("cleanup retry: %+v events=%v", b, f.events)
 	}
 }
@@ -327,9 +375,8 @@ func TestUnavailableLibraryRequiresExplicitResumeAcrossRestart(t *testing.T) {
 	if _, err := f.service.Resume(t.Context(), b.ID); err != nil {
 		t.Fatal(err)
 	}
-	if b := f.drain(b.ID); b.State != "completed" {
-		t.Fatalf("batch: %+v", b)
-	}
+	f.drain(b.ID)
+	f.assertRemoved(b.ID)
 }
 
 func TestInterruptedFinalizationRecognizesOwnedFile(t *testing.T) {
@@ -352,9 +399,8 @@ func TestInterruptedFinalizationRecognizesOwnedFile(t *testing.T) {
 			}
 			f.service.Close()
 			f.service = f.newService()
-			if b := f.drain(b.ID); b.State != "completed" {
-				t.Fatalf("batch: %+v", b)
-			}
+			f.drain(b.ID)
+			f.assertRemoved(b.ID)
 			if !reflect.DeepEqual(f.events, []string{"transfer:7", "import:7", "delete:7"}) {
 				t.Fatalf("events: %v", f.events)
 			}
@@ -447,7 +493,6 @@ func TestStopFinishesCurrentArchiveAndRestartResumesQueuedWork(t *testing.T) {
 	if _, err := f.service.Retry(t.Context(), b.ID); err != nil {
 		t.Fatal(err)
 	}
-	if b := f.drain(b.ID); b.State != "completed" {
-		t.Fatalf("restart: %+v", b)
-	}
+	f.drain(b.ID)
+	f.assertRemoved(b.ID)
 }

@@ -11,7 +11,7 @@ import (
 )
 
 const captureBody = `-- name: CaptureBody :one
-SELECT body FROM raw_feeds WHERE id = ?
+SELECT body FROM raw_feeds WHERE id = ? AND processed_at IS NULL
 `
 
 func (q *Queries) CaptureBody(ctx context.Context, id int64) ([]byte, error) {
@@ -104,7 +104,7 @@ func (q *Queries) LatestCaptureTime(ctx context.Context) (int64, error) {
 }
 
 const markProcessed = `-- name: MarkProcessed :exec
-UPDATE raw_feeds SET processed_at = ?1, last_attempt_at = ?1, last_error = NULL WHERE id = ?2
+UPDATE raw_feeds SET processed_at = ?1, last_attempt_at = ?1, last_error = NULL, body = X'' WHERE id = ?2
 `
 
 type MarkProcessedParams struct {

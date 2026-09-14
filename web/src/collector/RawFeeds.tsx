@@ -12,7 +12,7 @@ export default function RawFeeds({ available, refreshKey }: { available: boolean
 
   return <section className="collector-panel" aria-labelledby="feed-captures-title">
     <h2 id="feed-captures-title">Feed captures</h2>
-    <p>Download the original feed bytes, including malformed XML. Capture IDs match collector logs. Downloads remain stored on the collector.</p>
+    <p>Pending and failed feeds remain available to download, including malformed XML. Successfully processed feeds are cleaned up automatically. Capture IDs match collector logs.</p>
     <div className="collector-sync">
       <label className="form-field">Show captures
         <select className="text-input" value={failedOnly ? 'failed' : 'all'} onChange={(event) => {

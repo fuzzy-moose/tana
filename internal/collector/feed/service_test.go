@@ -73,7 +73,7 @@ func checkStatus(t *testing.T, db *sql.DB, previous, current int64, want string)
 	}
 }
 
-func TestProcessingRetainsCapturesAndContinuesPastBadFeed(t *testing.T) {
+func TestProcessingCleansUpSuccessfulFeedsAndContinuesPastBadFeed(t *testing.T) {
 	db := openTestDB(t, t.TempDir())
 	var logs bytes.Buffer
 	s := &Service{store: newStore(db), logger: slog.New(slog.NewTextHandler(&logs, nil))}
@@ -98,9 +98,16 @@ func TestProcessingRetainsCapturesAndContinuesPastBadFeed(t *testing.T) {
 	}
 	for i, id := range ids {
 		body, err := s.store.q.CaptureBody(t.Context(), id)
-		if err != nil || !bytes.Equal(body, bodies[i]) {
-			t.Fatalf("raw capture %d changed: %q, %v", id, body, err)
+		if i == 2 {
+			if err != nil || !bytes.Equal(body, bodies[i]) {
+				t.Fatalf("failed capture %d changed: %q, %v", id, body, err)
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("processed capture %d still downloadable: %q, %v", id, body, err)
 		}
+	}
+	if n := count(t, db, "SELECT count(*) FROM raw_feeds WHERE processed_at IS NOT NULL AND length(body) != 0"); n != 0 {
+		t.Fatalf("retained %d processed feed bodies", n)
 	}
 	for i, want := range []string{"overlap", "unknown", "possible_gap", "unknown", "possible_gap", "overlap", "possible_gap"} {
 		checkStatus(t, db, ids[i], ids[i+1], want)
@@ -142,6 +149,9 @@ func TestProcessingRollsBackAndDetectsKnownGalleryOnRetry(t *testing.T) {
 	}
 	checkStatus(t, db, first, failed, "unknown")
 	checkStatus(t, db, failed, last, "possible_gap")
+	if body, err := s.CaptureBody(t.Context(), failed); err != nil || !bytes.Equal(body, atomFeed("2/b", "3/c")) {
+		t.Fatalf("failed transaction lost raw feed: %q, %v", body, err)
+	}
 	if _, err := db.Exec("DROP TRIGGER reject_completion"); err != nil {
 		t.Fatal(err)
 	}

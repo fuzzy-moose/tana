@@ -135,9 +135,7 @@ func TestArchiveTransferDeadlineTracksInactivity(t *testing.T) {
 			})
 		}}
 		b := f.start(7)
-		b = f.drain(b.ID)
-		if b.State != "completed" {
-			t.Fatalf("active transfer timed out: %+v", b)
-		}
+		f.drain(b.ID)
+		f.assertRemoved(b.ID)
 	})
 }

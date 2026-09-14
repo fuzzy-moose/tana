@@ -1,7 +1,6 @@
 package collector
 
 import (
-	"bytes"
 	"database/sql"
 	"errors"
 	"io"
@@ -95,8 +94,8 @@ func TestAppLifecycle(t *testing.T) {
 			}
 			defer db.Close()
 			var saved []byte
-			if err := db.QueryRow("SELECT body FROM raw_feeds").Scan(&saved); err != nil || !bytes.Equal(saved, body) {
-				t.Fatalf("raw feed did not survive close: %q, %v", saved, err)
+			if err := db.QueryRow("SELECT body FROM raw_feeds").Scan(&saved); err != nil || len(saved) != 0 {
+				t.Fatalf("processed raw feed retained after close: %q, %v", saved, err)
 			}
 			var id int64
 			var token string

@@ -11,7 +11,7 @@ const failed: FeedCapture = {
   id: 339, captured_at: '2026-09-13T09:41:26Z', size_bytes: 45000, state: 'failed',
   error: 'panda: parse feed: XML syntax error on line 938: illegal character code U+001D',
 }
-const processed: FeedCapture = { ...failed, id: 340, state: 'processed', error: undefined }
+const pending: FeedCapture = { ...failed, id: 340, state: 'pending', error: undefined }
 
 test('raw feeds route exposes capture errors and original downloads across filters and pages', async () => {
   const fetchMock = vi.fn<typeof fetch>(async (input) => {
@@ -23,7 +23,7 @@ test('raw feeds route exposes capture errors and original downloads across filte
     if (url.pathname !== '/api/collector/feed/captures') throw new Error(`Unexpected request: ${path}`)
     if (url.searchParams.get('failed_only') === 'true') return Response.json({ captures: [failed], has_more: false })
     const first = url.searchParams.get('offset') === '0'
-    return Response.json({ captures: first ? [processed, failed] : [{ ...processed, id: 314 }], has_more: first })
+    return Response.json({ captures: first ? [pending, failed] : [{ ...pending, id: 314 }], has_more: first })
   })
   vi.stubGlobal('fetch', fetchMock)
   window.history.replaceState(null, '', '/#/collector/feeds')

@@ -80,10 +80,10 @@ func TestLocalRawFeedCaptures(t *testing.T) {
 		ids     []int64
 		hasMore bool
 	}{
-		{"", []int64{340, 339, 338}, false},
+		{"", []int64{340, 339}, false},
 		{"?limit=1", []int64{340}, true},
-		{"?limit=1&offset=1", []int64{339}, true},
-		{"?limit=1&offset=2", []int64{338}, false},
+		{"?limit=1&offset=1", []int64{339}, false},
+		{"?limit=1&offset=2", []int64{}, false},
 		{"?failed_only=true&limit=1", []int64{339}, false},
 		{"?offset=3", []int64{}, false},
 		{"?failed_only=true&offset=1", []int64{}, false},
@@ -96,7 +96,7 @@ func TestLocalRawFeedCaptures(t *testing.T) {
 		ids := []int64{}
 		for _, capture := range result.Captures {
 			ids = append(ids, capture.ID)
-			wantState := map[int64]string{338: "processed", 339: "failed", 340: "pending"}[capture.ID]
+			wantState := map[int64]string{339: "failed", 340: "pending"}[capture.ID]
 			if capture.State != wantState {
 				t.Fatalf("capture %d state = %s", capture.ID, capture.State)
 			}
@@ -108,7 +108,7 @@ func TestLocalRawFeedCaptures(t *testing.T) {
 			t.Fatalf("list %s: %+v", tc.query, result)
 		}
 	}
-	for _, id := range []int{339, 338, 340, 339} {
+	for _, id := range []int{339, 340, 339} {
 		w := request("GET", fmt.Sprintf("/%d/file", id))
 		want := raw
 		if id != 339 {
@@ -127,7 +127,7 @@ func TestLocalRawFeedCaptures(t *testing.T) {
 	if w.Code != http.StatusOK || w.Body.Len() != 0 || w.Header().Get("Content-Length") != strconv.Itoa(len(raw)) {
 		t.Fatalf("HEAD: %d %v %s", w.Code, w.Header(), w.Body)
 	}
-	for _, suffix := range []string{"/999/file", "/bad/file", "/0/file", "/-1/file", "/99999999999999999999/file"} {
+	for _, suffix := range []string{"/338/file", "/999/file", "/bad/file", "/0/file", "/-1/file", "/99999999999999999999/file"} {
 		if w := request("GET", suffix); w.Code != http.StatusNotFound {
 			t.Fatalf("missing capture %s: %d %s", suffix, w.Code, w.Body)
 		}

@@ -26,7 +26,7 @@ DELETE FROM feed_continuity_checks WHERE previous_capture_id = ? AND current_cap
 SELECT id FROM raw_feeds WHERE processed_at IS NULL ORDER BY captured_at, id;
 
 -- name: CaptureBody :one
-SELECT body FROM raw_feeds WHERE id = ?;
+SELECT body FROM raw_feeds WHERE id = ? AND processed_at IS NULL;
 
 -- name: RecordFailure :exec
 UPDATE raw_feeds SET last_attempt_at = ?, last_error = ? WHERE id = ? AND processed_at IS NULL;
@@ -43,7 +43,7 @@ INSERT INTO feed_gallery_refs (raw_feed_id, gallery_id) VALUES (?, ?)
 ON CONFLICT (raw_feed_id, gallery_id) DO NOTHING;
 
 -- name: MarkProcessed :exec
-UPDATE raw_feeds SET processed_at = sqlc.arg(now), last_attempt_at = sqlc.arg(now), last_error = NULL WHERE id = sqlc.arg(id);
+UPDATE raw_feeds SET processed_at = sqlc.arg(now), last_attempt_at = sqlc.arg(now), last_error = NULL, body = X'' WHERE id = sqlc.arg(id);
 
 -- name: CompleteContinuityCheck :one
 UPDATE feed_continuity_checks SET status = ?, checked_at = ?

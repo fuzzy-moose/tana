@@ -33,7 +33,7 @@ func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 		t.Fatalf("registration did not survive reopen: %q %v", name, err)
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 4 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 5 {
 		t.Fatalf("schema version %d: %v", version, err)
 	}
 }
@@ -53,5 +53,59 @@ func TestFutureDatabaseVersionRejected(t *testing.T) {
 	var version int
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 999 {
 		t.Fatalf("future schema was changed: %d, %v", version, err)
+	}
+}
+
+func TestMigrationCleansUpFinishedDeliveriesAndKeepsOutstandingWork(t *testing.T) {
+	for _, tc := range []struct {
+		batchState string
+		itemState  string
+		retained   int
+	}{
+		{"completed", "completed", 0},
+		{"completed", "skipped", 0},
+		{"stopped", "completed", 0},
+		{"stopped", "queued", 1},
+		{"completed_with_errors", "failed", 1},
+		{"completed_with_errors", "cleanup_pending", 1},
+		{"running", "queued", 1},
+		{"paused", "queued", 1},
+	} {
+		t.Run(tc.batchState+"/"+tc.itemState, func(t *testing.T) {
+			dir := t.TempDir()
+			db, _, err := Open(t.Context(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if _, err := db.Exec("INSERT INTO panda_deliveries (id, state, data) VALUES (1, ?, '{}')", tc.batchState); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`INSERT INTO panda_delivery_items (delivery_id, position, gallery_id, state, cleanup_attempts, next_cleanup, data)
+				VALUES (1, 0, 7, ?, 0, 0, '{}')`, tc.itemState); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				migrated, _, err := Open(t.Context(), dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var batches, items int
+				err = migrated.QueryRow(`SELECT (SELECT count(*) FROM panda_deliveries),
+					(SELECT count(*) FROM panda_delivery_items)`).Scan(&batches, &items)
+				if closeErr := migrated.Close(); closeErr != nil {
+					t.Fatal(closeErr)
+				}
+				if err != nil || batches != tc.retained || items != tc.retained {
+					t.Fatalf("retained batches=%d items=%d, want %d: %v", batches, items, tc.retained, err)
+				}
+			}
+		})
 	}
 }

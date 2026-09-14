@@ -138,7 +138,7 @@ A temporary suspension shared by authenticated Panda requests, including favorit
 A durable request from Tana to retrieve fresh Panda metadata for supplied gallery references, with a pending, successful, or failed outcome for each reference. Queued references are not evidence of valid tokens or membership in the gallery reference inventory.
 
 **Raw feed**:
-A captured upstream feed in its original form, retained independently of its parsed entries. Panda feed entries identify upstream galleries for later metadata retrieval.
+A captured upstream feed in its original form, retained until successfully processed. Panda feed entries identify upstream galleries for later metadata retrieval.
 
 **Feed gallery reference**:
 A Panda gallery reference observed in a particular raw feed. The same gallery can appear in multiple raw feeds, with one sighting per gallery per raw feed.

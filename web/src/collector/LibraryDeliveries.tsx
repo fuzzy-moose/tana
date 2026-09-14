@@ -13,7 +13,7 @@ export default function LibraryDeliveries({ deliveries, libraryID, onLibraryChan
       <h3 id="library-deliveries-title">Add downloads to a library</h3>
       <button className="button" type="button" disabled={deliveries.pending || deliveries.checking} onClick={deliveries.refresh}>Refresh deliveries</button>
     </div>
-    <p>Transfer completed archives into a library, one at a time. Each collector copy is deleted after successful import. Delivery continues when you close this page.</p>
+    <p>Transfer completed archives into a library, one at a time. Each collector copy is deleted after successful import. Delivery continues when you close this page. Successful batches disappear automatically.</p>
     <div className="collector-sync">
       <label className="form-field">Destination library
         <select className="text-input" value={libraryID || ''} onChange={(event) => onLibraryChange(Number(event.target.value))}
