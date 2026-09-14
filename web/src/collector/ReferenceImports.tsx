@@ -1,3 +1,4 @@
+import { Badge, Button, Card, Flex, Grid, Heading, Progress, Text } from '@radix-ui/themes'
 import { useState } from 'react'
 import { referenceImportPageSize } from './referenceImports'
 import { useReferenceImports } from './useReferenceImports'
@@ -11,82 +12,82 @@ export default function ReferenceImports({ available, refreshKey }: { available:
   const actionsDisabled = !available || history.pending || history.stale || history.checking || !history.loaded
 
   return (
-    <section className="collector-panel" aria-labelledby="reference-imports-title">
-      <div className="collector-section-heading">
-        <h2 id="reference-imports-title">Panda reference imports</h2>
-        <button className="button" type="button" disabled={!available || history.checking || history.pending} onClick={history.refresh}>Refresh imports</button>
-      </div>
-      <p>Import gallery references from local files. Known references are reused; new references join the inventory after Panda validates them. Validation runs after other metadata collection.</p>
-      <form className="collector-sync reference-import-upload" onSubmit={(event) => {
+    <Flex direction="column" gap="4" asChild><section aria-labelledby="reference-imports-title">
+      <Flex align="center" justify="between" wrap="wrap" gap="3">
+        <Heading as="h2" size="4" id="reference-imports-title">Import reference files</Heading>
+        <Button size="2" variant="soft" type="button" disabled={!available || history.checking || history.pending} onClick={history.refresh} color="gray">Refresh imports</Button>
+      </Flex>
+      <Text as="p" size="2">Import gallery references from local files. Known references are reused; new references join the inventory after Panda validates them. Validation runs after other metadata collection.</Text>
+      <Flex align="end" wrap="wrap" gap="3" asChild><form onSubmit={(event) => {
         event.preventDefault()
         void history.submit(files)
       }}>
-        <label className="form-field">Reference files
-          <input className="text-input" type="file" multiple accept=".txt,.csv,text/plain,text/csv" disabled={!available || history.uploading} onChange={(event) => setFiles(Array.from(event.target.files ?? []))} aria-describedby="reference-import-format" />
-        </label>
-        <button className="button button-primary" type="submit" disabled={!available || history.uploading || files.length === 0}>{history.uploading ? 'Uploading…' : 'Upload files'}</button>
-      </form>
-      <p id="reference-import-format" className="field-help">UTF-8 text · 100 MiB maximum per file · One <code>id,token</code> per line, such as <code>123,abc</code>. No header. Blank lines are ignored.</p>
-      <p className="field-help">Keep this page open until uploads are accepted. Interrupted uploads restart from the beginning. Each upload creates a new import; accepted imports continue on the collector.</p>
-      {history.transfer && <div className="reference-import-transfer" role="status">
-        <p>{history.transfer.bytes === history.transfer.size ? 'Awaiting acceptance' : 'Uploading'}: {history.transfer.filename} · {size(history.transfer.bytes)} / {size(history.transfer.size)}</p>
-        <progress className="sitemap-progress" aria-label={`Upload progress for ${history.transfer.filename}`} value={history.transfer.bytes} max={history.transfer.size || 1} />
-      </div>}
-      {history.notice && <p className="collector-notice" role="status">{history.notice}</p>}
-      {history.uploadErrors.map((error, index) => <p key={index} className="error-message" role="alert">{error}</p>)}
-      {history.requestError && <p className="error-message" role="alert">{history.requestError}</p>}
-      {history.error && <p className="error-message" role="alert">{history.error}</p>}
-      {history.stale && <p className="collector-stale" role="status">Import history is stale. Actions return after the collector reconnects and history refreshes.</p>}
-      {!history.loaded && !history.error && <p className="field-help">{available ? 'Loading import history…' : 'Import history is unavailable while the collector is disconnected.'}</p>}
-      {history.loaded && history.imports.length === 0 && <p className="field-help">No reference imports yet.</p>}
-      <p className="field-help">Completed imports are retained for seven days. Active imports remain until resolved.</p>
-      <div className="reference-import-history">{history.imports.map((item) => {
+        <Flex direction="column" gap="2" flexGrow="1" asChild><label>Reference files
+          <input type="file" multiple accept=".txt,.csv,text/plain,text/csv" disabled={!available || history.uploading} onChange={(event) => setFiles(Array.from(event.target.files ?? []))} aria-describedby="reference-import-format" />
+        </label></Flex>
+        <Button size="2" variant="solid" type="submit" disabled={!available || history.uploading || files.length === 0}>{history.uploading ? 'Uploading…' : 'Upload files'}</Button>
+      </form></Flex>
+      <Text as="p" size="1" color="gray" id="reference-import-format">UTF-8 text · 100 MiB maximum per file · One <code>id,token</code> per line, such as <code>123,abc</code>. No header. Blank lines are ignored.</Text>
+      <Text as="p" size="1" color="gray">Keep this page open until uploads are accepted. Interrupted uploads restart from the beginning. Each upload creates a new import; accepted imports continue on the collector.</Text>
+      {history.transfer && <Flex direction="column" gap="3" role="status">
+        <Text as="p" size="2">{history.transfer.bytes === history.transfer.size ? 'Awaiting acceptance' : 'Uploading'}: {history.transfer.filename} · {size(history.transfer.bytes)} / {size(history.transfer.size)}</Text>
+        <Progress aria-label={`Upload progress for ${history.transfer.filename}`} value={history.transfer.bytes} max={history.transfer.size || 1} />
+      </Flex>}
+      {history.notice && <Text as="p" size="2" color="green" role="status">{history.notice}</Text>}
+      {history.uploadErrors.map((error, index) => <Text as="p" size="2" color="red" key={index} role="alert">{error}</Text>)}
+      {history.requestError && <Text as="p" size="2" color="red" role="alert">{history.requestError}</Text>}
+      {history.error && <Text as="p" size="2" color="red" role="alert">{history.error}</Text>}
+      {history.stale && <Text as="p" size="2" color="green" role="status">Import history is stale. Actions return after the collector reconnects and history refreshes.</Text>}
+      {!history.loaded && !history.error && <Text as="p" size="1" color="gray">{available ? 'Loading import history…' : 'Import history is unavailable while the collector is disconnected.'}</Text>}
+      {history.loaded && history.imports.length === 0 && <Text as="p" size="1" color="gray">No reference imports yet.</Text>}
+      <Text as="p" size="1" color="gray">Completed imports are retained for seven days. Active imports remain until resolved.</Text>
+      <Flex direction="column" gap="3">{history.imports.map((item) => {
         const outstanding = item.status === 'processing' || item.status === 'validating'
         const resolved = item.known + item.imported + item.failed + item.cancelled
         const fileState = item.status === 'processing' ? item.paused ? 'File processing paused' : 'Processing file' : item.processed_bytes < item.size_bytes ? 'File processing stopped' : 'File processed'
-        return <article className="reference-import" key={item.id} aria-label={`Import ${item.filename}`}>
-          <div className="collector-section-heading">
-            <h3>{item.filename}</h3>
-            <span className="collector-badge">{item.paused ? 'Paused' : { processing: 'Processing', validating: 'Validating', completed: 'Completed', cancelled: 'Cancelled' }[item.status]}</span>
-          </div>
-          <p className="field-help">Accepted {date(item.created_at)}{item.completed_at && ` · Finished ${date(item.completed_at)}`}</p>
-          {item.paused && <p className="field-help">Progress is saved. Resume to continue processing and validation. Validation already underway and references found by other collection may still resolve.</p>}
-          <div className="reference-import-stages">
+        return <Card key={item.id} asChild><article aria-label={`Import ${item.filename}`}><Flex direction="column" gap="3">
+          <Flex align="center" justify="between" wrap="wrap" gap="3">
+            <Heading as="h3" size="3">{item.filename}</Heading>
+            <Badge color="gray">{item.paused ? 'Paused' : { processing: 'Processing', validating: 'Validating', completed: 'Completed', cancelled: 'Cancelled' }[item.status]}</Badge>
+          </Flex>
+          <Text as="p" size="1" color="gray">Accepted {date(item.created_at)}{item.completed_at && ` · Finished ${date(item.completed_at)}`}</Text>
+          {item.paused && <Text as="p" size="1" color="gray">Progress is saved. Resume to continue processing and validation. Validation already underway and references found by other collection may still resolve.</Text>}
+          <Grid columns={{ initial: '1', sm: '2' }} gap="4">
             <div>
-              <h4>File processing</h4>
-              <p>{fileState} · {size(item.processed_bytes)} / {size(item.size_bytes)}</p>
-              <progress className="sitemap-progress" aria-label={`File processing for ${item.filename}`} value={item.processed_bytes} max={item.size_bytes || 1} />
-              <dl className="reference-import-counts">
-                <div><dt>Unique references</dt><dd>{item.references.toLocaleString()}</dd></div>
-                <div><dt>Duplicates</dt><dd>{item.duplicates.toLocaleString()}</dd></div>
-                <div><dt>Invalid records</dt><dd>{item.invalid.toLocaleString()}</dd></div>
-              </dl>
+              <Heading as="h4" size="3">File processing</Heading>
+              <Text as="p" size="2">{fileState} · {size(item.processed_bytes)} / {size(item.size_bytes)}</Text>
+              <Progress aria-label={`File processing for ${item.filename}`} value={item.processed_bytes} max={item.size_bytes || 1} />
+              <Grid columns={{ initial: '2', sm: '3' }} gap="3" my="2" asChild><dl>
+                <div><Text size="1" color="gray" asChild><dt>Unique references</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{item.references.toLocaleString()}</dd></Text></div>
+                <div><Text size="1" color="gray" asChild><dt>Duplicates</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{item.duplicates.toLocaleString()}</dd></Text></div>
+                <div><Text size="1" color="gray" asChild><dt>Invalid records</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{item.invalid.toLocaleString()}</dd></Text></div>
+              </dl></Grid>
             </div>
             <div>
-              <h4>Reference validation</h4>
-              <p>{resolved.toLocaleString()} of {item.references.toLocaleString()} references resolved{item.status === 'processing' ? ' so far' : ''}</p>
-              <progress className="sitemap-progress" aria-label={`Reference validation for ${item.filename}`} value={resolved} max={item.references || 1} />
-              <dl className="reference-import-counts">
-                <div><dt>Already known</dt><dd>{item.known.toLocaleString()}</dd></div>
-                <div><dt>Imported</dt><dd>{item.imported.toLocaleString()}</dd></div>
-                <div><dt>Pending</dt><dd>{item.pending.toLocaleString()}</dd></div>
-                <div><dt>Failed</dt><dd>{item.failed.toLocaleString()}</dd></div>
-                <div><dt>Cancelled</dt><dd>{item.cancelled.toLocaleString()}</dd></div>
-              </dl>
+              <Heading as="h4" size="3">Reference validation</Heading>
+              <Text as="p" size="2">{resolved.toLocaleString()} of {item.references.toLocaleString()} references resolved{item.status === 'processing' ? ' so far' : ''}</Text>
+              <Progress aria-label={`Reference validation for ${item.filename}`} value={resolved} max={item.references || 1} />
+              <Grid columns={{ initial: '2', sm: '3' }} gap="3" my="2" asChild><dl>
+                <div><Text size="1" color="gray" asChild><dt>Already known</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{item.known.toLocaleString()}</dd></Text></div>
+                <div><Text size="1" color="gray" asChild><dt>Imported</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{item.imported.toLocaleString()}</dd></Text></div>
+                <div><Text size="1" color="gray" asChild><dt>Pending</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{item.pending.toLocaleString()}</dd></Text></div>
+                <div><Text size="1" color="gray" asChild><dt>Failed</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{item.failed.toLocaleString()}</dd></Text></div>
+                <div><Text size="1" color="gray" asChild><dt>Cancelled</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{item.cancelled.toLocaleString()}</dd></Text></div>
+              </dl></Grid>
             </div>
-          </div>
-          <div className="button-group">
-            {outstanding && <button className="button" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, item.paused ? 'resume' : 'pause')}>{item.paused ? 'Resume' : 'Pause'}</button>}
-            {outstanding && <button className="button" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, 'cancel')}>Cancel</button>}
-            {item.status === 'completed' && item.failed > 0 && <button className="button" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, 'retry')}>Retry failed</button>}
-          </div>
-        </article>
-      })}</div>
-      {(history.offset > 0 || history.hasNext) && <nav className="download-pagination" aria-label="Import history pages">
-        <button className="button" type="button" disabled={actionsDisabled || history.offset === 0} onClick={history.previous}>Previous imports</button>
+          </Grid>
+          <Flex align="center" wrap="wrap" gap="2">
+            {outstanding && <Button size="2" variant="soft" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, item.paused ? 'resume' : 'pause')} color="gray">{item.paused ? 'Resume' : 'Pause'}</Button>}
+            {outstanding && <Button size="2" variant="soft" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, 'cancel')} color="gray">Cancel</Button>}
+            {item.status === 'completed' && item.failed > 0 && <Button size="2" variant="soft" type="button" disabled={actionsDisabled} onClick={() => void history.change(item.id, 'retry')} color="gray">Retry failed</Button>}
+          </Flex>
+        </Flex></article></Card>
+      })}</Flex>
+      {(history.offset > 0 || history.hasNext) && <Flex align="center" justify="end" wrap="wrap" gap="3" asChild><nav aria-label="Import history pages">
+        <Button size="2" variant="soft" type="button" disabled={actionsDisabled || history.offset === 0} onClick={history.previous} color="gray">Previous imports</Button>
         <span>Page {history.offset / referenceImportPageSize + 1}</span>
-        <button className="button" type="button" disabled={actionsDisabled || !history.hasNext} onClick={history.next}>Next imports</button>
-      </nav>}
-    </section>
+        <Button size="2" variant="soft" type="button" disabled={actionsDisabled || !history.hasNext} onClick={history.next} color="gray">Next imports</Button>
+      </nav></Flex>}
+    </section></Flex>
   )
 }

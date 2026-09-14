@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Badge, Button, Callout, Flex, Heading, Text } from '@radix-ui/themes'
 import { galleryLink, readerSpreadLink } from '../navigation'
 import type { Gallery } from './api'
 import { useGallery } from './useGallery'
@@ -18,11 +19,13 @@ export default function Reader({ id, initialPage, initialLastPage }: { id: numbe
   }, [id])
 
   if (gallery && gallery.page_count > 0) return <ReadingGallery gallery={gallery} initialPage={initialPage} initialLastPage={initialLastPage} />
-  return <main className="reader reader-message">
-    <a className="button" href={galleryLink(id)}>← Gallery detail</a>
-    {error ? <div role="alert"><p>{error}</p><button className="button" onClick={retry}>Retry</button></div>
-      : <p role="status">{gallery ? 'This gallery has no pages to read.' : 'Loading gallery…'}</p>}
-  </main>
+  return <Flex asChild direction="column" align="center" justify="center" gap="4">
+    <main className="reader">
+      <Button asChild variant="soft" color="gray"><a href={galleryLink(id)}>← Gallery detail</a></Button>
+      {error ? <Callout.Root color="red" role="alert"><Callout.Text>{error}</Callout.Text><Button variant="soft" color="red" onClick={retry}>Retry</Button></Callout.Root>
+        : <Text as="p" size="2" color="gray" role="status">{gallery ? 'This gallery has no pages to read.' : 'Loading gallery…'}</Text>}
+    </main>
+  </Flex>
 }
 
 function ReadingGallery({ gallery, initialPage, initialLastPage }: { gallery: Gallery, initialPage: number, initialLastPage?: number }) {
@@ -81,38 +84,42 @@ function ReadingGallery({ gallery, initialPage, initialLastPage }: { gallery: Ga
   })
 
   return <main className="reader" aria-label={`Reading ${gallery.title}`} data-controls-visible={controlsVisible}>
-    <header className="reader-header" id="reader-header">
-      <a className="button" href={galleryLink(gallery.id)}>← Gallery detail</a>
-      <h1>{gallery.title}</h1>
-      <span>Right to left</span>
-    </header>
+    <Flex asChild align="center" gap={{ initial: '3', sm: '5' }} px={{ initial: '2', sm: '5' }} py="2">
+      <header className="reader-header" id="reader-header">
+        <Button asChild variant="soft" color="gray"><a href={galleryLink(gallery.id)}>← Gallery detail</a></Button>
+        <Heading as="h1" size="2" truncate className="reader-title">{gallery.title}</Heading>
+        <Badge color="gray" className="reader-direction">Right to left</Badge>
+      </header>
+    </Flex>
     <div className="reader-stage" aria-label="Reading spread" aria-busy={!ready}>
       {ready ? <div className={`reader-spread ${pages.length === 1 ? 'reader-single' : ''}`}>
         {pages.map((page) => <div className="reader-page" key={page}>
-          {images.get(page)?.shape === 'error' ? <div className="reader-page-error" role="group" aria-label={`Page ${page} unavailable`}>
-            <p>Page {page} unavailable</p>
-            <button className="button" onClick={() => retry(page)}>Retry page {page}</button>
-          </div> : <img src={images.get(page)?.url} alt={`Page ${page}`} draggable={false} />}
+          {images.get(page)?.shape === 'error' ? <Flex direction="column" align="center" gap="3" p="5" className="reader-page-error" role="group" aria-label={`Page ${page} unavailable`}>
+            <Text as="p" size="2" color="gray">Page {page} unavailable</Text>
+            <Button variant="soft" color="gray" onClick={() => retry(page)}>Retry page {page}</Button>
+          </Flex> : <img src={images.get(page)?.url} alt={`Page ${page}`} draggable={false} />}
         </div>)}
-      </div> : <p className="reader-loading" role="status">Loading pages…</p>}
+      </div> : <Text as="p" size="2" color="gray" className="reader-loading" role="status">Loading pages…</Text>}
       <button className="reader-side reader-side-left" aria-label="Next spread" tabIndex={-1} disabled={!ready || atEnd} onClick={(event) => move(1, event.shiftKey)} />
       <button className="reader-side reader-side-right" aria-label="Previous spread" tabIndex={-1} disabled={start === 1 || !previousReady} onClick={(event) => move(-1, event.shiftKey)} />
       <button className="reader-toggle" aria-label="Toggle reader controls" aria-expanded={controlsVisible} aria-controls="reader-header reader-footer" tabIndex={-1} onClick={() => setControlsVisible((visible) => !visible)} />
     </div>
     <div className="reader-bottom">
-      <footer className="reader-footer" id="reader-footer">
-        <div className="reader-controls">
-          <button className="button" title="Left arrow" disabled={!ready || atEnd} onClick={() => move(1)}>← Next</button>
-          <button className="button reader-single-turn" title="Shift + left arrow" disabled={start === total} onClick={() => move(1, true)}>← 1 page</button>
-          <p role="status" className="reader-position">{ready ? `Page ${pages.join('–')} of ${total}` : `Page ${start} of ${total}`}{ready && atEnd && <span>End of gallery</span>}</p>
-          <button className="button reader-single-turn" title="Shift + right arrow" disabled={start === 1} onClick={() => move(-1, true)}>1 page →</button>
-          <button className="button" title="Right arrow" disabled={start === 1 || !previousReady} onClick={() => move(-1)}>Previous →</button>
-        </div>
-        <p className="reader-help">
-          <span className="reader-help-desktop">Click either side or use arrow keys / A / D · Hold Shift to turn one page · Esc returns to gallery</span>
-          <span className="reader-help-touch">Tap sides to turn pages · Tap center for controls</span>
-        </p>
-      </footer>
+      <Flex asChild direction="column" gap="2" px="4" py="2">
+        <footer className="reader-footer" id="reader-footer">
+          <Flex align="center" justify="center" gap={{ initial: '2', sm: '3' }} className="reader-controls">
+            <Button variant="soft" title="Left arrow" disabled={!ready || atEnd} onClick={() => move(1)}>← Next</Button>
+            <Button variant="soft" color="gray" title="Shift + left arrow" disabled={start === total} onClick={() => move(1, true)}>← 1 page</Button>
+            <Text as="p" size="2" role="status" align="center" className="reader-position">{ready ? `Page ${pages.join('–')} of ${total}` : `Page ${start} of ${total}`}{ready && atEnd && <Text as="span" size="1" color="green">End of gallery</Text>}</Text>
+            <Button variant="soft" color="gray" title="Shift + right arrow" disabled={start === 1} onClick={() => move(-1, true)}>1 page →</Button>
+            <Button variant="soft" title="Right arrow" disabled={start === 1 || !previousReady} onClick={() => move(-1)}>Previous →</Button>
+          </Flex>
+          <Text as="p" size="1" color="gray" align="center">
+            <span className="reader-help-desktop">Click either side or use arrow keys / A / D · Hold Shift to turn one page · Esc returns to gallery</span>
+            <span className="reader-help-touch">Tap sides to turn pages · Tap center for controls</span>
+          </Text>
+        </footer>
+      </Flex>
       <ReaderProgress page={start} lastPage={ready ? lastPage : start} total={total} onSelect={selectPage} />
     </div>
   </main>

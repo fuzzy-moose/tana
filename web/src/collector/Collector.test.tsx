@@ -103,8 +103,10 @@ test('Favorites page submits all-category sync and a selected full re-sync', asy
   await user.click(screen.getByRole('button', { name: 'Sync favorites' }))
   expect(await screen.findByText('Sync requested for all categories.')).toBeTruthy()
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/favorites/all/sync', expect.objectContaining({ method: 'POST', body: '{"full":false}' }))
-  await user.selectOptions(screen.getByLabelText('Favorite category'), '2')
-  await user.selectOptions(screen.getByLabelText('Sync mode'), 'full')
+  await user.click(screen.getByRole('combobox', { name: 'Favorite category' }))
+  await user.click(screen.getByRole('option', { name: '2 · Manga' }))
+  await user.click(screen.getByRole('combobox', { name: 'Sync mode' }))
+  await user.click(screen.getByRole('option', { name: 'Full re-sync' }))
   await user.click(screen.getByRole('button', { name: 'Full re-sync favorites' }))
   expect(await screen.findByText('Full re-sync requested for category 2.')).toBeTruthy()
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/favorites/2/sync', expect.objectContaining({ method: 'POST', body: '{"full":true}' }))
@@ -127,7 +129,7 @@ test('configures favorite downloads and shows baseline progress', async () => {
   render(<App />)
   await screen.findByText(/Your first sync will establish a baseline/)
   const manga = screen.getByRole('checkbox', { name: '2 · Manga' }) as HTMLInputElement
-  expect(manga.checked).toBe(false)
+  expect(manga.getAttribute('aria-checked')).toBe('false')
   await user.click(manga)
   await user.click(screen.getByRole('button', { name: 'Save download categories' }))
   expect(await screen.findByText('Download categories saved.')).toBeTruthy()
@@ -137,7 +139,7 @@ test('configures favorite downloads and shows baseline progress', async () => {
   result.downloads.baseline_categories = 4
   render(<App />)
   await screen.findByText(/Establishing baseline: 4 of 10/)
-  expect((screen.getByRole('checkbox', { name: '2 · Manga' }) as HTMLInputElement).checked).toBe(true)
+  expect(screen.getByRole('checkbox', { name: '2 · Manga' }).getAttribute('aria-checked')).toBe('true')
 })
 
 test('preserves favorites through connection failures, disables syncing, and recovers on refresh', async () => {

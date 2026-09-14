@@ -1,3 +1,4 @@
+import { Button, Card, Flex, Grid, Heading, Text } from '@radix-ui/themes'
 import { useEffect, useRef, useState } from 'react'
 import { APIError } from '../api'
 import type { FavoriteCategory } from './api'
@@ -76,38 +77,38 @@ export default function MissingFavoriteDownloads({ category, available, onClose,
   const name = category.name || `Category ${category.category}`
   const blocked = !available || loading || submitting
 
-  return <section className="missing-favorite-downloads" aria-labelledby="missing-favorite-title">
-    <div className="collector-section-heading">
-      <h3 id="missing-favorite-title" ref={heading} tabIndex={-1}>Download missing favorites · {name}</h3>
-      <button className="button" type="button" disabled={submitting} onClick={onClose}>{result ? 'Close' : 'Cancel'}</button>
-    </div>
-    <p>Uses all collected favorites in this category. Matches exact Panda IDs in source names across all registered Tana libraries, including offline libraries.</p>
-    <p className="field-help">Archives stay in the collector. Retained archives do not count as sources in a Tana library.</p>
-    {loading && <p role="status">Checking missing favorites…</p>}
-    {error && <p className="error-message" role="alert">{error}</p>}
-    {submitting && <p role="status">Submitting reviewed downloads…</p>}
-    {result && <p className="collector-notice" role="status">Download requests accepted. The collector will continue after you leave this page.</p>}
+  return <Card asChild><section aria-labelledby="missing-favorite-title"><Flex direction="column" gap="3">
+    <Flex align="center" justify="between" wrap="wrap" gap="3">
+      <Heading as="h3" size="3" id="missing-favorite-title" ref={heading} tabIndex={-1}>Download missing favorites · {name}</Heading>
+      <Button size="2" variant="soft" type="button" disabled={submitting} onClick={onClose} color="gray">{result ? 'Close' : 'Cancel'}</Button>
+    </Flex>
+    <Text as="p" size="2">Uses all collected favorites in this category. Matches exact Panda IDs in source names across all registered Tana libraries, including offline libraries.</Text>
+    <Text as="p" size="1" color="gray">Archives stay in the collector. Retained archives do not count as sources in a Tana library.</Text>
+    {loading && <Text as="p" size="2" role="status">Checking missing favorites…</Text>}
+    {error && <Text as="p" size="2" color="red" role="alert">{error}</Text>}
+    {submitting && <Text as="p" size="2" role="status">Submitting reviewed downloads…</Text>}
+    {result && <Text as="p" size="2" color="green" role="status">Download requests accepted. The collector will continue after you leave this page.</Text>}
     {counts && <>
-      <p>{counts.total.toLocaleString()} collected favorites · {counts.present.toLocaleString()} present in Tana · {counts.missing.toLocaleString()} missing</p>
-      <dl className="collector-metrics missing-favorite-counts">
-        <div><dt>{result ? 'New downloads queued' : 'New downloads'}</dt><dd>{counts.new_downloads.toLocaleString()}</dd></div>
-        <div><dt>{result ? 'Queued or running jobs reused' : 'Queued or running jobs to reuse'}</dt><dd>{counts.existing_jobs.toLocaleString()}</dd></div>
-        <div><dt>{result ? 'Retained archives reused' : 'Retained archives to reuse'}</dt><dd>{counts.retained_archives.toLocaleString()}</dd></div>
-        <div><dt>Failed jobs skipped</dt><dd>{counts.failed.toLocaleString()}</dd></div>
-        <div><dt>Cancelled jobs skipped</dt><dd>{counts.cancelled.toLocaleString()}</dd></div>
-        <div><dt>Deleting jobs skipped</dt><dd>{counts.deleting.toLocaleString()}</dd></div>
-      </dl>
-      {(counts.failed > 0 || counts.cancelled > 0) && <p className="field-help">Retry failed or cancelled jobs explicitly from Downloads.</p>}
-      {!result && <p className="field-help">Confirmation keeps this reviewed set and skips favorites now present in Tana. Jobs created meanwhile are reused.</p>}
-      {!result && counts.missing === 0 && <p role="status">No missing favorites in this category.</p>}
+      <Text as="p" size="2">{counts.total.toLocaleString()} collected favorites · {counts.present.toLocaleString()} present in Tana · {counts.missing.toLocaleString()} missing</Text>
+      <Grid columns={{ initial: '2', sm: '3' }} gap="3" my="2" asChild><dl>
+        <div><Text size="1" color="gray" asChild><dt>{result ? 'New downloads queued' : 'New downloads'}</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{counts.new_downloads.toLocaleString()}</dd></Text></div>
+        <div><Text size="1" color="gray" asChild><dt>{result ? 'Queued or running jobs reused' : 'Queued or running jobs to reuse'}</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{counts.existing_jobs.toLocaleString()}</dd></Text></div>
+        <div><Text size="1" color="gray" asChild><dt>{result ? 'Retained archives reused' : 'Retained archives to reuse'}</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{counts.retained_archives.toLocaleString()}</dd></Text></div>
+        <div><Text size="1" color="gray" asChild><dt>Failed jobs skipped</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{counts.failed.toLocaleString()}</dd></Text></div>
+        <div><Text size="1" color="gray" asChild><dt>Cancelled jobs skipped</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{counts.cancelled.toLocaleString()}</dd></Text></div>
+        <div><Text size="1" color="gray" asChild><dt>Deleting jobs skipped</dt></Text><Text size="5" weight="medium" asChild><dd style={{ margin: 0 }}>{counts.deleting.toLocaleString()}</dd></Text></div>
+      </dl></Grid>
+      {(counts.failed > 0 || counts.cancelled > 0) && <Text as="p" size="1" color="gray">Retry failed or cancelled jobs explicitly from Downloads.</Text>}
+      {!result && <Text as="p" size="1" color="gray">Confirmation keeps this reviewed set and skips favorites now present in Tana. Jobs created meanwhile are reused.</Text>}
+      {!result && counts.missing === 0 && <Text as="p" size="2" role="status">No missing favorites in this category.</Text>}
     </>}
-    {attempted && error && plan && <p className="field-help">You can safely retry this confirmation; existing requests will be reused.</p>}
-    <div className="button-group">
-      {!result && plan && plan.missing > 0 && <button className="button button-primary" type="button" disabled={blocked} onClick={() => void confirm()}>
+    {attempted && error && plan && <Text as="p" size="1" color="gray">You can safely retry this confirmation; existing requests will be reused.</Text>}
+    <Flex align="center" wrap="wrap" gap="2">
+      {!result && plan && plan.missing > 0 && <Button size="2" variant="solid" type="button" disabled={blocked} onClick={() => void confirm()}>
         {submitting ? 'Submitting…' : attempted ? 'Retry confirmation' : 'Confirm downloads'}
-      </button>}
-      {!result && <button className="button" type="button" disabled={blocked} onClick={refreshPreview}>Refresh preview</button>}
-      {(result || error || counts && counts.missing > 0) && <a className="button" href="#/collector/downloads">View Downloads</a>}
-    </div>
-  </section>
+      </Button>}
+      {!result && <Button size="2" variant="soft" type="button" disabled={blocked} onClick={refreshPreview} color="gray">Refresh preview</Button>}
+      {(result || error || counts && counts.missing > 0) && <Button size="2" variant="soft" asChild color="gray"><a href="#/collector/downloads">View Downloads</a></Button>}
+    </Flex>
+  </Flex></section></Card>
 }

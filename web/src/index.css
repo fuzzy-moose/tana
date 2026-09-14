@@ -1,66 +1,28 @@
-@import './styles/controls.css';
-
 :root {
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: var(--foreground);
-  background: var(--background);
+  color-scheme: dark;
+  background: #111413;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color-scheme: dark;
-
-  --background: #101112;
-  --foreground: #ededee;
-  --surface: #141516;
-  --border: #27292b;
-  --muted: #93979c;
-  --accent: #b1bfa0;
-  --accent-background: #b1bfa00d;
-  --accent-border: #b1bfa01a;
-  --accent-hover: #b1bfa018;
 }
 
-* {
-  box-sizing: border-box;
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 280px; }
+button, input, select, textarea { font: inherit; }
+svg { flex-shrink: 0; }
+img { max-width: 100%; }
+
+.radix-themes {
+  --cursor-button: pointer;
+  --cursor-checkbox: pointer;
+  --cursor-menu-item: pointer;
+  --cursor-switch: pointer;
 }
 
-body {
-  margin: 0;
-  min-width: 280px;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-a:focus-visible,
-button:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
-}
-
-button,
-input {
-  font: inherit;
-}
-
-h1,
-h2,
-p {
-  margin: 0;
-}
-
-svg {
-  display: block;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-::selection {
-  color: var(--background);
-  background: var(--accent);
+/* Keep compact desktop controls comfortably tappable on touch screens. */
+@media (pointer: coarse) {
+  .rt-Button, .rt-IconButton, .rt-SelectTrigger, .rt-TextFieldRoot, .rt-TabNavLink {
+    min-height: 44px;
+  }
 }

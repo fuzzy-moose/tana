@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import { useState } from 'react'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render as testingRender, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Theme } from '@radix-ui/themes'
+import type { ReactNode } from 'react'
+
 import { afterEach, expect, test, vi } from 'vitest'
 import Sitemap from './Sitemap'
 import type { SitemapStatus } from './api'
+
+const render = (ui: ReactNode) => testingRender(ui, { wrapper: Theme })
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -26,14 +31,17 @@ test.each([false, true])('manual sitemap collection sends force=%s and shows ref
   vi.stubGlobal('fetch', fetchMock)
   const user = userEvent.setup()
   render(<Collection />)
-  if (force) await user.selectOptions(screen.getByLabelText('Collection mode'), 'force')
+  if (force) {
+    await user.click(screen.getByRole('combobox', { name: 'Collection mode' }))
+    await user.click(screen.getByRole('option', { name: 'Force refresh all sitemaps' }))
+  }
   await user.click(screen.getByRole('button', { name: 'Collect sitemap' }))
   expect(await screen.findByText('Sitemap collection requested.')).toBeTruthy()
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/sitemap/start', expect.objectContaining({ method: 'POST', body: JSON.stringify({ force }) }))
   expect(screen.getByText('3 of 5 child sitemaps processed')).toBeTruthy()
   const progress = screen.getByRole('progressbar', { name: 'Sitemap collection progress' }) as HTMLProgressElement
-  expect(progress.value).toBe(3)
-  expect(progress.max).toBe(5)
+  expect(progress.getAttribute('aria-valuenow')).toBe('3')
+  expect(progress.getAttribute('aria-valuemax')).toBe('5')
   expect(screen.getByText('120')).toBeTruthy()
   expect(screen.getByText('100')).toBeTruthy()
   expect(screen.getByText(/Metadata fetching continues independently/)).toBeTruthy()

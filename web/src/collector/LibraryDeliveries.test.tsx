@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render as testingRender, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Theme } from '@radix-ui/themes'
+import type { ReactNode } from 'react'
+
 import { afterEach, expect, test, vi } from 'vitest'
 import Downloads from './Downloads'
 import type { LibraryDeliveryBatch, LibraryDeliveryItem } from './libraryDeliveries'
+
+const render = (ui: ReactNode) => testingRender(ui, { wrapper: Theme })
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -47,7 +52,8 @@ test('delivers one completed gallery to the selected library and blocks competin
   render(<Downloads available refreshKey={0} />)
   const row = within((await screen.findByRole('rowheader', { name: 'Gallery 7' })).closest('tr')!)
   expect((row.getByRole('button', { name: 'Add to library' }) as HTMLButtonElement).disabled).toBe(true)
-  await user.selectOptions(screen.getByLabelText('Destination library'), '2')
+  await user.click(screen.getByRole('combobox', { name: 'Destination library' }))
+  await user.click(screen.getByRole('option', { name: 'Manga' }))
   await user.click(row.getByRole('button', { name: 'Add to library' }))
   await screen.findByText('Delivery 1 · Manga')
   expect(fetchMock).toHaveBeenCalledWith('/api/library-deliveries', expect.objectContaining({ method: 'POST', body: '{"library_id":2,"gallery_id":7}' }))
@@ -66,7 +72,8 @@ test('Add all requests the server snapshot independently of the visible filter',
   await screen.findByRole('rowheader', { name: 'Gallery 7' })
   await user.click(screen.getByRole('button', { name: 'Pending 0' }))
   await screen.findByText('No pending downloads.')
-  await user.selectOptions(screen.getByLabelText('Destination library'), '2')
+  await user.click(screen.getByRole('combobox', { name: 'Destination library' }))
+  await user.click(screen.getByRole('option', { name: 'Manga' }))
   await user.click(screen.getByRole('button', { name: 'Add all' }))
   await screen.findByText('Delivery 1 · Manga')
   expect(fetchMock).toHaveBeenCalledWith('/api/library-deliveries', expect.objectContaining({ method: 'POST', body: '{"library_id":2,"all":true}' }))

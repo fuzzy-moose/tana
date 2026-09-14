@@ -11,6 +11,18 @@ vi.mock('./galleries/useGalleryLayout', () => ({
 beforeEach(() => { window.history.replaceState(null, '', '/') })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+test('opens bookmarked Panda lookup without starting collection or loading a catalog', () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  vi.stubGlobal('fetch', fetchMock)
+  window.history.replaceState(null, '', '#/panda/lookup')
+  render(<App />)
+  expect(screen.getByRole('heading', { name: 'Gallery lookup' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Panda' }).getAttribute('aria-current')).toBe('page')
+  expect(screen.getByRole('link', { name: 'Panda catalog' }).getAttribute('href')).toBe('#/panda')
+  expect(screen.getByRole('textbox', { name: 'Look up gallery' })).toBeTruthy()
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
 test('defaults to galleries, searches and paginates, then opens gallery details and thumbnail links', async () => {
   const fetchMock = vi.fn<typeof fetch>(async (input) => {
     const url = new URL(String(input), 'http://localhost')

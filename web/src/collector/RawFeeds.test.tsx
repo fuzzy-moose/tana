@@ -12,6 +12,7 @@ const failed: FeedCapture = {
   error: 'panda: parse feed: XML syntax error on line 938: illegal character code U+001D',
 }
 const pending: FeedCapture = { ...failed, id: 340, state: 'pending', error: undefined }
+const feedStatus = { capture_active: false, processing_pending: 1, continuity: 'unknown', possible_gaps: 0 }
 
 test('raw feeds route exposes capture errors and original downloads across filters and pages', async () => {
   const fetchMock = vi.fn<typeof fetch>(async (input) => {
@@ -19,6 +20,7 @@ test('raw feeds route exposes capture errors and original downloads across filte
     if (path === '/api/collector/status') return Response.json({
       configured: true, reachable: true, authenticated: true, checked_at: '2026-09-13T10:00:00Z', status: { available: true },
     })
+    if (path === '/api/collector/feed/status') return Response.json(feedStatus)
     const url = new URL(path, 'http://tana.test')
     if (url.pathname !== '/api/collector/feed/captures') throw new Error(`Unexpected request: ${path}`)
     if (url.searchParams.get('failed_only') === 'true') return Response.json({ captures: [failed], has_more: false })
@@ -41,9 +43,38 @@ test('raw feeds route exposes capture errors and original downloads across filte
   await user.click(screen.getByRole('button', { name: 'Next captures' }))
   await screen.findByRole('rowheader', { name: 'Capture 314' })
   expect(screen.getByText('Page 2')).toBeTruthy()
-  await user.selectOptions(screen.getByLabelText('Show captures'), 'failed')
+  await user.click(screen.getByRole('combobox', { name: 'Show captures' }))
+  await user.click(screen.getByRole('option', { name: 'Failed only' }))
   await screen.findByRole('rowheader', { name: 'Capture 339' })
   expect(screen.queryByRole('rowheader', { name: 'Capture 314' })).toBeNull()
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/feed/captures?failed_only=true&limit=25&offset=0', expect.anything())
   expect(screen.queryByRole('button', { name: 'Next captures' })).toBeNull()
+})
+
+test('captures a feed and refreshes retained captures independently of inventory', async () => {
+  let captures: FeedCapture[] = []
+  let captured = false
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    const path = String(input)
+    if (path === '/api/collector/status') return Response.json({ configured: true, reachable: true, authenticated: true, status: { available: true } })
+    if (path === '/api/collector/feed/refresh' && init?.method === 'POST') {
+      captures = [pending]
+      captured = true
+      return Response.json({ ...feedStatus, last_captured_at: pending.captured_at })
+    }
+    if (path === '/api/collector/feed/status') return Response.json({ ...feedStatus, last_captured_at: captured ? pending.captured_at : undefined })
+    if (path.startsWith('/api/collector/feed/captures?')) return Response.json({ captures, has_more: false })
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  window.history.replaceState(null, '', '/#/collector/feeds')
+  const user = userEvent.setup()
+  render(<App />)
+  await screen.findByText('No feed captures.')
+  await user.click(screen.getByRole('button', { name: 'Refresh feed' }))
+  expect(await screen.findByRole('rowheader', { name: 'Capture 340' })).toBeTruthy()
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/feed/refresh', expect.objectContaining({ method: 'POST', body: '{}' }))
+  expect(screen.getByText(/Last feed captured/)).toBeTruthy()
+  expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/collector/inventory/status')).toBe(false)
+  expect(screen.queryByRole('alert')).toBeNull()
 })

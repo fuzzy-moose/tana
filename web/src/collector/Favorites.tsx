@@ -1,3 +1,4 @@
+import { Badge, Button, Flex, Heading, Select, Table, Text } from '@radix-ui/themes'
 import { useEffect, useRef, useState } from 'react'
 import { getFavoritesStatus, syncFavorites } from './api'
 import type { FavoriteCategory } from './api'
@@ -60,63 +61,65 @@ export default function Favorites({ available, refreshKey }: { available: boolea
   return <>
     <ResourceStatus name="Favorite statistics" loaded={!!status} available={available} {...favorites} />
     {status && (
-      <div className="collector-panel">
-        <div className="collector-section-heading"><h2>Panda favorites</h2><span>{status.categories.reduce((sum, item) => sum + item.favorites, 0).toLocaleString()} collected favorites</span></div>
-        <p className="collector-account">{status.host} · Account {status.account_key}</p>
-        {status.authenticated_cooldown_until && <p>Authenticated Panda requests (favorites and archive preparation) paused until {date(status.authenticated_cooldown_until)}.</p>}
-        <form className="collector-sync" onSubmit={(event) => { event.preventDefault(); if (!disabled) void sync(category, full) }}>
-          <label className="form-field">Favorite category
-            <select className="text-input" value={category} onChange={(event) => setCategory(event.target.value)} disabled={disabled}>
-              <option value="all">All ten categories</option>
-              {status.categories.map((item) => <option key={item.category} value={item.category}>{item.name ? `${item.category} · ${item.name}` : categoryName(item)}</option>)}
-            </select>
-          </label>
-          <label className="form-field">Sync mode
-            <select className="text-input" value={full ? 'full' : 'incremental'} onChange={(event) => setFull(event.target.value === 'full')} disabled={disabled}>
-              <option value="incremental">Incremental sync</option>
-              <option value="full">Full re-sync</option>
-            </select>
-          </label>
-          <button className="button button-primary" type="submit" disabled={disabled}>{pending ? 'Requesting…' : full ? 'Full re-sync favorites' : 'Sync favorites'}</button>
-        </form>
-        <p className="field-help">{status.downloads && status.downloads.baseline_state !== 'ready'
+      <Flex direction="column" gap="4">
+        <Flex align="center" justify="between" wrap="wrap" gap="3">
+          <Text size="2">{status.categories.reduce((sum, item) => sum + item.favorites, 0).toLocaleString()} collected favorites</Text>
+          <Text size="1" color="gray">{status.host} · Account {status.account_key}</Text>
+        </Flex>
+        {status.authenticated_cooldown_until && <Text as="p" size="2">Authenticated Panda requests (favorites and archive preparation) paused until {date(status.authenticated_cooldown_until)}.</Text>}
+        <Flex align="end" wrap="wrap" gap="3" asChild><form onSubmit={(event) => { event.preventDefault(); if (!disabled) void sync(category, full) }}>
+          <Flex direction="column" gap="2" flexGrow="1" asChild><label>Favorite category
+            <Select.Root value={category} onValueChange={(value) => setCategory(value)} disabled={disabled}><Select.Trigger aria-label="Favorite category" /><Select.Content>
+              <Select.Item value="all">All ten categories</Select.Item>
+              {status.categories.map((item) => <Select.Item key={item.category} value={String(item.category)}>{item.name ? `${item.category} · ${item.name}` : categoryName(item)}</Select.Item>)}
+            </Select.Content></Select.Root>
+          </label></Flex>
+          <Flex direction="column" gap="2" flexGrow="1" asChild><label>Sync mode
+            <Select.Root value={full ? 'full' : 'incremental'} onValueChange={(value) => setFull(value === 'full')} disabled={disabled}><Select.Trigger aria-label="Sync mode" /><Select.Content>
+              <Select.Item value="incremental">Incremental sync</Select.Item>
+              <Select.Item value="full">Full re-sync</Select.Item>
+            </Select.Content></Select.Root>
+          </label></Flex>
+          <Button size="2" variant="solid" type="submit" disabled={disabled}>{pending ? 'Requesting…' : full ? 'Full re-sync favorites' : 'Sync favorites'}</Button>
+        </form></Flex>
+        <Text as="p" size="1" color="gray">{status.downloads && status.downloads.baseline_state !== 'ready'
           ? 'Until the baseline is complete, sync collects all ten categories without downloading favorites.'
-          : full ? 'Full re-sync reconciles removed favorites. Collected gallery references and metadata are retained.' : 'Collect newest favorites.'}</p>
-        {notice && <p className="collector-notice" role="status">{notice}</p>}
-        {requestError && <p className="error-message" role="alert">{requestError}</p>}
-        {status.downloads && <FavoriteDownloads status={status.downloads} categories={status.categories} available={!disabled} onSaved={downloadSettingsSaved} />}
+          : full ? 'Full re-sync reconciles removed favorites. Collected gallery references and metadata are retained.' : 'Collect newest favorites.'}</Text>
+        {notice && <Text as="p" size="2" color="green" role="status">{notice}</Text>}
+        {requestError && <Text as="p" size="2" color="red" role="alert">{requestError}</Text>}
         {downloadCategory && <MissingFavoriteDownloads key={downloadCategory.category} category={downloadCategory} available={!disabled}
           onClose={() => setDownloadCategory(null)} onSubmittingChange={setDownloadPending} />}
         <div className="collector-table-scroll">
-          <table className="collector-table">
-            <caption className="collector-table-caption">Favorite categories for the current account</caption>
-            <thead><tr><th scope="col">Category</th><th scope="col">Favorites</th><th scope="col">Sync state</th><th scope="col">Sync progress</th><th scope="col">Last successful sync</th><th scope="col">Downloads</th></tr></thead>
-            <tbody>{status.categories.map((item) => (
-              <tr key={item.category}>
-                <th scope="row">{categoryName(item)}{item.name && <span className="collector-secondary">Category {item.category}</span>}</th>
-                <td>{item.last_synced_at || item.last_saved_at ? item.favorites.toLocaleString() : '—'}</td>
-                <td><span className="collector-state">{stateLabel(item)}</span>
-                  {item.retry_at && <span className="collector-secondary">Retry after {date(item.retry_at)}</span>}
-                  {item.queued && item.state !== 'queued' && <span className="collector-secondary">{item.queued_full ? 'Full re-sync' : 'Sync'} also queued</span>}
-                  {item.state === 'idle' && item.finished_at && <span className="collector-secondary">{date(item.finished_at)}</span>}
-                </td>
-                <td>{item.started_at ? <>
+          <Table.Root size="1" variant="surface" className="collector-table">
+            <Text size="1" color="gray" align="left" mb="2" asChild><caption>Favorite categories for the current account</caption></Text>
+            <Table.Header><Table.Row><Table.ColumnHeaderCell scope="col">Category</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Favorites</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Sync state</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Sync progress</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Last successful sync</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Downloads</Table.ColumnHeaderCell></Table.Row></Table.Header>
+            <Table.Body>{status.categories.map((item) => (
+              <Table.Row key={item.category}>
+                <Table.RowHeaderCell scope="row">{categoryName(item)}{item.name && <Text as="span" size="1" color="gray" style={{ display: 'block' }} mt="1">Category {item.category}</Text>}</Table.RowHeaderCell>
+                <Table.Cell>{item.last_synced_at || item.last_saved_at ? item.favorites.toLocaleString() : '—'}</Table.Cell>
+                <Table.Cell><Badge color="gray">{stateLabel(item)}</Badge>
+                  {item.retry_at && <Text as="span" size="1" color="gray" style={{ display: 'block' }} mt="1">Retry after {date(item.retry_at)}</Text>}
+                  {item.queued && item.state !== 'queued' && <Text as="span" size="1" color="gray" style={{ display: 'block' }} mt="1">{item.queued_full ? 'Full re-sync' : 'Sync'} also queued</Text>}
+                  {item.state === 'idle' && item.finished_at && <Text as="span" size="1" color="gray" style={{ display: 'block' }} mt="1">{date(item.finished_at)}</Text>}
+                </Table.Cell>
+                <Table.Cell>{item.started_at ? <>
                   <span>{(item.entries_saved ?? 0).toLocaleString()} entries saved · {(item.pages_saved ?? 0).toLocaleString()} pages</span>
-                  <span className="collector-secondary">{item.last_saved_at ? `Last save ${date(item.last_saved_at)}` : 'Awaiting first page'}</span>
-                </> : '—'}</td>
-                <td>{item.last_synced_at ? date(item.last_synced_at) : 'Never synced'}</td>
-                <td><button className="button" type="button" disabled={disabled || downloadCategory?.category === item.category}
-                  onClick={() => setDownloadCategory(item)}>Download missing…</button></td>
-              </tr>
-            ))}</tbody>
-          </table>
+                  <Text as="span" size="1" color="gray" style={{ display: 'block' }} mt="1">{item.last_saved_at ? `Last save ${date(item.last_saved_at)}` : 'Awaiting first page'}</Text>
+                </> : '—'}</Table.Cell>
+                <Table.Cell>{item.last_synced_at ? date(item.last_synced_at) : 'Never synced'}</Table.Cell>
+                <Table.Cell><Button size="2" variant="soft" type="button" disabled={disabled || downloadCategory?.category === item.category} onClick={() => setDownloadCategory(item)} color="gray">Download missing…</Button></Table.Cell>
+              </Table.Row>
+            ))}</Table.Body>
+          </Table.Root>
         </div>
 
+        {status.downloads && <FavoriteDownloads status={status.downloads} categories={status.categories} available={!disabled} onSaved={downloadSettingsSaved} />}
+
         {status.categories.some((item) => item.last_error) && <>
-          <h3>Latest favorite sync errors</h3>
-          <ul className="collector-errors">{status.categories.filter((item) => item.last_error).map((item) => <li key={item.category}><strong>{categoryName(item)}</strong><span>{item.last_error}</span><small>{date(item.last_error_at)}</small></li>)}</ul>
+          <Heading as="h3" size="3">Latest favorite sync errors</Heading>
+          <Flex direction="column" gap="2" asChild><ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{status.categories.filter((item) => item.last_error).map((item) => <Flex direction="column" gap="1" key={item.category} asChild><li><strong>{categoryName(item)}</strong><span>{item.last_error}</span><Text size="1" color="gray">{date(item.last_error_at)}</Text></li></Flex>)}</ul></Flex>
         </>}
-      </div>
+      </Flex>
     )}
   </>
 }

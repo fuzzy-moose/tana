@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Badge, Box, Button, Callout, Card, Checkbox, Flex, Grid, Heading, Link, Text } from '@radix-ui/themes'
 import { deleteSupersededSources, previewCleanup } from './cleanupApi'
 import type { CleanupPlan, CleanupResult, CleanupSource } from './cleanupApi'
 import './SourceCleanup.css'
@@ -11,12 +12,12 @@ function size(bytes: number) {
 }
 
 function SourceDetails({ source, label }: { source: CleanupSource, label: string }) {
-  return <div className="cleanup-source">
-    <p className="cleanup-label">{label}</p>
-    <h3>{source.title || `Panda gallery ${source.panda_id}`}</h3>
-    <p className="cleanup-metadata">{source.library_name} · Panda {source.panda_id}</p>
-    <p className="cleanup-path">{source.path}</p>
-  </div>
+  return <Flex direction="column" gap="2" minWidth="0">
+    <Badge color={label === 'Older archive' ? 'red' : 'green'} style={{ alignSelf: 'flex-start' }}>{label}</Badge>
+    <Heading as="h3" size="3">{source.title || `Panda gallery ${source.panda_id}`}</Heading>
+    <Text as="p" size="2" color="gray">{source.library_name} · Panda {source.panda_id}</Text>
+    <Text as="p" size="1" className="cleanup-path">{source.path}</Text>
+  </Flex>
 }
 
 export default function SourceCleanup() {
@@ -89,67 +90,80 @@ export default function SourceCleanup() {
   const failures = new Map(result?.failed.map((item) => [item.source_id, item.reason]))
   const deleted = new Set(result?.deleted)
 
-  return <section className="source-cleanup" aria-labelledby="cleanup-title">
-    <a className="cleanup-back" href="#/libraries">← Libraries</a>
-    <div className="cleanup-toolbar">
-      <div className="page-heading">
-        <p className="eyebrow">All libraries</p>
-        <h1 id="cleanup-title">Clean up older versions</h1>
-        <p>Delete older archives when a newer version is present in any registered library.</p>
-      </div>
-      <button className="button" type="button" disabled={loading || busy || confirming} onClick={refreshPreview}>Refresh preview</button>
-    </div>
-    <p className="cleanup-help">Matches use Panda IDs in filenames and collected parent references. Review each older archive and the newer source that will remain.</p>
-    {loading && <p role="status">Checking sources across all libraries…</p>}
-    {error && <p className="error-message" role="alert">{error}</p>}
-    {busy && <p role="status">Permanently deleting selected archives…</p>}
-    {result && <p className="cleanup-notice" role="status">
-      {result.deleted.length} {result.deleted.length === 1 ? 'archive' : 'archives'} deleted. {result.failed.length} could not be deleted.
-    </p>}
-    {attempted && !busy && <p className="cleanup-help">Refresh the preview to check current sources before another cleanup.</p>}
+  return <Box asChild maxWidth="1200px" mx="auto">
+    <section aria-labelledby="cleanup-title">
+      <Flex direction="column" gap="5">
+        <Link href="#/libraries" size="2">← Libraries</Link>
+        <Flex justify="between" align="center" gap="3" wrap="wrap">
+          <Box>
+            <Heading as="h1" id="cleanup-title" size="7">Clean up older versions</Heading>
+            <Text as="p" size="2" color="gray" mt="2">Delete older archives when a newer version is present in any registered library.</Text>
+          </Box>
+          <Button variant="soft" type="button" disabled={loading || busy || confirming} onClick={refreshPreview}>Refresh preview</Button>
+        </Flex>
+        <Text as="p" size="2" color="gray">Matches use Panda IDs in filenames and collected parent references. Review each older archive and the newer source that will remain.</Text>
+        {loading && <Text as="p" size="2" color="gray" role="status">Checking sources across all libraries…</Text>}
+        {error && <Callout.Root color="red" role="alert"><Callout.Text>{error}</Callout.Text></Callout.Root>}
+        {busy && <Text as="p" role="status">Permanently deleting selected archives…</Text>}
+        {result && <Callout.Root color={result.failed.length ? 'amber' : 'green'} role="status"><Callout.Text>
+          {result.deleted.length} {result.deleted.length === 1 ? 'archive' : 'archives'} deleted. {result.failed.length} could not be deleted.
+        </Callout.Text></Callout.Root>}
+        {attempted && !busy && <Text as="p" size="2" color="gray">Refresh the preview to check current sources before another cleanup.</Text>}
 
-    {plan && <>
-      {plan.candidates.length === 0 && <p className="cleanup-empty" role="status">No eligible older archives found.</p>}
-      {plan.candidates.length > 0 && <>
-        {!attempted && <div className="cleanup-selection">
-          <p><strong>{selected.size} {selected.size === 1 ? 'archive' : 'archives'} selected · {size(totalSize)}</strong></p>
-          {!confirming && <div className="button-group">
-            <button className="button" type="button" disabled={locked} onClick={() => setSelected(new Set(plan.candidates.map((candidate) => candidate.source.id)))}>Select all</button>
-            <button className="button" type="button" disabled={locked} onClick={() => setSelected(new Set())}>Clear selection</button>
-            <button className="button cleanup-delete" type="button" disabled={locked || selected.size === 0} onClick={() => setConfirming(true)}>Delete selected…</button>
-          </div>}
-        </div>}
-        {confirming && <div className="cleanup-confirmation" role="group" aria-label="Confirm permanent deletion">
-          <h2>Permanently delete {selected.size} {selected.size === 1 ? 'archive' : 'archives'}?</h2>
-          <p>The archives listed below ({size(totalSize)}), their catalog records, and source-linked galleries will be deleted. Files will not go to trash. This cannot be undone.</p>
-          <div className="button-group">
-            <button autoFocus className="button" type="button" onClick={() => setConfirming(false)}>Cancel</button>
-            <button className="button cleanup-delete" type="button" onClick={() => void removeSelected()}>Permanently delete {selected.size} {selected.size === 1 ? 'archive' : 'archives'}</button>
-          </div>
-        </div>}
-        <ul className="cleanup-candidates" aria-label={confirming ? 'Archives to permanently delete' : 'Older archives'}>
-          {visibleCandidates.map(({ source, replacement, size_bytes }) => {
-            const failure = failures.get(source.id)
-            return <li className="cleanup-candidate" key={source.id}>
-              <div className="cleanup-candidate-heading">
-                <label><input type="checkbox" checked={selected.has(source.id)} disabled={locked} onChange={() => toggle(source.id)} aria-label={`Select ${source.path}`} />{size(size_bytes)}</label>
-                {result && <p className={failure ? 'cleanup-failure' : 'cleanup-outcome'}>{deleted.has(source.id) ? 'Permanently deleted' : failure ? `Could not delete: ${failure}` : selected.has(source.id) ? 'Outcome unknown; refresh preview.' : 'Kept — excluded from cleanup'}</p>}
-              </div>
-              <div className="cleanup-pair">
-                <SourceDetails source={source} label="Older archive" />
-                <SourceDetails source={replacement} label="Newer source to keep" />
-              </div>
-            </li>
-          })}
-        </ul>
-      </>}
-      {plan.skipped.length > 0 && <details className="cleanup-skipped">
-        <summary>{plan.skipped.length} {plan.skipped.length === 1 ? 'source' : 'sources'} skipped</summary>
-        <ul>{plan.skipped.map((item) => <li key={item.source_id}>
-          <p className="cleanup-path">{item.path}</p>
-          <p>{item.reason}</p>
-        </li>)}</ul>
-      </details>}
-    </>}
-  </section>
+        {plan && <>
+          {plan.candidates.length === 0 && <Card size="4"><Text as="p" color="gray" role="status">No eligible older archives found.</Text></Card>}
+          {plan.candidates.length > 0 && <>
+            {!attempted && <Flex justify="between" align="center" gap="3" wrap="wrap">
+              <Text weight="medium">{selected.size} {selected.size === 1 ? 'archive' : 'archives'} selected · {size(totalSize)}</Text>
+              {!confirming && <Flex gap="2" wrap="wrap">
+                <Button variant="soft" color="gray" type="button" disabled={locked} onClick={() => setSelected(new Set(plan.candidates.map((candidate) => candidate.source.id)))}>Select all</Button>
+                <Button variant="soft" color="gray" type="button" disabled={locked} onClick={() => setSelected(new Set())}>Clear selection</Button>
+                <Button color="red" type="button" disabled={locked || selected.size === 0} onClick={() => setConfirming(true)}>Delete selected…</Button>
+              </Flex>}
+            </Flex>}
+            {confirming && <Card size="3" role="group" aria-label="Confirm permanent deletion">
+              <Flex direction="column" gap="3">
+                <Heading as="h2" size="4" color="red">Permanently delete {selected.size} {selected.size === 1 ? 'archive' : 'archives'}?</Heading>
+                <Text as="p" size="2">The archives listed below ({size(totalSize)}), their catalog records, and source-linked galleries will be deleted. Files will not go to trash. This cannot be undone.</Text>
+                <Flex gap="2" wrap="wrap">
+                  <Button autoFocus variant="soft" color="gray" type="button" onClick={() => setConfirming(false)}>Cancel</Button>
+                  <Button color="red" type="button" onClick={() => void removeSelected()}>Permanently delete {selected.size} {selected.size === 1 ? 'archive' : 'archives'}</Button>
+                </Flex>
+              </Flex>
+            </Card>}
+            <Flex asChild direction="column" gap="3" m="0" p="0">
+              <ul className="cleanup-candidates" aria-label={confirming ? 'Archives to permanently delete' : 'Older archives'}>
+                {visibleCandidates.map(({ source, replacement, size_bytes }) => {
+                  const failure = failures.get(source.id)
+                  return <Card asChild size="3" key={source.id}>
+                    <li>
+                      <Flex direction="column" gap="4">
+                        <Flex justify="between" align="center" gap="3" wrap="wrap">
+                          <Text as="label" size="2"><Flex gap="2" align="center"><Checkbox checked={selected.has(source.id)} disabled={locked} onCheckedChange={() => toggle(source.id)} aria-label={`Select ${source.path}`} />{size(size_bytes)}</Flex></Text>
+                          {result && <Text as="p" size="2" color={failure ? 'red' : 'gray'}>{deleted.has(source.id) ? 'Permanently deleted' : failure ? `Could not delete: ${failure}` : selected.has(source.id) ? 'Outcome unknown; refresh preview.' : 'Kept — excluded from cleanup'}</Text>}
+                        </Flex>
+                        <Grid columns={{ initial: '1', sm: '2' }} gap="5">
+                          <SourceDetails source={source} label="Older archive" />
+                          <SourceDetails source={replacement} label="Newer source to keep" />
+                        </Grid>
+                      </Flex>
+                    </li>
+                  </Card>
+                })}
+              </ul>
+            </Flex>
+          </>}
+          {plan.skipped.length > 0 && <Card size="3" asChild>
+            <details>
+              <Text asChild size="2" weight="medium"><summary>{plan.skipped.length} {plan.skipped.length === 1 ? 'source' : 'sources'} skipped</summary></Text>
+              <Flex asChild direction="column" gap="3" mt="3" mb="0"><ul>{plan.skipped.map((item) => <li key={item.source_id}>
+                <Text as="p" size="1" className="cleanup-path">{item.path}</Text>
+                <Text as="p" size="2" color="gray">{item.reason}</Text>
+              </li>)}</ul></Flex>
+            </details>
+          </Card>}
+        </>}
+      </Flex>
+    </section>
+  </Box>
 }

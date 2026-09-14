@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Button, Callout, Card, Code, DataList, Flex, Link, Text, TextField } from '@radix-ui/themes'
+import { ExternalLinkIcon, MagnifyingGlassIcon } from '@radix-ui/react-icons'
 import { getMetadataFetch, lookupPanda, parseLookup } from './lookup'
 import type { MetadataFetchJob, PandaLookupResult, PandaMetadata } from './lookup'
 
@@ -13,14 +15,14 @@ const metadataLabels: Record<keyof PandaMetadata, string> = {
 }
 
 function Metadata({ value }: { value: PandaMetadata }) {
-  return <dl className="panda-metadata">{Object.entries(metadataLabels).map(([key, label]) => {
+  return <DataList.Root className="panda-metadata" orientation={{ initial: 'vertical', sm: 'horizontal' }} size="2">{Object.entries(metadataLabels).map(([key, label]) => {
     const field = value[key as keyof PandaMetadata]
-    return <div key={key}><dt>{label}</dt><dd>{key === 'torrents' && Array.isArray(field)
+    return <DataList.Item key={key}><DataList.Label minWidth="160px">{label}</DataList.Label><DataList.Value>{key === 'torrents' && Array.isArray(field)
       ? <pre>{JSON.stringify(field, null, 2)}</pre>
       : Array.isArray(field) ? field.join(', ') || 'None'
         : typeof field === 'boolean' ? field ? 'Yes' : 'No'
-          : field === null || field === undefined || field === '' ? 'None' : String(field)}</dd></div>
-  })}</dl>
+          : field === null || field === undefined || field === '' ? 'None' : String(field)}</DataList.Value></DataList.Item>
+  })}</DataList.Root>
 }
 
 export default function PandaLookup() {
@@ -80,20 +82,31 @@ export default function PandaLookup() {
     } catch (error) { failed(error) }
   }
 
-  return <section className="panda-lookup" aria-labelledby="panda-lookup-title">
-    <form onSubmit={(event) => void submit(event)}>
-      <label id="panda-lookup-title" htmlFor="panda-lookup-input">Look up gallery</label>
-      <div className="button-group"><input className="text-input" id="panda-lookup-input" value={value} onChange={(event) => setValue(event.target.value)} placeholder="Gallery ID or Panda URL" />
-        <button className="button" type="submit">Look up</button></div>
-    </form>
-    {pending && <p role="status">{notice || 'Looking up gallery…'}</p>}
-    {error && <p className="error-message" role="alert">{error}</p>}
-    {result && <div className="panda-lookup-result">
-      <p>Gallery ID: {result.gid} · Token: <code>{result.token}</code>{' '}<a href={result.url} target="_blank" rel="noopener noreferrer">Open on Panda</a></p>
-      {result.unverified && <p>Unverified reference. This token has not been confirmed by Panda.</p>}
-      {!result.metadata && <p>Metadata not collected.</p>}
-      {result.refreshed_at && <p>Metadata retrieved: <time dateTime={result.refreshed_at}>{new Date(result.refreshed_at).toLocaleString()}</time></p>}
+  return <Flex asChild className="panda-lookup" direction="column" gap="4"><section aria-labelledby="panda-lookup-title">
+    <Card>
+      <form onSubmit={(event) => void submit(event)}>
+        <Flex direction="column" gap="2">
+          <Text as="label" size="2" weight="medium" id="panda-lookup-title" htmlFor="panda-lookup-input">Look up gallery</Text>
+          <Flex gap="2">
+            <TextField.Root className="panda-lookup-input" id="panda-lookup-input" value={value} onChange={(event) => setValue(event.target.value)} placeholder="Gallery ID or Panda URL">
+              <TextField.Slot><MagnifyingGlassIcon /></TextField.Slot>
+            </TextField.Root>
+            <Button type="submit">Look up</Button>
+          </Flex>
+        </Flex>
+      </form>
+    </Card>
+    {pending && <Text as="p" size="2" color="gray" role="status">{notice || 'Looking up gallery…'}</Text>}
+    {error && <Callout.Root color="red" role="alert"><Callout.Text>{error}</Callout.Text></Callout.Root>}
+    {result && <Card className="panda-lookup-result"><Flex direction="column" gap="4">
+      <Flex align="center" justify="between" wrap="wrap" gap="3">
+        <Text size="2">Gallery ID: {result.gid} · Token: <Code>{result.token}</Code></Text>
+        <Link href={result.url} target="_blank" rel="noopener noreferrer" size="2">Open on Panda <ExternalLinkIcon /></Link>
+      </Flex>
+      {result.unverified && <Callout.Root color="amber"><Callout.Text>Unverified reference. This token has not been confirmed by Panda.</Callout.Text></Callout.Root>}
+      {!result.metadata && <Text as="p" size="2" color="gray">Metadata not collected.</Text>}
+      {result.refreshed_at && <Text as="p" size="2" color="gray">Metadata retrieved: <time dateTime={result.refreshed_at}>{new Date(result.refreshed_at).toLocaleString()}</time></Text>}
       {result.metadata && <Metadata value={result.metadata} />}
-    </div>}
-  </section>
+    </Flex></Card>}
+  </section></Flex>
 }

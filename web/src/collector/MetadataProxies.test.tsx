@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render as testingRender, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Theme } from '@radix-ui/themes'
+import type { ReactNode } from 'react'
+
 import { afterEach, expect, test, vi } from 'vitest'
 import App from '../App'
 import MetadataProxies from './MetadataProxies'
 import type { MetadataProxyInput, MetadataProxyStatus } from './metadataProxies'
+
+const render = (ui: ReactNode) => testingRender(ui, { wrapper: Theme })
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
 
@@ -45,7 +50,7 @@ test('configures shared proxy channels, retaining write-only passwords on edit',
   render(<App />)
   await screen.findByText(/No proxy channels configured/)
   const cleanupToggle = screen.getByRole('checkbox', { name: 'Remove proxies after 5 minutes without a successful request' })
-  expect((cleanupToggle as HTMLInputElement).checked).toBe(false)
+  expect(cleanupToggle.getAttribute('aria-checked')).toBe('false')
   await user.click(cleanupToggle)
   await waitFor(() => expect(state.auto_remove_inactive).toBe(true))
   expect(state.enabled).toBe(false)
@@ -94,17 +99,18 @@ test('imports pasted addresses with one shared type without enabling global coll
   render(<MetadataProxies available refreshKey={0} />)
   await screen.findByText(/No proxy channels configured/)
   await user.click(screen.getByRole('button', { name: 'Paste proxy list' }))
-  expect((screen.getByLabelText(/^Proxy type/) as HTMLSelectElement).value).toBe('socks5')
+  expect(screen.getByRole('combobox', { name: 'Proxy type' }).textContent).toBe('SOCKS5')
   await user.type(screen.getByLabelText(/^Proxy addresses/), 'proxy.example:1080\nproxy.example:1080\nproxy.example:1080')
-  await user.selectOptions(screen.getByLabelText(/^Proxy type/), 'https')
-  expect((screen.getByLabelText('Enable imported channels') as HTMLInputElement).checked).toBe(true)
+  await user.click(screen.getByRole('combobox', { name: 'Proxy type' }))
+  await user.click(screen.getByRole('option', { name: 'HTTPS' }))
+  expect(screen.getByLabelText('Enable imported channels').getAttribute('aria-checked')).toBe('true')
   await user.click(screen.getByRole('button', { name: 'Import channels' }))
   await screen.findByText('Added 1 channel. Skipped 2 duplicates.')
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/metadata/proxies/import', expect.objectContaining({
     method: 'POST', body: JSON.stringify({ proxies: 'proxy.example:1080\nproxy.example:1080\nproxy.example:1080', protocol: 'https', enabled: true }),
   }))
   expect(screen.getByRole('article', { name: 'Imported proxy' })).toBeTruthy()
-  expect((screen.getByLabelText('Enable proxy metadata collection') as HTMLInputElement).checked).toBe(false)
+  expect(screen.getByLabelText('Enable proxy metadata collection').getAttribute('aria-checked')).toBe('false')
   expect(screen.queryByRole('button', { name: 'Import channels' })).toBeNull()
 })
 
@@ -121,7 +127,8 @@ test('keeps pasted addresses and type available after a rejected list', async ()
   await screen.findByText(/No proxy channels configured/)
   await user.click(screen.getByRole('button', { name: 'Paste proxy list' }))
   await user.type(screen.getByLabelText(/^Proxy addresses/), 'https://proxy.example:1080')
-  await user.selectOptions(screen.getByLabelText(/^Proxy type/), 'https')
+  await user.click(screen.getByRole('combobox', { name: 'Proxy type' }))
+  await user.click(screen.getByRole('option', { name: 'HTTPS' }))
   await user.click(screen.getByLabelText('Enable imported channels'))
   await user.click(screen.getByRole('button', { name: 'Import channels' }))
   expect((await screen.findByRole('alert')).textContent).toContain('one host:port per line, without a URL scheme')
@@ -129,7 +136,7 @@ test('keeps pasted addresses and type available after a rejected list', async ()
     method: 'POST', body: JSON.stringify({ proxies: 'https://proxy.example:1080', protocol: 'https', enabled: false }),
   }))
   expect((screen.getByLabelText(/^Proxy addresses/) as HTMLTextAreaElement).value).toBe('https://proxy.example:1080')
-  expect((screen.getByLabelText(/^Proxy type/) as HTMLSelectElement).value).toBe('https')
+  expect(screen.getByRole('combobox', { name: 'Proxy type' }).textContent).toBe('HTTPS')
   expect((screen.getByRole('button', { name: 'Import channels' }) as HTMLButtonElement).disabled).toBe(false)
   expect(screen.queryByRole('article')).toBeNull()
 })

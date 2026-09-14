@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { getInventoryStatus } from '../collector/api'
-import { useCollectorResource } from '../collector/useCollectorResource'
 import { getFeedStatus, refreshFeed } from './api'
 import type { FeedStatus } from './api'
 
@@ -10,7 +8,6 @@ export function usePandaCollection() {
   const [requestError, setRequestError] = useState('')
   const [pending, setPending] = useState(false)
   const [revision, setRevision] = useState(0)
-  const inventory = useCollectorResource(getInventoryStatus, true, revision, 30000)
   const mutation = useRef<AbortController | null>(null)
 
   useEffect(() => () => mutation.current?.abort(), [])
@@ -54,5 +51,5 @@ export function usePandaCollection() {
     }
   }
 
-  return { feed, inventory: inventory.data, error: feedError || inventory.error, requestError, pending, capture, retry: () => setRevision((value) => value + 1) }
+  return { feed, error: feedError, requestError, pending, capture, retry: () => setRevision((value) => value + 1) }
 }

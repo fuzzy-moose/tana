@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render as testingRender, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Theme } from '@radix-ui/themes'
+import type { ReactNode } from 'react'
+
 import { afterEach, expect, test, vi } from 'vitest'
 import ReferenceImports from './ReferenceImports'
 import { uploadReferenceImport } from './referenceImports'
@@ -10,6 +13,8 @@ vi.mock('./referenceImports', async (importOriginal) => ({
   ...await importOriginal<typeof import('./referenceImports')>(),
   uploadReferenceImport: vi.fn(),
 }))
+
+const render = (ui: ReactNode) => testingRender(ui, { wrapper: Theme })
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
@@ -41,9 +46,9 @@ test('shows independent processing and validation progress, with cancellation an
   const active = await screen.findByRole('article', { name: 'Import favorites.txt' })
   const processing = within(active).getByRole('progressbar', { name: 'File processing for favorites.txt' }) as HTMLProgressElement
   const validation = within(active).getByRole('progressbar', { name: 'Reference validation for favorites.txt' }) as HTMLProgressElement
-  expect(processing.value).toBe(processing.max)
-  expect(validation.value).toBe(35)
-  expect(validation.max).toBe(100)
+  expect(processing.getAttribute('aria-valuenow')).toBe(processing.getAttribute('aria-valuemax'))
+  expect(validation.getAttribute('aria-valuenow')).toBe('35')
+  expect(validation.getAttribute('aria-valuemax')).toBe('100')
   expect(within(active).queryByRole('button', { name: 'Retry failed' })).toBeNull()
   await user.click(within(active).getByRole('button', { name: 'Cancel' }))
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/first/cancel', expect.objectContaining({ method: 'POST' }))
@@ -74,8 +79,8 @@ test.each(['processing', 'validating'] as const)('pauses and resumes a %s import
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/first/pause', expect.objectContaining({ method: 'POST' }))
   expect(await within(active).findByText('Paused')).toBeTruthy()
   expect(within(active).getByRole('button', { name: 'Cancel' })).toBeTruthy()
-  expect((within(active).getByRole('progressbar', { name: 'File processing for favorites.txt' }) as HTMLProgressElement).value).toBe(item.processed_bytes)
-  expect((within(active).getByRole('progressbar', { name: 'Reference validation for favorites.txt' }) as HTMLProgressElement).value).toBe(35)
+  expect(within(active).getByRole('progressbar', { name: 'File processing for favorites.txt' }).getAttribute('aria-valuenow')).toBe(String(item.processed_bytes))
+  expect(within(active).getByRole('progressbar', { name: 'Reference validation for favorites.txt' }).getAttribute('aria-valuenow')).toBe('35')
   if (status === 'processing') expect(within(active).getByText(/File processing paused/)).toBeTruthy()
   await user.click(within(active).getByRole('button', { name: 'Resume' }))
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/reference-imports/first/resume', expect.objectContaining({ method: 'POST' }))

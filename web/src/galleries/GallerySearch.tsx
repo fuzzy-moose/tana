@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Badge, Button, Flex, Text, TextField } from '@radix-ui/themes'
+import { MagnifyingGlassIcon } from '@radix-ui/react-icons'
 import { listingLink } from '../navigation'
 import { completeGallerySearch } from './api'
 import type { SearchCompletion, TagSuggestion } from './api'
@@ -65,10 +67,9 @@ export default function GallerySearch({ search, completeSearch = completeGallery
       setDismissed(true)
       window.location.hash = searchHref(query.trim())
     }}>
-      <label className="form-field" htmlFor="gallery-search">Search titles and tags</label>
-      <div className="button-group">
+      <Flex gap="2" align="center">
         <div className="gallery-search-input">
-          <input ref={input} id="gallery-search" className="text-input" type="search" role="combobox"
+          <TextField.Root ref={input} id="gallery-search" type="search" role="combobox" aria-label="Search titles and tags"
             aria-autocomplete="list" aria-expanded={open} aria-controls={open ? 'gallery-tags' : undefined}
             aria-activedescendant={open ? `gallery-tag-${active}` : undefined} autoComplete="off"
             value={query} placeholder="Title, tag, or artist:name…"
@@ -96,18 +97,20 @@ export default function GallerySearch({ search, completeSearch = completeGallery
                   select(completion.items[active])
                 }
               }
-            }} />
+            }}>
+            <TextField.Slot><MagnifyingGlassIcon /></TextField.Slot>
+          </TextField.Root>
           {open && <ul id="gallery-tags" className="gallery-tag-suggestions" role="listbox" aria-label="Tag suggestions">
             {completion.items.map((suggestion, index) => <li key={`${suggestion.namespace}:${suggestion.value}`}
               id={`gallery-tag-${index}`} role="option" aria-selected={index === active}
               onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setActive(index)}
               onClick={() => select(suggestion)}>
-              <span className="suggestion-namespace">{suggestion.namespace}</span><span>{suggestion.value}</span>
+              <Badge color="gray" size="1">{suggestion.namespace}</Badge><Text size="2">{suggestion.value}</Text>
             </li>)}
           </ul>}
         </div>
-        <button className="button" type="submit">Search</button>
-      </div>
+        <Button type="submit" variant="soft">Search</Button>
+      </Flex>
     </form>
   )
 }

@@ -131,28 +131,10 @@ test('clamps a saved page after galleries disappear and supports an empty search
   expect(screen.queryByRole('navigation', { name: 'Gallery pages' })).toBeNull()
 })
 
-test('shows the full title on hover and focus, and dismisses it with Escape', async () => {
-  render(<App />)
-  await listing(0, 8)
-  const card = within(screen.getByRole('list', { name: 'Galleries' })).getAllByRole('link')[0]
-  const tooltip = () => card.querySelector('.gallery-title-tooltip')
-  expect(tooltip()).toBeNull()
-  fireEvent.mouseEnter(card)
-  expect(tooltip()?.textContent).toBe('Gallery 0')
-  fireEvent.mouseLeave(card)
-  expect(tooltip()).toBeNull()
-  fireEvent.focus(card)
-  expect(tooltip()?.textContent).toBe('Gallery 0')
-  fireEvent.keyDown(card, { key: 'Escape' })
-  expect(tooltip()).toBeNull()
-})
-
 test('fits Panda pages to the viewport and preserves the search and filter when resizing', async () => {
   window.history.replaceState(null, '', '#/panda?q=manga&page=3&include_expunged=true')
   fetchMock.mockImplementation(async (input) => {
     const url = new URL(String(input), 'http://localhost')
-    if (url.pathname === '/api/collector/inventory/status') return Response.json({ gallery_references: 0, metadata_available: 0, metadata_pending: 0, metadata_failed: 0, fetches_pending: 0, fetches_failed: 0 })
-    if (url.pathname === '/api/collector/feed/status') return Response.json({ capture_active: false, processing_pending: 0, continuity: 'unknown', possible_gaps: 0 })
     const pageSize = Number(url.searchParams.get('page_size'))
     const page = Number(url.searchParams.get('page'))
     const first = (page - 1) * pageSize

@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render as testingRender, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Theme } from '@radix-ui/themes'
+import type { ReactNode } from 'react'
+
 import { afterEach, expect, test, vi } from 'vitest'
 import Favorites from './Favorites'
 import type { FavoritesStatus } from './api'
 import type { MissingFavoriteDownloadPreview } from './missingFavoriteDownloads'
+
+const render = (ui: ReactNode) => testingRender(ui, { wrapper: Theme })
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 

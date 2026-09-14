@@ -1,3 +1,4 @@
+import { Badge, Button, Card, Flex, Heading, Link, Popover, Progress, Select, Text } from '@radix-ui/themes'
 import { deliveryActive, deliveryItemState } from './libraryDeliveries'
 import type { useLibraryDeliveries } from './useLibraryDeliveries'
 
@@ -8,68 +9,74 @@ export default function LibraryDeliveries({ deliveries, libraryID, onLibraryChan
   canStart: boolean
   completedCount: number
 }) {
-  return <section className="library-deliveries" aria-labelledby="library-deliveries-title">
-    <div className="collector-section-heading">
-      <h3 id="library-deliveries-title">Add downloads to a library</h3>
-      <button className="button" type="button" disabled={deliveries.pending || deliveries.checking} onClick={deliveries.refresh}>Refresh deliveries</button>
-    </div>
-    <p>Transfer completed archives into a library, one at a time. Each collector copy is deleted after successful import. Delivery continues when you close this page. Successful batches disappear automatically.</p>
-    <div className="collector-sync">
-      <label className="form-field">Destination library
-        <select className="text-input" value={libraryID || ''} onChange={(event) => onLibraryChange(Number(event.target.value))}
-          disabled={deliveries.pending || !!deliveries.active || !deliveries.librariesLoaded || !!deliveries.libraryError}>
-          <option value="">Choose a library</option>
-          {deliveries.libraries.map((library) => <option key={library.id} value={library.id}>{library.name}{library.availability === 'unavailable' ? ' (unavailable)' : ''}</option>)}
-        </select>
-      </label>
-      <button className="button button-primary" type="button" disabled={!canStart || completedCount === 0}
-        onClick={() => void deliveries.start({ library_id: libraryID, all: true })}>Add all</button>
-    </div>
-    <p className="field-help">Add all includes every completed download when clicked, across all pages and filters.</p>
-    {deliveries.librariesLoaded && deliveries.libraries.length === 0 && <p className="field-help"><a href="#/libraries">Register a library</a> to add downloads.</p>}
-    {deliveries.active && <p className="collector-notice" role="status">One delivery batch at a time. Finish or stop the active batch to start another.</p>}
-    {deliveries.libraryError && <p className="error-message" role="alert">{deliveries.libraryError}</p>}
-    {deliveries.requestError && <p className="error-message" role="alert">{deliveries.requestError}</p>}
-    {deliveries.error && <p className="error-message" role="alert">{deliveries.error} Delivery progress may be stale.</p>}
-    {!deliveries.loaded && !deliveries.error && <p className="field-help">Loading deliveries…</p>}
+  return <Flex direction="column" gap="2" minWidth="0" asChild><section aria-label="Add downloads to a library">
+    <Flex align="end" wrap="wrap" gap="2">
+      <Flex direction="column" gap="2" flexGrow="1" minWidth="0" asChild><label>Destination library
+        <Select.Root value={libraryID ? String(libraryID) : ''} onValueChange={(value) => onLibraryChange(Number(value))} disabled={deliveries.pending || !!deliveries.active || !deliveries.librariesLoaded || !!deliveries.libraryError}><Select.Trigger aria-label="Destination library" placeholder="Choose a library" /><Select.Content>
+
+          {deliveries.libraries.map((library) => <Select.Item key={library.id} value={String(library.id)}>{library.name}{library.availability === 'unavailable' ? ' (unavailable)' : ''}</Select.Item>)}
+        </Select.Content></Select.Root>
+      </label></Flex>
+      <Button size="2" variant="solid" type="button" disabled={!canStart || completedCount === 0} onClick={() => void deliveries.start({ library_id: libraryID, all: true })}>Add all</Button>
+      <Button size="2" variant="soft" color="gray" type="button" disabled={deliveries.pending || deliveries.checking} onClick={deliveries.refresh}>Refresh deliveries</Button>
+    </Flex>
+    <Flex align="center" gap="2" wrap="wrap">
+      <Text size="1" color="gray">Successful imports remove collector copies.</Text>
+      <Popover.Root>
+        <Popover.Trigger><Button size="1" variant="ghost" color="gray">Delivery details</Button></Popover.Trigger>
+        <Popover.Content maxWidth="360px">
+          <Flex direction="column" gap="3">
+            <Heading as="h3" size="3">Add downloads to a library</Heading>
+            <Text as="p" size="2">Add all includes every completed download when clicked, across all pages and filters. Archives transfer one at a time; collector copies are removed after successful import.</Text>
+            <Text as="p" size="2">Delivery continues when you close this page. Successful batches disappear automatically.</Text>
+          </Flex>
+        </Popover.Content>
+      </Popover.Root>
+    </Flex>
+    {deliveries.librariesLoaded && deliveries.libraries.length === 0 && <Text as="p" size="1" color="gray"><Link href="#/libraries">Register a library</Link> to add downloads.</Text>}
+    {deliveries.active && <Text as="p" size="2" color="green" role="status">One delivery batch at a time. Finish or stop the active batch to start another.</Text>}
+    {deliveries.libraryError && <Text as="p" size="2" color="red" role="alert">{deliveries.libraryError}</Text>}
+    {deliveries.requestError && <Text as="p" size="2" color="red" role="alert">{deliveries.requestError}</Text>}
+    {deliveries.error && <Text as="p" size="2" color="red" role="alert">{deliveries.error} Delivery progress may be stale.</Text>}
+    {!deliveries.loaded && !deliveries.error && <Text as="p" size="1" color="gray">Loading deliveries…</Text>}
     {deliveries.batches.map((batch) => {
       const active = deliveryActive(batch)
       const done = batch.items.filter((item) => ['completed', 'skipped', 'failed', 'cleanup_pending'].includes(item.state)).length
       const added = batch.items.filter((item) => ['completed', 'cleanup_pending'].includes(item.state)).length
       const failed = batch.items.filter((item) => item.state === 'failed').length
       const cleanup = batch.items.filter((item) => item.state === 'cleanup_pending').length
-      const cleanupExhausted = batch.items.some((item) => item.state === 'cleanup_pending' && item.cleanup_attempts >= 3)
+      const cleanupExhausted = batch.items.some((item) => item.state === 'cleanup_pending' && item.cleanup_attempts>= 3)
       const skipped = batch.items.filter((item) => item.state === 'skipped').length
       const disabled = deliveries.disabled
       const retryDisabled = disabled || !!deliveries.active
       const library = deliveries.libraries.find((library) => library.id === batch.library_id)
       const current = batch.items.find((item) => ['transferring', 'transferred', 'saved', 'importing'].includes(item.state))
       const state = { running: 'Delivering', paused: 'Paused', stopped: 'Stopped', completed: 'Completed', completed_with_errors: 'Needs attention' }[batch.state]
-      return <article className="library-delivery" key={batch.id} aria-label={`Delivery ${batch.id}`}>
-        <div className="collector-section-heading">
-          <h4>Delivery {batch.id} · {library?.name ?? `Library ${batch.library_id}`}</h4>
-          <span className="collector-badge">{batch.stop_requested && batch.state === 'running' ? 'Stopping after current archive' : state}</span>
-        </div>
-        <p>{done} of {batch.items.length} processed · {added} added · {skipped} already in library · {failed} failed{cleanup > 0 && ` · ${cleanup} awaiting collector cleanup`}</p>
-        <progress className="sitemap-progress" aria-label={`Delivery ${batch.id} progress`} value={done} max={batch.items.length || 1} />
-        {current && <p className="field-help">Gallery {current.gallery_id} · {deliveryItemState(current)}</p>}
-        {batch.error && <p className="error-message">{batch.error}</p>}
-        {batch.state === 'paused' && <p className="field-help">Progress is saved. Resume explicitly when the destination is available.</p>}
-        {batch.state === 'stopped' && <p className="field-help">Remaining archives were left on the collector. Retry remaining to continue this batch.</p>}
-        <div className="button-group library-delivery-actions">
-          {batch.state === 'paused' && <button className="button" disabled={disabled} onClick={() => void deliveries.change(batch.id, 'resume')}>Resume</button>}
-          {active && <button className="button" disabled={disabled || batch.state === 'running' && batch.stop_requested} onClick={() => void deliveries.change(batch.id, 'stop')}>{batch.state === 'paused' ? 'Stop batch' : 'Stop after current archive'}</button>}
-          {!active && (failed > 0 || batch.state === 'stopped' && batch.items.some((item) => ['queued', 'transferring', 'transferred', 'saved', 'importing'].includes(item.state))) && <button className="button" disabled={retryDisabled} onClick={() => void deliveries.change(batch.id, 'retry')}>{batch.state === 'stopped' ? 'Retry remaining' : 'Retry failed'}</button>}
-          {cleanupExhausted && <button className="button" disabled={disabled} onClick={() => void deliveries.change(batch.id, 'retry-cleanup')}>Retry cleanup</button>}
-        </div>
+      return <Card key={batch.id} asChild><article aria-label={`Delivery ${batch.id}`}><Flex direction="column" gap="3">
+        <Flex align="center" justify="between" wrap="wrap" gap="3">
+          <Heading as="h4" size="3">Delivery {batch.id} · {library?.name ?? `Library ${batch.library_id}`}</Heading>
+          <Badge color="gray">{batch.stop_requested && batch.state === 'running' ? 'Stopping after current archive' : state}</Badge>
+        </Flex>
+        <Text as="p" size="2">{done} of {batch.items.length} processed · {added} added · {skipped} already in library · {failed} failed{cleanup > 0 && ` · ${cleanup} awaiting collector cleanup`}</Text>
+        <Progress aria-label={`Delivery ${batch.id} progress`} value={done} max={batch.items.length || 1} />
+        {current && <Text as="p" size="1" color="gray">Gallery {current.gallery_id} · {deliveryItemState(current)}</Text>}
+        {batch.error && <Text as="p" size="2" color="red">{batch.error}</Text>}
+        {batch.state === 'paused' && <Text as="p" size="1" color="gray">Progress is saved. Resume explicitly when the destination is available.</Text>}
+        {batch.state === 'stopped' && <Text as="p" size="1" color="gray">Remaining archives were left on the collector. Retry remaining to continue this batch.</Text>}
+        <Flex align="center" wrap="wrap" gap="2">
+          {batch.state === 'paused' && <Button size="2" variant="soft" disabled={disabled} onClick={() => void deliveries.change(batch.id, 'resume')} color="gray">Resume</Button>}
+          {active && <Button size="2" variant="soft" disabled={disabled || batch.state === 'running' && batch.stop_requested} onClick={() => void deliveries.change(batch.id, 'stop')} color="gray">{batch.state === 'paused' ? 'Stop batch' : 'Stop after current archive'}</Button>}
+          {!active && (failed > 0 || batch.state === 'stopped' && batch.items.some((item) => ['queued', 'transferring', 'transferred', 'saved', 'importing'].includes(item.state))) && <Button size="2" variant="soft" disabled={retryDisabled} onClick={() => void deliveries.change(batch.id, 'retry')} color="gray">{batch.state === 'stopped' ? 'Retry remaining' : 'Retry failed'}</Button>}
+          {cleanupExhausted && <Button size="2" variant="soft" disabled={disabled} onClick={() => void deliveries.change(batch.id, 'retry-cleanup')} color="gray">Retry cleanup</Button>}
+        </Flex>
         <details className="library-delivery-items">
           <summary>Gallery results ({batch.items.length})</summary>
-          <ul className="collector-errors">{batch.items.map((item) => <li key={item.gallery_id}>
+          <Flex direction="column" gap="2" asChild><ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{batch.items.map((item) => <Flex direction="column" gap="1" key={item.gallery_id} asChild><li>
             <strong>Gallery {item.gallery_id} · {deliveryItemState(item)}</strong>
             {item.error && item.state !== 'skipped' && <span>{item.error}</span>}
-          </li>)}</ul>
+          </li></Flex>)}</ul></Flex>
         </details>
-      </article>
+      </Flex></article></Card>
     })}
-  </section>
+  </section></Flex>
 }

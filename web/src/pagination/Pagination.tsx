@@ -1,3 +1,4 @@
+import { Button, Text } from '@radix-ui/themes'
 import { getPageNumbers } from './pageNumbers'
 import './Pagination.css'
 
@@ -15,16 +16,16 @@ export default function Pagination({ page, totalPages, pageHref, adjacentCount =
   return (
     <nav className="pagination" aria-label={label}>
       {page > 1
-        ? <a className="pagination-item" href={pageHref(page - 1)} aria-label="Previous" rel="prev">«</a>
-        : <button className="pagination-item" aria-label="Previous" disabled>«</button>}
+        ? <Button asChild variant="soft" color="gray" className="pagination-item"><a href={pageHref(page - 1)} aria-label="Previous" rel="prev">«</a></Button>
+        : <Button variant="soft" color="gray" className="pagination-item" aria-label="Previous" disabled>«</Button>}
       {getPageNumbers(adjacentCount, page, totalPages).map((number, index) => number === -1
-        ? <span className="pagination-ellipsis" key={`ellipsis-${index}`}>…</span>
+        ? <Text size="2" color="gray" align="center" className="pagination-ellipsis" key={`ellipsis-${index}`}>…</Text>
         : number === page
-          ? <span className="pagination-item" key={number} aria-label={`Page ${number}`} aria-current="page">{number}</span>
-          : <a className="pagination-item" key={number} href={pageHref(number)} aria-label={`Page ${number}`}>{number}</a>)}
+          ? <Button asChild className="pagination-item" key={number}><span aria-label={`Page ${number}`} aria-current="page">{number}</span></Button>
+          : <Button asChild variant="soft" color="gray" className="pagination-item" key={number}><a href={pageHref(number)} aria-label={`Page ${number}`}>{number}</a></Button>)}
       {page < totalPages
-        ? <a className="pagination-item" href={pageHref(page + 1)} aria-label="Next" rel="next">»</a>
-        : <button className="pagination-item" aria-label="Next" disabled>»</button>}
+        ? <Button asChild variant="soft" color="gray" className="pagination-item"><a href={pageHref(page + 1)} aria-label="Next" rel="next">»</a></Button>
+        : <Button variant="soft" color="gray" className="pagination-item" aria-label="Next" disabled>»</Button>}
     </nav>
   )
 }

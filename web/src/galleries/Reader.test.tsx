@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import App from '../App'
 import { galleryLink, readerLink } from '../navigation'
@@ -77,7 +77,8 @@ test('retries a missing image and does not skip its page', async () => {
   await screen.findByRole('group', { name: 'Page 2 unavailable' })
   expect(screen.getByRole('img', { name: 'Page 3' })).toBeTruthy()
   failed.delete(2)
-  fireEvent.click(screen.getByRole('button', { name: 'Retry page 2' }))
+  // Flush retry effects before dispatching through the refreshed keyboard listener.
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry page 2' })) })
   expect(await screen.findByRole('img', { name: 'Page 2' })).toBeTruthy()
   expect(screen.getByText('Page 2–3 of 8')).toBeTruthy()
   fireEvent.keyDown(window, { key: 'ArrowLeft' })

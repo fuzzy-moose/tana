@@ -1,3 +1,4 @@
+import { Button, Card, Checkbox, Flex, Grid, Heading, Text } from '@radix-ui/themes'
 import { useEffect, useRef, useState } from 'react'
 import { saveFavoriteDownloadSettings } from './api'
 import type { FavoriteCategory, FavoriteDownloadsStatus } from './api'
@@ -38,28 +39,28 @@ export default function FavoriteDownloads({ status, categories, available, onSav
     }
   }
 
-  return <div className="favorite-download-settings">
-    <h3>Automatic favorite downloads</h3>
-    <p>{status.baseline_state === 'not_started'
+  return <Card asChild><div><Flex direction="column" gap="3">
+    <Heading as="h3" size="3">Automatic favorite downloads</Heading>
+    <Text as="p" size="2">{status.baseline_state === 'not_started'
       ? 'Your first sync will establish a baseline across all ten categories without downloading existing favorites.'
       : status.baseline_state === 'collecting'
         ? `Establishing baseline: ${status.baseline_categories} of 10 categories complete. No automatic downloads until a later sync. Use Sync favorites to resume failed categories.`
-        : 'Baseline complete. Future syncs download newly discovered favorites in the selected categories.'}</p>
+        : 'Baseline complete. Future syncs download newly discovered favorites in the selected categories.'}</Text>
     <form onSubmit={(event) => { event.preventDefault(); if (available && !pending) void save() }}>
-      <fieldset className="favorite-download-categories" disabled={!available || pending}>
+      <Grid columns={{ initial: '1', xs: '2', md: '5' }} gap="3" my="3" asChild><fieldset disabled={!available || pending}>
         <legend>Download new favorites from</legend>
-        {categories.map((category) => <label key={category.category}>
-          <input type="checkbox" checked={selected.includes(category.category)} onChange={(event) => {
-            setDraft(event.target.checked ? [...selected, category.category].sort((a, b) => a - b) : selected.filter((id) => id !== category.category))
+        {categories.map((category) => <Flex align="center" gap="2" key={category.category} asChild><label>
+          <Checkbox checked={selected.includes(category.category)} onCheckedChange={(checked) => {
+            setDraft((checked === true) ? [...selected, category.category].sort((a, b) => a - b) : selected.filter((id) => id !== category.category))
             setNotice('')
           }} />
           {category.name ? `${category.category} · ${category.name}` : `Category ${category.category}`}
-        </label>)}
-      </fieldset>
-      <p className="field-help">Enabling a category does not download previously observed favorites. Disabling it leaves queued downloads running. Archives stay in the collector.</p>
-      <button className="button" type="submit" disabled={!available || pending || draft === null}>{pending ? 'Saving…' : 'Save download categories'}</button>
-      {notice && <p className="collector-notice" role="status">{notice}</p>}
-      {error && <p className="error-message" role="alert">{error}</p>}
+        </label></Flex>)}
+      </fieldset></Grid>
+      <Text as="p" size="1" color="gray">Enabling a category does not download previously observed favorites. Disabling it leaves queued downloads running. Archives stay in the collector.</Text>
+      <Button size="2" variant="soft" type="submit" disabled={!available || pending || draft === null} color="gray">{pending ? 'Saving…' : 'Save download categories'}</Button>
+      {notice && <Text as="p" size="2" color="green" role="status">{notice}</Text>}
+      {error && <Text as="p" size="2" color="red" role="alert">{error}</Text>}
     </form>
-  </div>
+  </Flex></div></Card>
 }

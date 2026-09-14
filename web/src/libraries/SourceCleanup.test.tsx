@@ -46,7 +46,7 @@ test('cleans up across libraries with preselection, exclusions, one confirmation
   await user.click(screen.getByRole('link', { name: 'Clean up older versions' }))
   expect(await screen.findByText('3 archives selected · 7.0 KiB')).toBeTruthy()
   expect(fetchMock).toHaveBeenLastCalledWith('/api/source-cleanup', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-  expect(screen.getAllByRole('checkbox').every((input) => (input as HTMLInputElement).checked)).toBe(true)
+  expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(3)
   expect(screen.getByText('New Manga · Panda 11')).toBeTruthy()
   expect(screen.getByText('/nas/new/Volume [11].zip')).toBeTruthy()
   await user.click(screen.getByText('1 source skipped'))
@@ -72,7 +72,7 @@ test('cleans up across libraries with preselection, exclusions, one confirmation
   expect(screen.getByText('Could not delete: The newer source is no longer present.')).toBeTruthy()
   expect(screen.getByText('Kept — excluded from cleanup')).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Delete selected…' })).toBeNull()
-  expect(screen.getAllByRole('checkbox').every((input) => (input as HTMLInputElement).disabled)).toBe(true)
+  expect(screen.getAllByRole('checkbox').every((input) => input.hasAttribute('disabled'))).toBe(true)
 
   await user.click(screen.getByRole('button', { name: 'Refresh preview' }))
   expect(await screen.findByText('No eligible older archives found.')).toBeTruthy()

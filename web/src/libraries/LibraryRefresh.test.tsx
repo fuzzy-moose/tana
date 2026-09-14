@@ -55,7 +55,7 @@ test('preselects candidates, shows affected galleries and blocked storage, and r
   const user = userEvent.setup()
   render(<LibraryRefresh />)
   expect(await screen.findByText('3 sources selected')).toBeTruthy()
-  expect(screen.getAllByRole('checkbox').every((input) => (input as HTMLInputElement).checked)).toBe(true)
+  expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(3)
   expect(screen.getByText('Volume 1 — gallery will be deleted')).toBeTruthy()
   expect(screen.getAllByText('Favorites — 2 pages will be removed; gallery will be kept')).toHaveLength(3)
   expect(screen.getByRole('note', { name: 'Preserved entries' }).textContent).toContain('Removal is blocked for this library.')

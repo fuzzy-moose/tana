@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { Badge, Button, Callout, Flex, Heading, Text } from '@radix-ui/themes'
+import { ExclamationTriangleIcon } from '@radix-ui/react-icons'
 import { listingLink } from '../navigation'
 import Pagination from '../pagination/Pagination'
 import { listGalleries } from './api'
@@ -43,7 +45,7 @@ export default function Galleries({ search, page }: { search: string, page: numb
     if (!current) return
     const navigate = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-      if (event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) return
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.closest('input, textarea, select, [role="menu"], [role="dialog"], [contenteditable]:not([contenteditable="false"])'))) return
       const direction = event.key === 'ArrowLeft' || event.key === 'a' ? -1
         : event.key === 'ArrowRight' || event.key === 'd' ? 1 : 0
       if (!direction) return
@@ -58,31 +60,34 @@ export default function Galleries({ search, page }: { search: string, page: numb
   return (
     <section className="gallery-listing" aria-labelledby="galleries-title" style={{ '--gallery-card-height': `${cardHeight}px` } as CSSProperties}>
       <div className="gallery-toolbar">
-        <div className="page-heading">
-          <p className="eyebrow">Your collection</p>
-          <h1 id="galleries-title">Galleries</h1>
-          <p>A little space to get lost in a story.</p>
-        </div>
-        <GallerySearch search={search} />
+        <Flex align="center" gap="3">
+          <Heading as="h1" size="5" id="galleries-title">Galleries</Heading>
+          {result && <Badge color="gray">{result.total.toLocaleString()} {result.total === 1 ? 'gallery' : 'galleries'}</Badge>}
+        </Flex>
+        <GallerySearch key={search} search={search} />
       </div>
-      {error && <div className="error-banner" role="alert"><p>{error}</p><button className="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></div>}
-      <div className="gallery-meta">
-        <span>{result ? `${result.total} ${result.total === 1 ? 'gallery' : 'galleries'}` : '\u00a0'}</span><span>Title · A–Z</span>
-      </div>
+      {error && <Callout.Root size="1" color="red" role="alert">
+        <Callout.Icon><ExclamationTriangleIcon /></Callout.Icon>
+        <Flex align="center" justify="between" wrap="wrap" gap="3">
+          <Callout.Text>{error}</Callout.Text>
+          <Button variant="soft" color="red" size="1" onClick={() => setAttempt((n) => n + 1)}>Retry</Button>
+        </Flex>
+      </Callout.Root>}
       <div className="gallery-viewport" ref={viewportRef} aria-busy={!current && !error}>
         <div className="gallery-grid gallery-sizing" aria-hidden="true">
-          <div className="gallery-card" ref={cardRef}><div className="gallery-cover" /><div className="gallery-title"><h2 /></div><p>0 pages</p></div>
+          <div className="gallery-card" ref={cardRef}><div className="gallery-cover" /><div className="gallery-title"><Text asChild size="1" weight="medium"><h2 /></Text></div><Text as="p" size="1">0 pages</Text></div>
         </div>
-        {!current && !error && <p className="gallery-loading" role="status">Loading galleries…</p>}
-        {current && (current.items.length === 0 ? <div className="library-placeholder">
-          <h2>{search ? 'No matching galleries.' : 'Your next read starts here.'}</h2>
-          <p>{search ? 'Try different titles or tags.' : 'Add a library and scan it to discover your comics and manga.'}</p>
-          <a className="button" href={search ? '#/' : '#/libraries'}>{search ? 'Clear search' : 'Manage libraries'}</a>
-        </div> : <ul className="gallery-grid" aria-label="Galleries">
+        {!current && !error && <Text as="p" size="2" color="gray" role="status">Loading galleries…</Text>}
+        {current && (current.items.length === 0 ? <Flex className="gallery-empty" direction="column" align="center" justify="center" gap="3">
+          <Heading as="h2" size="4">{search ? 'No matching galleries.' : 'Your next read starts here.'}</Heading>
+          <Text as="p" size="2" color="gray">{search ? 'Try different titles or tags.' : 'Add a library and scan it to discover your comics and manga.'}</Text>
+          <Button asChild variant="soft"><a href={search ? '#/' : '#/libraries'}>{search ? 'Clear search' : 'Manage libraries'}</a></Button>
+        </Flex> : <ul className="gallery-grid" aria-label="Galleries">
           {current.items.map((gallery) => <li key={gallery.id}><GalleryCard gallery={gallery} /></li>)}
         </ul>)}
       </div>
       <div className="gallery-pagination">
+        <Text size="1" color="gray" className="gallery-sort">Title · A–Z</Text>
         {result && <Pagination page={current?.page ?? page} totalPages={Math.ceil(result.total / (pageSize || 1))} pageHref={(number) => listingLink(search, number)} adjacentCount={1} label="Gallery pages" />}
       </div>
     </section>

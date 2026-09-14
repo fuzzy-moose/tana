@@ -1,3 +1,4 @@
+import { Button, Text } from '@radix-ui/themes'
 import { useEffect, useRef, useState } from 'react'
 import { setMainBackgroundPaused } from './api'
 
@@ -29,12 +30,12 @@ export default function MetadataCollection({ paused, available, onChanged }: {
   }
 
   return <>
-    <p role="status">Main background metadata collection is {paused ? 'paused' : 'enabled'}.</p>
-    <p className="field-help">Pauses background metadata retrieval and reference-import validation on the main worker. Explicit requests and proxy collection continue.</p>
-    {paused && <p className="field-help">Assigned batches may still finish. Paused until you resume, including after collector restarts.</p>}
-    <button className="button" type="button" disabled={!available || pending} onClick={() => void update()}>
+    <Text as="p" size="2" role="status">Main background metadata collection is {paused ? 'paused' : 'enabled'}.</Text>
+    <Text as="p" size="1" color="gray">Pauses background metadata retrieval and reference-import validation on the main worker. Explicit requests and proxy collection continue.</Text>
+    {paused && <Text as="p" size="1" color="gray">Assigned batches may still finish. Paused until you resume, including after collector restarts.</Text>}
+    <Button size="2" variant="soft" type="button" disabled={!available || pending} onClick={() => void update()} color="gray">
       {pending ? 'Saving…' : paused ? 'Resume background metadata' : 'Pause background metadata'}
-    </button>
-    {error && <p className="error-message" role="alert">{error}</p>}
+    </Button>
+    {error && <Text as="p" size="2" color="red" role="alert">{error}</Text>}
   </>
 }

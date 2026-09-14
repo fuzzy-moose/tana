@@ -1,7 +1,9 @@
+import { Badge, Button, Flex, Heading, Select, Table, Text } from '@radix-ui/themes'
 import { useCallback, useState } from 'react'
 import { feedCaptureFileURL, getFeedCaptures } from './api'
 import ResourceStatus from './ResourceStatus'
 import { useCollectorResource } from './useCollectorResource'
+import FeedCapture from './FeedCapture'
 
 const pageSize = 25
 const states = { pending: 'Pending', processed: 'Processed', failed: 'Failed' }
@@ -9,24 +11,26 @@ const states = { pending: 'Pending', processed: 'Processed', failed: 'Failed' }
 export default function RawFeeds({ available, refreshKey }: { available: boolean, refreshKey: number }) {
   const [failedOnly, setFailedOnly] = useState(false)
   const [offset, setOffset] = useState(0)
+  const [captureRevision, setCaptureRevision] = useState(0)
 
-  return <section className="collector-panel" aria-labelledby="feed-captures-title">
-    <h2 id="feed-captures-title">Feed captures</h2>
-    <p>Pending and failed feeds remain available to download, including malformed XML. Successfully processed feeds are cleaned up automatically. Capture IDs match collector logs.</p>
-    <div className="collector-sync">
-      <label className="form-field">Show captures
-        <select className="text-input" value={failedOnly ? 'failed' : 'all'} onChange={(event) => {
-          setFailedOnly(event.target.value === 'failed')
+  return <Flex direction="column" gap="4" asChild><section aria-labelledby="feed-captures-title">
+    <FeedCapture available={available} onCaptured={() => setCaptureRevision((value) => value + 1)} />
+    <Heading as="h2" size="4" id="feed-captures-title">Feed captures</Heading>
+    <Text as="p" size="2">Pending and failed feeds remain available to download, including malformed XML. Successfully processed feeds are cleaned up automatically. Capture IDs match collector logs.</Text>
+    <Flex align="end" wrap="wrap" gap="3">
+      <Flex direction="column" gap="2" flexGrow="1" asChild><label>Show captures
+        <Select.Root value={failedOnly ? 'failed' : 'all'} onValueChange={(value) => {
+          setFailedOnly(value === 'failed')
           setOffset(0)
-        }}>
-          <option value="all">All captures</option>
-          <option value="failed">Failed only</option>
-        </select>
-      </label>
-    </div>
-    <CaptureList key={`${failedOnly}-${offset}`} available={available} refreshKey={refreshKey}
+        }}><Select.Trigger aria-label="Show captures" /><Select.Content>
+          <Select.Item value="all">All captures</Select.Item>
+          <Select.Item value="failed">Failed only</Select.Item>
+        </Select.Content></Select.Root>
+      </label></Flex>
+    </Flex>
+    <CaptureList key={`${failedOnly}-${offset}`} available={available} refreshKey={refreshKey + captureRevision}
       failedOnly={failedOnly} offset={offset} setOffset={setOffset} />
-  </section>
+  </section></Flex>
 }
 
 function CaptureList({ available, refreshKey, failedOnly, offset, setOffset }: {
@@ -38,29 +42,29 @@ function CaptureList({ available, refreshKey, failedOnly, offset, setOffset }: {
 
   return <>
     <ResourceStatus name="Feed captures" loaded={!!data} available={available} {...resource} />
-    {data?.captures.length === 0 && <p role="status">{failedOnly ? 'No failed feed captures.' : 'No feed captures.'}</p>}
+    {data?.captures.length === 0 && <Text as="p" size="2" role="status">{failedOnly ? 'No failed feed captures.' : 'No feed captures.'}</Text>}
     {!!data?.captures.length && <div className="collector-table-scroll">
-      <table className="collector-table collector-feeds">
-        <caption className="collector-table-caption">{failedOnly ? 'Failed captures' : 'All captures'} · newest first</caption>
-        <thead><tr><th scope="col">Capture</th><th scope="col">Captured</th><th scope="col">Processing</th><th scope="col">Size</th><th scope="col">Download</th></tr></thead>
-        <tbody>{data.captures.map((capture) => <tr key={capture.id}>
-          <th scope="row">Capture {capture.id}</th>
-          <td>{new Date(capture.captured_at).toLocaleString()}</td>
-          <td><span className="collector-state">{states[capture.state]}</span>
-            {capture.error && <span className="collector-secondary">{capture.error}</span>}
-          </td>
-          <td>{capture.size_bytes.toLocaleString()} B</td>
-          <td>{available
-            ? <a className="button" href={feedCaptureFileURL(capture.id)} download aria-label={`Download raw feed ${capture.id}`}>Download raw feed</a>
-            : <button className="button" disabled>Download raw feed</button>}
-          </td>
-        </tr>)}</tbody>
-      </table>
+      <Table.Root size="1" variant="surface" className="collector-table collector-feeds">
+        <Text size="1" color="gray" align="left" mb="2" asChild><caption>{failedOnly ? 'Failed captures' : 'All captures'} · newest first</caption></Text>
+        <Table.Header><Table.Row><Table.ColumnHeaderCell scope="col">Capture</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Captured</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Processing</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Size</Table.ColumnHeaderCell><Table.ColumnHeaderCell scope="col">Download</Table.ColumnHeaderCell></Table.Row></Table.Header>
+        <Table.Body>{data.captures.map((capture) => <Table.Row key={capture.id}>
+          <Table.RowHeaderCell scope="row">Capture {capture.id}</Table.RowHeaderCell>
+          <Table.Cell>{new Date(capture.captured_at).toLocaleString()}</Table.Cell>
+          <Table.Cell><Badge color={capture.state === 'failed' ? 'red' : capture.state === 'processed' ? 'green' : 'amber'}>{states[capture.state]}</Badge>
+            {capture.error && <Text as="span" size="1" color="gray" style={{ display: 'block' }} mt="1">{capture.error}</Text>}
+          </Table.Cell>
+          <Table.Cell>{capture.size_bytes.toLocaleString()} B</Table.Cell>
+          <Table.Cell>{available
+            ? <Button size="2" variant="soft" asChild color="gray"><a href={feedCaptureFileURL(capture.id)} download aria-label={`Download raw feed ${capture.id}`}>Download raw feed</a></Button>
+            : <Button size="2" variant="soft" disabled color="gray">Download raw feed</Button>}
+          </Table.Cell>
+        </Table.Row>)}</Table.Body>
+      </Table.Root>
     </div>}
-    {(offset > 0 || data?.has_more) && <nav className="download-pagination" aria-label="Feed capture pages">
-      <button className="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>Previous captures</button>
+    {(offset > 0 || data?.has_more) && <Flex align="center" justify="end" wrap="wrap" gap="3" asChild><nav aria-label="Feed capture pages">
+      <Button size="2" variant="soft" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))} color="gray">Previous captures</Button>
       <span>Page {offset / pageSize + 1}</span>
-      <button className="button" disabled={!available || resource.checking || resource.stale || !data?.has_more} onClick={() => setOffset(offset + pageSize)}>Next captures</button>
-    </nav>}
+      <Button size="2" variant="soft" disabled={!available || resource.checking || resource.stale || !data?.has_more} onClick={() => setOffset(offset + pageSize)} color="gray">Next captures</Button>
+    </nav></Flex>}
   </>
 }

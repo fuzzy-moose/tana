@@ -3,42 +3,9 @@
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 36px;
-  font-size: 13px;
-  color: var(--muted);
+  gap: var(--space-1);
+  margin-top: var(--space-5);
   font-variant-numeric: tabular-nums;
 }
 
-.pagination-item, .pagination-ellipsis {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 36px;
-  min-height: 44px;
-  padding: 8px;
-}
-
-.pagination-item {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: inherit;
-}
-
-a.pagination-item:hover {
-  border-color: var(--accent);
-  color: var(--foreground);
-}
-
-.pagination-item[aria-current="page"] {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--background);
-  font-weight: 600;
-}
-
-.pagination-item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+.pagination-item, .pagination-ellipsis { min-width: 28px; padding-inline: var(--space-1); }

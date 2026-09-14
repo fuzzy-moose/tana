@@ -10,7 +10,7 @@ export type CollectorPage = 'overview' | 'downloads' | 'favorites' | 'sitemap' |
 export type Route =
   | { kind: 'galleries', search: string, page: number }
   | { kind: 'panda', search: string, page: number, includeExpunged: boolean }
-  | { kind: 'libraries' | 'source-cleanup' | 'not-found' }
+  | { kind: 'libraries' | 'source-cleanup' | 'panda-lookup' | 'not-found' }
   | { kind: 'library-refresh', libraryID?: number }
   | { kind: 'collector', page: CollectorPage }
   | { kind: 'detail', id: number, page: number }
@@ -24,6 +24,7 @@ export function useRoute(): Route {
   const page = Number.isSafeInteger(value) && value > 0 ? value : 1
   if (!path || path === '/' || path === '/galleries') return { kind: 'galleries', search: params.get('q') ?? '', page }
   if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', page, includeExpunged: params.get('include_expunged') === 'true' }
+  if (path === '/panda/lookup') return { kind: 'panda-lookup' }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
   if (path === '/libraries/source-cleanup') return { kind: 'source-cleanup' }
   if (path === '/libraries/refresh') return { kind: 'library-refresh' }
