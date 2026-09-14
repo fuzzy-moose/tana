@@ -65,7 +65,16 @@ func Project(ctx context.Context, tx *sql.Tx, entry panda.Metadata) error {
 // Backfill projects retained metadata in bounded transactions. Each batch reads
 // and writes under the same lock, so concurrent metadata updates cannot be lost.
 // Missing projections make restart after an interrupted backfill resumable.
+// Once complete, metadata writes maintain projections atomically; checking all
+// retained metadata again would make every startup proportional to catalog size.
 func (s *Service) Backfill(ctx context.Context) error {
+	var completed bool
+	if err := s.db.QueryRowContext(ctx, "SELECT completed FROM catalog_backfill WHERE id = 1").Scan(&completed); err != nil {
+		return err
+	}
+	if completed {
+		return nil
+	}
 	var after int64
 	for {
 		count, lastID, err := s.backfillBatch(ctx, after)
@@ -114,6 +123,11 @@ func (s *Service) backfillBatch(ctx context.Context, after int64) (int, int64, e
 	}
 	for _, entry := range entries {
 		if err := Project(ctx, tx, entry); err != nil {
+			return 0, after, err
+		}
+	}
+	if len(entries) == 0 {
+		if _, err := tx.ExecContext(ctx, "UPDATE catalog_backfill SET completed = 1 WHERE id = 1"); err != nil {
 			return 0, after, err
 		}
 	}

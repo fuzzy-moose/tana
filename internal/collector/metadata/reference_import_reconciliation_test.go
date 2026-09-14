@@ -144,6 +144,7 @@ func TestReferenceImportReconciliationUpgradeResumesPastUnmatchedEntries(t *test
 		DROP INDEX catalog_category_posted;
 		DROP INDEX favorites_gallery_added;
 		ALTER TABLE catalog_galleries DROP COLUMN category;
+		DROP TABLE catalog_backfill;
 		PRAGMA user_version = 15`); err != nil {
 		t.Fatal(err)
 	}
