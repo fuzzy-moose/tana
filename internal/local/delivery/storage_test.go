@@ -121,6 +121,9 @@ func TestDeliveryCheckpointsMigrateFromBatchJSON(t *testing.T) {
 	if _, err := db.Exec("DROP TABLE panda_delivery_items"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec("DROP TABLE panda_catalog_default_filter"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec("INSERT INTO panda_deliveries (id, state, data) VALUES (?, ?, ?)", want.ID, want.State, data); err != nil {
 		t.Fatal(err)
 	}

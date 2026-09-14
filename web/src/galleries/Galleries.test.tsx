@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import App from '../App'
 
 let viewport: { width: number, height: number }
@@ -25,6 +26,7 @@ beforeEach(() => {
     callback: () => void
     constructor(callback: () => void) { this.callback = callback }
     observe() { observers.add(this.callback) }
+    unobserve() { observers.delete(this.callback) }
     disconnect() { observers.delete(this.callback) }
   })
   fetchMock.mockReset()
@@ -67,18 +69,18 @@ test('fits complete rows, caps at 100, and retains one row in a short viewport',
 })
 
 test('keeps the anchor gallery across consecutive resizes without adding history entries', async () => {
-  window.history.replaceState({ retained: true }, '', '#/galleries?q=manga&page=3')
+  window.history.replaceState({ retained: true }, '', '#/galleries?q=manga&page=3&category=manga&category=doujinshi&sort=favorited_asc')
   const historyLength = window.history.length
   render(<App />)
   await listing(16, 8)
   resize(716, 975)
   await listing(12, 12)
-  expect(window.location.hash).toBe('#/galleries?q=manga&page=2')
+  expect(window.location.hash).toBe('#/galleries?q=manga&page=2&category=manga&category=doujinshi&sort=favorited_asc')
   resize(716, 1304)
   await listing(16, 16)
   resize(716, 646)
   await listing(16, 8)
-  expect(window.location.hash).toBe('#/galleries?q=manga&page=3')
+  expect(window.location.hash).toBe('#/galleries?q=manga&page=3&category=manga&category=doujinshi&sort=favorited_asc')
   expect(window.history.length).toBe(historyLength)
   expect(window.history.state).toEqual({ retained: true })
 
@@ -132,9 +134,10 @@ test('clamps a saved page after galleries disappear and supports an empty search
 })
 
 test('fits Panda pages to the viewport and preserves the search and filter when resizing', async () => {
-  window.history.replaceState(null, '', '#/panda?q=manga&page=3&include_expunged=true')
+  window.history.replaceState(null, '', '#/panda?q=manga&page=3&include_expunged=true&category=manga&category=artist+cg&bypass_default=true')
   fetchMock.mockImplementation(async (input) => {
     const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/panda/default-filter') return Response.json({ query: '-l:japanese$', categories: [] })
     const pageSize = Number(url.searchParams.get('page_size'))
     const page = Number(url.searchParams.get('page'))
     const first = (page - 1) * pageSize
@@ -146,8 +149,32 @@ test('fits Panda pages to the viewport and preserves the search and filter when 
   resize(716, 975)
   await screen.findByRole('heading', { name: 'Panda 12' })
   expect(within(screen.getByRole('list', { name: 'Panda galleries' })).getAllByRole('listitem')).toHaveLength(12)
-  expect(window.location.hash).toBe('#/panda?q=manga&page=2&include_expunged=true')
+  expect(window.location.hash).toBe('#/panda?q=manga&page=2&include_expunged=true&category=manga&category=artist+cg&bypass_default=true')
   resize(716, 646)
   await screen.findByRole('heading', { name: 'Panda 16' })
-  expect(window.location.hash).toBe('#/panda?q=manga&page=3&include_expunged=true')
+  expect(window.location.hash).toBe('#/panda?q=manga&page=3&include_expunged=true&category=manga&category=artist+cg&bypass_default=true')
+})
+
+test('selects multiple categories and favorite-time sorting, retaining both during search and pagination', async () => {
+  render(<App />)
+  await listing(0, 8)
+  await userEvent.click(screen.getByRole('button', { name: 'Categories' }))
+  await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Manga' }))
+  await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Artist CG' }))
+  await userEvent.keyboard('{Escape}')
+  await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/api/galleries?q=&page=1&page_size=8&category=manga&category=artist+cg', expect.anything()))
+  await userEvent.click(screen.getByRole('button', { name: 'Sort · Title · A–Z' }))
+  await userEvent.click(screen.getByRole('menuitemradio', { name: 'Panda favorite time · Newest first' }))
+  await waitFor(() => expect(window.location.hash).toBe('#/galleries?category=manga&category=artist+cg&sort=favorited_desc'))
+  fireEvent.change(screen.getByLabelText('Search titles and tags'), { target: { value: 'favorite' } })
+  fireEvent.submit(screen.getByRole('search'))
+  await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/api/galleries?q=favorite&page=1&page_size=8&category=manga&category=artist+cg&sort=favorited_desc', expect.anything()))
+  await listing(0, 8)
+  fireEvent.click(screen.getByRole('link', { name: 'Next' }))
+  await listing(8, 8)
+  expect(window.location.hash).toBe('#/galleries?q=favorite&page=2&category=manga&category=artist+cg&sort=favorited_desc')
+  await userEvent.click(screen.getByRole('button', { name: 'Sort · Panda favorite time · Newest first' }))
+  await userEvent.click(screen.getByRole('menuitemradio', { name: 'Panda favorite time · Oldest first' }))
+  await listing(0, 8)
+  expect(window.location.hash).toBe('#/galleries?q=favorite&category=manga&category=artist+cg&sort=favorited_asc')
 })

@@ -6,10 +6,11 @@ import (
 	"strconv"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
+	"github.com/fuzzy-moose/tana/internal/local/catalogfilter"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func HandleCollectorCatalog(client *collectorapi.Client) http.Handler {
+func HandleCollectorCatalog(client *collectorapi.Client, defaults ...*catalogfilter.Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !catalogCollectorConfigured(w, client) {
 			return
@@ -29,9 +30,28 @@ func HandleCollectorCatalog(client *collectorapi.Client) http.Handler {
 				return
 			}
 		}
-		result, err := client.Catalog(r.Context(), collectorapi.CatalogOptions{
+		options := collectorapi.CatalogOptions{
 			Query: r.URL.Query().Get("q"), Page: int(page), PageSize: int(pageSize), IncludeExpunged: includeExpunged,
-		})
+			Categories: r.URL.Query()["category"],
+		}
+		bypassDefault := false
+		if r.URL.Query().Has("bypass_default") {
+			var err error
+			bypassDefault, err = strconv.ParseBool(r.URL.Query().Get("bypass_default"))
+			if err != nil {
+				server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_query"})
+				return
+			}
+		}
+		if !bypassDefault && len(defaults) > 0 && defaults[0] != nil {
+			filter, err := defaults[0].Load(r.Context())
+			if err != nil {
+				writeDefaultFilterError(w, r, err)
+				return
+			}
+			options.DefaultQuery, options.DefaultCategories = filter.Query, filter.Categories
+		}
+		result, err := client.Catalog(r.Context(), options)
 		if err != nil {
 			writeCatalogCollectorError(w, err)
 			return
@@ -100,7 +120,7 @@ func writeCatalogCollectorError(w http.ResponseWriter, err error) {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			code = "collector_unauthorized"
 		case http.StatusBadRequest:
-			if upstream.Code == "invalid_query" || upstream.Code == "invalid_pagination" {
+			if upstream.Code == "invalid_query" || upstream.Code == "invalid_pagination" || upstream.Code == "invalid_category" {
 				status, code = http.StatusBadRequest, upstream.Code
 			}
 		}

@@ -15,6 +15,7 @@ vi.mock('../galleries/useGalleryLayout', () => ({
 const fetchMock = vi.fn<typeof fetch>()
 let catalogVersion: number
 let offline: boolean
+let defaultFilter: { query: string, categories: string[] }
 
 function catalogRequests() {
   return fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/collector/catalog?'))
@@ -24,9 +25,14 @@ beforeEach(() => {
   window.history.replaceState(null, '', '#/panda')
   catalogVersion = 1
   offline = false
+  defaultFilter = { query: '', categories: [] }
   fetchMock.mockReset()
-  fetchMock.mockImplementation(async (input) => {
+  fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/panda/default-filter') {
+      if (init?.method === 'PUT') defaultFilter = JSON.parse(String(init.body))
+      return Response.json(defaultFilter)
+    }
     if (offline) return Response.json({ error: 'collector_unreachable' }, { status: 502 })
     if (url.pathname === '/api/collector/catalog/completions') return Response.json({ start: 0, end: 5, items: [
       { namespace: 'parody', value: 'fate/stay night', term: 'parody:"fate/stay night$"' },
@@ -82,7 +88,7 @@ test('Panda autocomplete uses the collected vocabulary and preserves raw tag cha
 test('reloads only on request and keeps collection tools on dedicated pages', async () => {
   render(<App />)
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
-  expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(['/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false'])
+  expect(catalogRequests().map(([input]) => String(input))).toEqual(['/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false'])
   expect(screen.queryByRole('textbox', { name: 'Look up gallery' })).toBeNull()
   catalogVersion = 2
   await userEvent.click(screen.getByRole('button', { name: 'Options' }))
@@ -91,6 +97,58 @@ test('reloads only on request and keeps collection tools on dedicated pages', as
   await userEvent.click(screen.getByRole('menuitem', { name: 'Reload results' }))
   await screen.findByRole('heading', { name: 'Upload 2 page 1' })
   expect(catalogRequests()).toHaveLength(2)
+})
+
+test('edits a shared default separately from the current query and applies it only on save', async () => {
+  defaultFilter = { query: '-l:japanese$', categories: ['manga'] }
+  window.history.replaceState(null, '', '#/panda?q=artist%3Aname&category=doujinshi')
+  render(<App />)
+  await screen.findByRole('heading', { name: 'artist:name 1 page 1' })
+  expect(screen.getByRole('button', { name: 'Default filter Active' })).toBeTruthy()
+  expect(screen.queryByLabelText('Default search')).toBeNull()
+
+  await userEvent.click(screen.getByRole('button', { name: 'Default filter Active' }))
+  expect((screen.getByLabelText('Default search') as HTMLInputElement).value).toBe('-l:japanese$')
+  fireEvent.change(screen.getByLabelText('Default search'), { target: { value: '-l:chinese$' } })
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+
+  await userEvent.click(screen.getByRole('button', { name: 'Default filter Active' }))
+  expect((screen.getByLabelText('Default search') as HTMLInputElement).value).toBe('-l:japanese$')
+  fireEvent.change(screen.getByLabelText('Default search'), { target: { value: '-l:japanese$ -l:chinese$' } })
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Western' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save default filter' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(defaultFilter).toEqual({ query: '-l:japanese$ -l:chinese$', categories: ['manga', 'western'] })
+  await waitFor(() => expect(catalogRequests()).toHaveLength(2))
+  expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=artist%3Aname&page=1&page_size=8&include_expunged=false&category=doujinshi')
+  expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('artist:name')
+})
+
+test('preserves category and default bypass URL filters across search, paging, back, and clear', async () => {
+  defaultFilter = { query: '-l:japanese$', categories: ['manga', 'doujinshi'] }
+  window.history.replaceState(null, '', '#/panda?category=manga&category=doujinshi&include_expunged=true')
+  render(<App />)
+  await screen.findByRole('heading', { name: 'Upload 1 page 1' })
+  await userEvent.click(screen.getByRole('link', { name: 'Bypass default' }))
+  await screen.findByRole('button', { name: 'Default filter Bypassed' })
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'new search' } })
+  fireEvent.submit(screen.getByRole('search'))
+  await screen.findByRole('heading', { name: 'new search 1 page 1' })
+  fireEvent.keyDown(window, { key: 'ArrowRight' })
+  await screen.findByRole('heading', { name: 'new search 1 page 2' })
+  expect(window.location.hash).toBe('#/panda?q=new+search&page=2&include_expunged=true&category=manga&category=doujinshi&bypass_default=true')
+  act(() => window.history.back())
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=new+search&include_expunged=true&category=manga&category=doujinshi&bypass_default=true'))
+  await screen.findByRole('heading', { name: 'new search 1 page 1' })
+  await userEvent.click(screen.getByRole('link', { name: 'Clear all filters' }))
+  await screen.findByRole('heading', { name: 'Upload 1 page 1' })
+  expect(window.location.hash).toBe('#/panda?bypass_default=true')
+  expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false&bypass_default=true')
+  expect(defaultFilter).toEqual({ query: '-l:japanese$', categories: ['manga', 'doujinshi'] })
+  await userEvent.click(screen.getByRole('link', { name: 'Apply default' }))
+  await screen.findByRole('button', { name: 'Default filter Active' })
+  await waitFor(() => expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&page=1&page_size=8&include_expunged=false'))
 })
 
 test('retains results during outages and failed searches, retries, and shows unavailable on a fresh visit', async () => {
@@ -104,10 +162,13 @@ test('retains results during outages and failed searches, retries, and shows una
   offline = false
   const retryResponse = await fetchMock.getMockImplementation()!('/api/collector/catalog?q=new+search&page=1')
   let resolveRetry!: (response: Response) => void
-  fetchMock.mockImplementationOnce(() => new Promise((resolve) => { resolveRetry = resolve }))
+  const normalFetch = fetchMock.getMockImplementation()!
+  fetchMock.mockImplementation((input, init) => String(input).startsWith('/api/collector/catalog?')
+    ? new Promise((resolve) => { resolveRetry = resolve }) : normalFetch(input, init))
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
   expect(screen.getByRole('alert').textContent).toContain('Results are stale.')
   await act(async () => { resolveRetry(retryResponse) })
+  fetchMock.mockImplementation(normalFetch)
   await screen.findByRole('heading', { name: 'new search 1 page 1' })
   expect(screen.queryByRole('alert')).toBeNull()
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'title:blue$' } })

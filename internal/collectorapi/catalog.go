@@ -14,10 +14,13 @@ import (
 )
 
 type CatalogOptions struct {
-	Query           string
-	Page            int
-	PageSize        int
-	IncludeExpunged bool
+	Query             string
+	Categories        []string
+	DefaultQuery      string
+	DefaultCategories []string
+	Page              int
+	PageSize          int
+	IncludeExpunged   bool
 }
 
 type CatalogItem struct {
@@ -42,6 +45,9 @@ type CatalogCompletion = gallerysearch.Completion
 func (c *Client) Catalog(ctx context.Context, options CatalogOptions) (CatalogResult, error) {
 	params := url.Values{
 		"q":                {options.Query},
+		"category":         options.Categories,
+		"default_q":        {options.DefaultQuery},
+		"default_category": options.DefaultCategories,
 		"page":             {strconv.Itoa(options.Page)},
 		"page_size":        {strconv.Itoa(options.PageSize)},
 		"include_expunged": {strconv.FormatBool(options.IncludeExpunged)},

@@ -7,12 +7,17 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/collector/catalog"
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
+	"github.com/fuzzy-moose/tana/internal/panda"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
 func HandleCatalog(service *catalog.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		options := collectorapi.CatalogOptions{Query: r.URL.Query().Get("q"), Page: 1, PageSize: 24}
+		options := collectorapi.CatalogOptions{
+			Query: r.URL.Query().Get("q"), Categories: r.URL.Query()["category"],
+			DefaultQuery: r.URL.Query().Get("default_q"), DefaultCategories: r.URL.Query()["default_category"],
+			Page: 1, PageSize: 24,
+		}
 		for _, parameter := range []struct {
 			name string
 			dest *int
@@ -61,6 +66,10 @@ func HandleCompleteCatalog(service *catalog.Service) http.Handler {
 
 func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, catalog.ErrInvalidFactsBatch):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_batch"})
+	case errors.Is(err, panda.ErrInvalidCategory):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_category"})
 	case errors.Is(err, catalog.ErrInvalidGalleryReference):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_gallery_reference"})
 	case errors.Is(err, catalog.ErrInvalidQuery):

@@ -20,13 +20,17 @@ func Project(ctx context.Context, tx *sql.Tx, entry panda.Metadata) error {
 	if title == "" {
 		title = japanese
 	}
+	category := ""
+	if categories, err := panda.NormalizeCategories([]string{entry.Category}); err == nil {
+		category = categories[0]
+	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO catalog_galleries
-		(gallery_id, title, title_lower, title_japanese_lower, thumbnail_url, page_count, posted, expunged)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		(gallery_id, title, title_lower, title_japanese_lower, thumbnail_url, page_count, posted, expunged, category)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (gallery_id) DO UPDATE SET title = excluded.title, title_lower = excluded.title_lower,
 		title_japanese_lower = excluded.title_japanese_lower, thumbnail_url = excluded.thumbnail_url,
-		page_count = excluded.page_count, posted = excluded.posted, expunged = excluded.expunged`,
-		entry.ID, title, strings.ToLower(english), strings.ToLower(japanese), entry.ThumbnailURL, entry.FileCount, entry.Posted, entry.Expunged)
+		page_count = excluded.page_count, posted = excluded.posted, expunged = excluded.expunged, category = excluded.category`,
+		entry.ID, title, strings.ToLower(english), strings.ToLower(japanese), entry.ThumbnailURL, entry.FileCount, entry.Posted, entry.Expunged, category)
 	if err != nil {
 		return err
 	}

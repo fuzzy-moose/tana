@@ -141,6 +141,9 @@ func TestReferenceImportReconciliationUpgradeResumesPastUnmatchedEntries(t *test
 		DROP TABLE panda_download_storage;
 		ALTER TABLE panda_downloads DROP COLUMN expected_size_bytes;
 		DROP TABLE metadata_collection_settings;
+		DROP INDEX catalog_category_posted;
+		DROP INDEX favorites_gallery_added;
+		ALTER TABLE catalog_galleries DROP COLUMN category;
 		PRAGMA user_version = 15`); err != nil {
 		t.Fatal(err)
 	}

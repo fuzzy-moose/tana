@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
+	"github.com/fuzzy-moose/tana/internal/local/catalogfilter"
 	"github.com/fuzzy-moose/tana/internal/local/cleanup"
 	"github.com/fuzzy-moose/tana/internal/local/delivery"
 	"github.com/fuzzy-moose/tana/internal/local/enrichment"
@@ -29,6 +30,7 @@ type App struct {
 	Galleries         *gallery.SQLiteRepository
 	Web               fs.FS
 	Collector         *collectorapi.Client
+	CatalogFilter     *catalogfilter.Store
 	Cleanup           *cleanup.Service
 	FavoriteDownloads *favoritedownloads.Service
 	Deliveries        *delivery.Service
@@ -95,6 +97,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		Galleries:         gallery.NewSQLiteRepository(db),
 		Web:               web,
 		Collector:         collectorClient,
+		CatalogFilter:     catalogfilter.New(db),
 		Cleanup:           sourceCleanup,
 		FavoriteDownloads: favoriteDownloads,
 		Deliveries:        deliveries,

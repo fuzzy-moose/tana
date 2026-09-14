@@ -43,6 +43,9 @@ A supplier of gallery metadata. Different providers may supply different informa
 **Panda**:
 A metadata provider supplying gallery metadata. Its upstream galleries are uniquely identified by gallery ID, independently of galleries in Tana's catalog.
 
+**Panda gallery category**:
+The gallery type assigned by Panda, such as Doujinshi, Manga, or Artist CG. Distinct from membership in a Panda favorite collection.
+
 **Collector**:
 The separate service that collects Panda favorite collections, gallery references, and metadata for Tana, and owns Panda downloads and their retained files.
 _Avoid_: Connector

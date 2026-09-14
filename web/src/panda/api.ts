@@ -30,11 +30,33 @@ export interface FeedStatus {
   possible_gaps: number
 }
 
-export function listPandaCatalog(search: string, page: number, pageSize: number, includeExpunged: boolean, signal?: AbortSignal) {
+export interface PandaDefaultFilter {
+  query: string
+  categories: string[]
+}
+
+export function hasDefaultFilter(filter: PandaDefaultFilter | null) {
+  return !!filter && (!!filter.query || filter.categories.length > 0)
+}
+
+export function getPandaDefaultFilter(signal?: AbortSignal) {
+  return request<PandaDefaultFilter>('/api/panda/default-filter', { signal })
+}
+
+export function savePandaDefaultFilter(filter: PandaDefaultFilter) {
+  return request<PandaDefaultFilter>('/api/panda/default-filter', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(filter),
+  }, { ...collectorMessages, invalid_query: 'Invalid search query.', invalid_category: 'Unknown Panda gallery category.' })
+}
+
+export function listPandaCatalog(search: string, page: number, pageSize: number, includeExpunged: boolean, categories: string[], bypassDefault: boolean, signal?: AbortSignal) {
   const params = new URLSearchParams({ q: search, page: String(page), page_size: String(pageSize), include_expunged: String(includeExpunged) })
+  for (const category of categories) params.append('category', category)
+  if (bypassDefault) params.set('bypass_default', 'true')
   return request<PandaCatalogResult>(`/api/collector/catalog?${params}`, { signal }, {
     ...collectorMessages,
     invalid_query: 'Invalid search query.',
+    invalid_category: 'Unknown Panda gallery category.',
   })
 }
 

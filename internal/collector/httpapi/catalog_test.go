@@ -29,6 +29,10 @@ func TestCatalogPaginationAndQueryValidation(t *testing.T) {
 		{"/api/catalog?include_expunged=maybe", "invalid_query"},
 		{"/api/catalog?q=unknown:value", "invalid_query"},
 		{"/api/catalog?q=%22unfinished", "invalid_query"},
+		{"/api/catalog?default_q=%22unfinished", "invalid_query"},
+		{"/api/catalog?category=manga&category=doujinshi", ""},
+		{"/api/catalog?category=unknown", "invalid_category"},
+		{"/api/catalog?default_category=unknown", "invalid_category"},
 		{"/api/catalog/completions?q=a:a&cursor=3", ""},
 		{"/api/catalog/completions?q=a:a&cursor=4", "invalid_query"},
 	} {

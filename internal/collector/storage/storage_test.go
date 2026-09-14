@@ -163,3 +163,55 @@ func TestOpenKeepsLegacyBanOnlyForUnauthenticatedRequests(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenBackfillsCategoryInExistingCatalogProjections(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "collector.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	files, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files[:23] {
+		ddl, err := migrations.ReadFile("migrations/" + file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(ddl)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, body := range []string{`{"category":" Manga "}`, `{"category":"Artist CG"}`, `{}`, `{"category":"unrecognized"}`} {
+		if _, err := db.Exec("INSERT INTO gallery_refs (gallery_id, token) VALUES (?, 'token')", i+1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec("INSERT INTO gallery_metadata (gallery_id, body, refreshed_at) VALUES (?, ?, 0)", i+1, []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO catalog_galleries
+			(gallery_id, title, title_lower, title_japanese_lower, thumbnail_url, page_count, posted, expunged)
+			VALUES (?, 'title', 'title', '', '', 0, 0, 0)`, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec("PRAGMA user_version = 23"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	migrated, _, err := Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	for i, want := range []string{"manga", "artist cg", "", ""} {
+		var got string
+		if err := migrated.QueryRow("SELECT category FROM catalog_galleries WHERE gallery_id = ?", i+1).Scan(&got); err != nil || got != want {
+			t.Fatalf("gallery %d category = %q, %v; want %q", i+1, got, err, want)
+		}
+	}
+}

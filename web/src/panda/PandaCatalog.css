@@ -3,3 +3,6 @@
 .panda-lookup-result { overflow-wrap: anywhere; }
 .panda-metadata pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .panda-metadata .rt-DataListValue { min-width: 0; overflow-wrap: anywhere; }
+.panda-default-categories { margin: 0; padding: 0; border: 0; }
+.panda-default-categories p { margin: var(--space-1) 0 var(--space-3); }
+.panda-default-category-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }

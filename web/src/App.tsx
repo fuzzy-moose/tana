@@ -48,9 +48,9 @@ function App() {
           {route.kind === 'source-cleanup' && <SourceCleanup />}
           {route.kind === 'library-refresh' && <LibraryRefresh key={route.libraryID ?? 'all'} libraryID={route.libraryID} />}
           {route.kind === 'collector' && <Suspense fallback={<Text as="p" size="2" color="gray" role="status">Loading collector…</Text>}><Collector page={route.page} /></Suspense>}
-          {route.kind === 'panda' && <PandaCatalog search={route.search} page={route.page} includeExpunged={route.includeExpunged} />}
+          {route.kind === 'panda' && <PandaCatalog search={route.search} page={route.page} includeExpunged={route.includeExpunged} categories={route.categories} bypassDefault={route.bypassDefault} />}
           {route.kind === 'panda-lookup' && <PandaLookupPage />}
-          {route.kind === 'galleries' && <Galleries key={route.search} search={route.search} page={route.page} />}
+          {route.kind === 'galleries' && <Galleries search={route.search} page={route.page} categories={route.categories} sort={route.sort} />}
           {route.kind === 'detail' && <GalleryDetail key={route.id} id={route.id} />}
           {route.kind === 'not-found' && <Flex asChild direction="column" align="start" gap="4"><section>
             <Heading as="h1">Page not found</Heading>

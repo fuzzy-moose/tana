@@ -7,11 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
+	"github.com/fuzzy-moose/tana/internal/panda"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func HandleListGalleries(galleries *gallery.SQLiteRepository) http.Handler {
+func HandleListGalleries(galleries *gallery.SQLiteRepository, client *collectorapi.Client) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		page, ok := positiveQuery(r, "page", 1)
 		pageSize, sizeOK := positiveQuery(r, "page_size", 24)
@@ -19,7 +21,42 @@ func HandleListGalleries(galleries *gallery.SQLiteRepository) http.Handler {
 			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_pagination"})
 			return
 		}
-		result, err := galleries.Browse(r.Context(), strings.TrimSpace(r.URL.Query().Get("q")), page, pageSize)
+		categories, err := panda.NormalizeCategories(r.URL.Query()["category"])
+		options := gallery.BrowseOptions{Categories: categories, Sort: gallery.BrowseSort(r.URL.Query().Get("sort"))}
+		if err != nil || !options.Sort.Valid() {
+			writeGalleryError(w, r, gallery.ErrInvalidQuery)
+			return
+		}
+		if options.NeedsPanda() {
+			if !catalogCollectorConfigured(w, client) {
+				return
+			}
+			candidates, err := galleries.PandaCandidates(r.Context())
+			if err != nil {
+				writeGalleryError(w, r, err)
+				return
+			}
+			ids := make([]int64, 0, len(candidates))
+			for _, candidate := range candidates {
+				ids = append(ids, candidate.PandaID)
+			}
+			facts, err := client.CatalogFacts(r.Context(), ids)
+			if err != nil {
+				writeCatalogCollectorError(w, err)
+				return
+			}
+			byID := make(map[int64]collectorapi.CatalogFact, len(facts))
+			for _, fact := range facts {
+				byID[fact.GalleryID] = fact
+			}
+			for _, candidate := range candidates {
+				fact := byID[candidate.PandaID]
+				options.PandaFacts = append(options.PandaFacts, gallery.PandaFact{
+					SourceID: candidate.SourceID, Category: fact.Category, FavoritedAt: fact.FavoritedAt,
+				})
+			}
+		}
+		result, err := galleries.BrowseFiltered(r.Context(), strings.TrimSpace(r.URL.Query().Get("q")), page, pageSize, options)
 		if err != nil {
 			writeGalleryError(w, r, err)
 			return

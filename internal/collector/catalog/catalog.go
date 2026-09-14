@@ -43,6 +43,25 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if err != nil {
 		return result, err
 	}
+	defaultPredicate, defaultArgs, err := gallerysearch.Predicate(options.DefaultQuery, namespaces, catalogMatch)
+	if err != nil {
+		return result, err
+	}
+	predicate = "(" + predicate + ") AND (" + defaultPredicate + ")"
+	args = append(args, defaultArgs...)
+	for _, selections := range [][]string{options.Categories, options.DefaultCategories} {
+		categories, err := panda.NormalizeCategories(selections)
+		if err != nil {
+			return result, err
+		}
+		if len(categories) == 0 {
+			continue
+		}
+		predicate += " AND g.category IN (?" + strings.Repeat(",?", len(categories)-1) + ")"
+		for _, category := range categories {
+			args = append(args, category)
+		}
+	}
 	if !options.IncludeExpunged {
 		predicate += " AND g.expunged = 0"
 	}

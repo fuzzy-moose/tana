@@ -82,6 +82,7 @@ func TestPandaCatalogProxyErrors(t *testing.T) {
 		body, code     string
 	}{
 		{400, 400, `{"error":"invalid_query"}`, "invalid_query"},
+		{400, 400, `{"error":"invalid_category"}`, "invalid_category"},
 		{400, 400, `{"error":"invalid_pagination"}`, "invalid_pagination"},
 		{401, 502, `{"error":"secret details"}`, "collector_unauthorized"},
 		{500, 502, `{"error":"secret details"}`, "collector_unavailable"},
