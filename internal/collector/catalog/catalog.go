@@ -49,6 +49,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	}
 	predicate = "(" + predicate + ") AND (" + defaultPredicate + ")"
 	args = append(args, defaultArgs...)
+	var pageCategories []string
 	for _, selections := range [][]string{options.Categories, options.DefaultCategories} {
 		categories, err := panda.NormalizeCategories(selections)
 		if err != nil {
@@ -56,6 +57,9 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		}
 		if len(categories) == 0 {
 			continue
+		}
+		if len(pageCategories) == 0 || len(categories) < len(pageCategories) {
+			pageCategories = categories
 		}
 		predicate += " AND g.category IN (?" + strings.Repeat(",?", len(categories)-1) + ")"
 		for _, category := range categories {
@@ -70,10 +74,13 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	}
 	result.TotalPages = max(1, int((result.Total+int64(options.PageSize)-1)/int64(options.PageSize)))
 	result.Page = min(options.Page, result.TotalPages)
+	pageQuery, pageArgs := catalogPageQuery(predicate, args, pageCategories)
 	rows, err := tx.QueryContext(ctx, `SELECT g.gallery_id, g.title, g.thumbnail_url, g.page_count, g.posted, r.token
-		FROM catalog_galleries g JOIN gallery_refs r ON r.gallery_id = g.gallery_id
-		WHERE `+predicate+` ORDER BY g.posted DESC, g.gallery_id DESC LIMIT ? OFFSET ?`,
-		append(args, result.PageSize, int64(result.Page-1)*int64(result.PageSize))...)
+		FROM (`+pageQuery+`) page
+		JOIN catalog_galleries g ON g.gallery_id = page.gallery_id
+		JOIN gallery_refs r ON r.gallery_id = page.gallery_id
+		ORDER BY page.posted DESC, page.gallery_id DESC`,
+		append(pageArgs, result.PageSize, int64(result.Page-1)*int64(result.PageSize))...)
 	if err != nil {
 		return result, err
 	}
@@ -93,6 +100,23 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		return result, err
 	}
 	return result, tx.Commit()
+}
+
+func catalogPageQuery(predicate string, args []any, categories []string) (string, []any) {
+	query := "SELECT g.gallery_id, g.posted FROM catalog_galleries g WHERE " + predicate
+	pageArgs := args
+	if len(categories) > 1 {
+		// Merge ordered category scans so LIMIT can stop them before reading every match.
+		branches := make([]string, 0, len(categories))
+		pageArgs = make([]any, 0, len(categories)*(len(args)+1)+2)
+		for _, category := range categories {
+			branches = append(branches, query+" AND g.category = ?")
+			pageArgs = append(pageArgs, args...)
+			pageArgs = append(pageArgs, category)
+		}
+		query = strings.Join(branches, " UNION ALL ")
+	}
+	return query + " ORDER BY posted DESC, gallery_id DESC LIMIT ? OFFSET ?", pageArgs
 }
 
 func catalogMatch(term gallerysearch.Term) (string, []any) {

@@ -56,6 +56,58 @@ func TestCatalogCategoryAndDefaultFilters(t *testing.T) {
 	}
 }
 
+func TestCatalogCategoryPagination(t *testing.T) {
+	db, service := openCatalog(t)
+	for _, entry := range []panda.Metadata{
+		{ID: 90, Category: "Artist CG", Posted: 600},
+		{ID: 8, Category: "Manga", Posted: 500, Expunged: true},
+		{ID: 6, Category: "Manga", Posted: 400, Title: "red", Tags: []string{"language:english"}},
+		{ID: 3, Category: "Doujinshi", Posted: 400, Title: "red", Tags: []string{"language:japanese"}},
+		{ID: 5, Category: "Manga", Posted: 300, Title: "red", Tags: []string{"language:english"}},
+		{ID: 9, Category: "Doujinshi", Posted: 200, Title: "blue"},
+		{ID: 1, Category: "Doujinshi", Posted: 100, Title: "red", Tags: []string{"language:english"}},
+		{ID: 4, Posted: 1000},
+		{ID: 2, Category: "Manga", Posted: 50, Title: "blue"},
+	} {
+		retain(t, db, entry, true)
+	}
+	for _, tc := range []struct {
+		name    string
+		options collectorapi.CatalogOptions
+		want    []int64
+	}{
+		{"selected", collectorapi.CatalogOptions{Categories: []string{" manga ", "doujinshi", "MANGA"}}, []int64{6, 3, 5, 9, 1, 2}},
+		{"default", collectorapi.CatalogOptions{DefaultCategories: []string{"manga", "doujinshi"}}, []int64{6, 3, 5, 9, 1, 2}},
+		{"include expunged", collectorapi.CatalogOptions{Categories: []string{"manga", "doujinshi"}, IncludeExpunged: true}, []int64{8, 6, 3, 5, 9, 1, 2}},
+		{"overlap", collectorapi.CatalogOptions{Categories: []string{"manga", "doujinshi"}, DefaultCategories: []string{"doujinshi", "artist cg"}}, []int64{3, 9, 1}},
+		{"disjoint", collectorapi.CatalogOptions{Categories: []string{"manga", "doujinshi"}, DefaultCategories: []string{"cosplay", "artist cg"}}, []int64{}},
+		{"search", collectorapi.CatalogOptions{Categories: []string{"manga", "doujinshi"}, Query: "red", DefaultQuery: "-l:japanese$"}, []int64{6, 5, 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const pageSize = 2
+			pages := max(1, (len(tc.want)+pageSize-1)/pageSize)
+			for page := 1; page <= pages+1; page++ {
+				options := tc.options
+				options.Page, options.PageSize = page, pageSize
+				result, err := service.List(t.Context(), options)
+				if err != nil {
+					t.Fatal(err)
+				}
+				actualPage := min(page, pages)
+				start := (actualPage - 1) * pageSize
+				want := tc.want[start:min(start+pageSize, len(tc.want))]
+				got := make([]int64, 0, len(result.Items))
+				for _, item := range result.Items {
+					got = append(got, item.GalleryID)
+				}
+				if !reflect.DeepEqual(got, want) || result.Total != int64(len(tc.want)) || result.Page != actualPage || result.TotalPages != pages {
+					t.Fatalf("page %d: IDs %v, result %+v; want IDs %v, total %d, page %d/%d", page, got, result, want, len(tc.want), actualPage, pages)
+				}
+			}
+		})
+	}
+}
+
 func TestCatalogFactsUseLatestCurrentFavoriteEvenWithoutMetadata(t *testing.T) {
 	db, service := openCatalog(t)
 	retain(t, db, panda.Metadata{ID: 1, Category: "Manga"}, true)
