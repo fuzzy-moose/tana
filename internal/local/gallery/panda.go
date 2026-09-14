@@ -42,10 +42,23 @@ type PandaCandidate struct {
 	PandaID  int64
 }
 
-func (r *SQLiteRepository) PandaCandidates(ctx context.Context) ([]PandaCandidate, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT s.id, s.path, s.kind, l.path
+func (r *SQLiteRepository) PandaCandidates(ctx context.Context, search string) ([]PandaCandidate, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	namespaces, err := searchNamespaces(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	predicate, args, err := searchPredicate(search, namespaces)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT s.id, s.path, s.kind, l.path
 		FROM galleries g JOIN sources s ON s.id = g.source_id
-		JOIN libraries l ON l.id = s.library_id ORDER BY s.id`)
+		JOIN libraries l ON l.id = s.library_id WHERE `+predicate+` ORDER BY s.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,5 +77,8 @@ func (r *SQLiteRepository) PandaCandidates(ctx context.Context) ([]PandaCandidat
 			result = append(result, PandaCandidate{SourceID: sourceID, PandaID: id})
 		}
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, tx.Commit()
 }

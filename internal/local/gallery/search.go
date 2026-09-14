@@ -45,9 +45,16 @@ func searchPredicate(query string, namespaces map[string]bool) (string, []any, e
 		}
 		if term.Field != "title" {
 			match, values := gallerysearch.TagPredicate(term, "t.value", "n.name")
-			fields = append(fields, `EXISTS (SELECT 1 FROM gallery_tags gt
-    JOIN tags t ON t.id = gt.tag_id JOIN namespaces n ON n.id = t.namespace_id
-    WHERE gt.gallery_id = g.id AND `+match+")")
+			if term.Prefix == "-" {
+				// Resolve matching tags once, then probe each candidate's assignments.
+				fields = append(fields, `EXISTS (SELECT 1 FROM gallery_tags gt
+					WHERE gt.gallery_id = g.id AND gt.tag_id IN
+					(SELECT t.id FROM tags t JOIN namespaces n ON n.id = t.namespace_id WHERE `+match+"))")
+			} else {
+				fields = append(fields, `g.id IN (SELECT gt.gallery_id FROM gallery_tags gt
+					WHERE gt.tag_id IN (SELECT t.id FROM tags t
+					JOIN namespaces n ON n.id = t.namespace_id WHERE `+match+"))")
+			}
 			args = append(args, values...)
 		}
 		return strings.Join(fields, " OR "), args

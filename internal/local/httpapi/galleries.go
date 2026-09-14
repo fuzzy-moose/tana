@@ -22,6 +22,7 @@ func HandleListGalleries(galleries *gallery.SQLiteRepository, client *collectora
 			return
 		}
 		categories, err := panda.NormalizeCategories(r.URL.Query()["category"])
+		search := strings.TrimSpace(r.URL.Query().Get("q"))
 		options := gallery.BrowseOptions{Categories: categories, Sort: gallery.BrowseSort(r.URL.Query().Get("sort"))}
 		if err != nil || !options.Sort.Valid() {
 			writeGalleryError(w, r, gallery.ErrInvalidQuery)
@@ -31,7 +32,7 @@ func HandleListGalleries(galleries *gallery.SQLiteRepository, client *collectora
 			if !catalogCollectorConfigured(w, client) {
 				return
 			}
-			candidates, err := galleries.PandaCandidates(r.Context())
+			candidates, err := galleries.PandaCandidates(r.Context(), search)
 			if err != nil {
 				writeGalleryError(w, r, err)
 				return
@@ -56,7 +57,7 @@ func HandleListGalleries(galleries *gallery.SQLiteRepository, client *collectora
 				})
 			}
 		}
-		result, err := galleries.BrowseFiltered(r.Context(), strings.TrimSpace(r.URL.Query().Get("q")), page, pageSize, options)
+		result, err := galleries.BrowseFiltered(r.Context(), search, page, pageSize, options)
 		if err != nil {
 			writeGalleryError(w, r, err)
 			return

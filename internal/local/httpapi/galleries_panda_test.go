@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -45,6 +46,8 @@ func TestGalleryPandaFiltersUseCurrentCollectorFacts(t *testing.T) {
 	}
 	var calls atomic.Int64
 	var removed, unavailable atomic.Bool
+	var expectedIDs atomic.Value
+	expectedIDs.Store([]int64{11, 22})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/api/catalog/facts" {
@@ -57,7 +60,7 @@ func TestGalleryPandaFiltersUseCurrentCollectorFacts(t *testing.T) {
 		var input struct {
 			GalleryIDs []int64 `json:"gallery_ids"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || !reflect.DeepEqual(input.GalleryIDs, []int64{11, 22}) {
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || !reflect.DeepEqual(input.GalleryIDs, expectedIDs.Load()) {
 			t.Errorf("collector IDs: %v, %v", input.GalleryIDs, err)
 		}
 		newer, older := int64(200), int64(100)
@@ -68,6 +71,7 @@ func TestGalleryPandaFiltersUseCurrentCollectorFacts(t *testing.T) {
 		if removed.Load() {
 			facts[0].FavoritedAt = nil
 		}
+		facts = slices.DeleteFunc(facts, func(f collectorapi.CatalogFact) bool { return !slices.Contains(input.GalleryIDs, f.GalleryID) })
 		_ = json.NewEncoder(w).Encode(facts)
 	}))
 	defer upstream.Close()
@@ -106,8 +110,23 @@ func TestGalleryPandaFiltersUseCurrentCollectorFacts(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatalf("invalid filters called collector: %d", calls.Load())
 	}
+	expectedIDs.Store([]int64{22})
+	result = listing("/api/galleries?q=title:B&category=doujinshi&sort=favorited_desc")
+	if result.Total != 1 || len(result.Items) != 1 || result.Items[0].Title != "B [22]" || calls.Load() != 3 {
+		t.Fatalf("searched listing: %+v, collector calls %d", result, calls.Load())
+	}
+	for _, search := range []string{"Manual", "missing"} {
+		result = listing("/api/galleries?q=title:" + search + "&sort=favorited_desc")
+		if calls.Load() != 3 {
+			t.Fatalf("search without Panda candidates called collector: %+v, calls %d", result, calls.Load())
+		}
+	}
+	request(t, handler, "GET", "/api/galleries?q=unknown:value&sort=favorited_desc", "", 400)
+	if calls.Load() != 3 {
+		t.Fatalf("invalid search called collector: %d", calls.Load())
+	}
 	unavailable.Store(true)
-	if result := listing("/api/galleries"); result.Total != 4 || calls.Load() != 2 {
+	if result := listing("/api/galleries"); result.Total != 4 || calls.Load() != 3 {
 		t.Fatalf("ordinary browsing depends on collector: %+v, calls %d", result, calls.Load())
 	}
 	if response := request(t, handler, "GET", "/api/galleries?category=manga", "", 502); !strings.Contains(response.Body.String(), "collector_unavailable") {

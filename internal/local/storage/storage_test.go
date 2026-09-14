@@ -33,7 +33,7 @@ func TestDatabasePersistsAndMigratesOnce(t *testing.T) {
 		t.Fatalf("registration did not survive reopen: %q %v", name, err)
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 6 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 7 {
 		t.Fatalf("schema version %d: %v", version, err)
 	}
 }
@@ -86,6 +86,9 @@ func TestMigrationCleansUpFinishedDeliveriesAndKeepsOutstandingWork(t *testing.T
 				t.Fatal(err)
 			}
 			if _, err := db.Exec("DROP TABLE panda_catalog_default_filter"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec("DROP INDEX galleries_title"); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {

@@ -3,7 +3,6 @@ package gallery
 import (
 	"archive/zip"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"github.com/fuzzy-moose/tana/internal/local/gallery/dbgen"
 	"github.com/fuzzy-moose/tana/internal/local/source"
 	"github.com/fuzzy-moose/tana/internal/local/tag"
-	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
 var ErrImageUnavailable = errors.New("page image unavailable")
@@ -48,92 +46,6 @@ func (r *SQLiteRepository) Detail(ctx context.Context, id int64) (Detail, error)
 		result.Tags = append(result.Tags, DetailTag{Namespace: t.Namespace.Name, Value: t.Value})
 	}
 	return result, nil
-}
-
-type Listing struct {
-	Items    []Summary `json:"items"`
-	Total    int64     `json:"total"`
-	Page     int64     `json:"page"`
-	PageSize int64     `json:"page_size"`
-}
-
-func (r *SQLiteRepository) Browse(ctx context.Context, search string, page, pageSize int64) (Listing, error) {
-	return r.BrowseFiltered(ctx, search, page, pageSize, BrowseOptions{})
-}
-
-func (r *SQLiteRepository) BrowseFiltered(ctx context.Context, search string, page, pageSize int64, options BrowseOptions) (Listing, error) {
-	result := Listing{Items: []Summary{}, Page: page, PageSize: pageSize}
-	categories, err := panda.NormalizeCategories(options.Categories)
-	if err != nil || !options.Sort.Valid() {
-		return result, ErrInvalidQuery
-	}
-	// Keep counts and the selected page consistent while a scan adds galleries.
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return result, err
-	}
-	defer tx.Rollback()
-	namespaces, err := searchNamespaces(ctx, tx)
-	if err != nil {
-		return result, err
-	}
-	predicate, args, err := searchPredicate(search, namespaces)
-	if err != nil {
-		return result, err
-	}
-	with, from := "", "galleries g"
-	order := "g.title COLLATE NOCASE, g.id"
-	if options.NeedsPanda() {
-		facts, err := json.Marshal(options.PandaFacts)
-		if err != nil {
-			return result, err
-		}
-		// A JSON relation avoids SQLite's parameter limit and temporary writes.
-		// Materialization and integer affinity let SQLite index the source join.
-		with = `WITH panda_facts AS MATERIALIZED (
-			SELECT CAST(json_extract(value, '$.source_id') AS INTEGER) AS source_id,
-				json_extract(value, '$.category') AS category,
-				json_extract(value, '$.favorited_at') AS favorited_at
-			FROM json_each(?)) `
-		args = append([]any{string(facts)}, args...)
-		from += " LEFT JOIN panda_facts pf ON pf.source_id = g.source_id"
-		if len(categories) > 0 {
-			predicate += " AND pf.category IN (" + strings.TrimSuffix(strings.Repeat("?,", len(categories)), ",") + ")"
-			for _, category := range categories {
-				args = append(args, category)
-			}
-		}
-		switch options.Sort {
-		case SortFavoritedAsc:
-			order = "pf.favorited_at IS NULL, pf.favorited_at ASC, " + order
-		case SortFavoritedDesc:
-			order = "pf.favorited_at IS NULL, pf.favorited_at DESC, " + order
-		}
-	}
-	err = tx.QueryRowContext(ctx, with+"SELECT count(*) FROM "+from+" WHERE "+predicate, args...).Scan(&result.Total)
-	if err != nil {
-		return result, err
-	}
-	result.Page = min(max(1, page), max(1, (result.Total+pageSize-1)/pageSize))
-	rows, err := tx.QueryContext(ctx, with+`SELECT g.id, g.title, count(p.position)
-		FROM `+from+` LEFT JOIN gallery_pages p ON p.gallery_id = g.id
-		WHERE `+predicate+` GROUP BY g.id ORDER BY `+order+` LIMIT ? OFFSET ?`,
-		append(args, pageSize, (result.Page-1)*pageSize)...)
-	if err != nil {
-		return result, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var summary Summary
-		if err := rows.Scan(&summary.ID, &summary.Title, &summary.PageCount); err != nil {
-			return result, err
-		}
-		result.Items = append(result.Items, summary)
-	}
-	if err := rows.Err(); err != nil {
-		return result, err
-	}
-	return result, tx.Commit()
 }
 
 func (r *SQLiteRepository) Summary(ctx context.Context, id int64) (Summary, error) {

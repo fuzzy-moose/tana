@@ -1,6 +1,7 @@
 package gallery
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -55,7 +56,7 @@ func TestPandaBrowseFiltersBeforePaginationAndKeepsMissingFavoriteTimesLast(t *t
 	if _, err := galleries.Create(t.Context(), "Book Manual [11]", []int64{firstFile}); err != nil {
 		t.Fatal(err)
 	}
-	candidates, err := galleries.PandaCandidates(t.Context())
+	candidates, err := galleries.PandaCandidates(t.Context(), "")
 	if err != nil || !reflect.DeepEqual(candidates, expectedCandidates) {
 		t.Fatalf("candidates: %+v, %v; want %+v", candidates, err, expectedCandidates)
 	}
@@ -95,6 +96,67 @@ func TestPandaBrowseFiltersBeforePaginationAndKeepsMissingFavoriteTimesLast(t *t
 			}
 			if listing.Total != tc.total || listing.Page != tc.page || !reflect.DeepEqual(titles, tc.titles) {
 				t.Fatalf("listing: %+v; want total %d page %d titles %v", listing, tc.total, tc.page, tc.titles)
+			}
+		})
+	}
+}
+
+func TestBrowsePaginationBreaksTitleAndFavoriteTiesByID(t *testing.T) {
+	_, libraries, sources, galleries := openRepositories(t)
+	zero, newer := int64(0), int64(100)
+	var ids []int64
+	var facts []PandaFact
+	counts := map[int64]int64{}
+	for i, at := range []*int64{nil, &zero, &zero, &newer} {
+		pages := []string{"1.jpg"}
+		if i%2 != 0 {
+			pages = append(pages, "2.jpg")
+		}
+		_, s, _ := inventory(t, libraries, sources, fmt.Sprintf("Book [%d]", i+1), source.Directory, pages...)
+		g, err := galleries.CreateFromSource(t.Context(), s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		title := "Same"
+		if i%2 != 0 {
+			title = "same"
+		}
+		if _, err := galleries.Rename(t.Context(), g.ID, title); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, g.ID)
+		counts[g.ID] = int64(len(pages))
+		facts = append(facts, PandaFact{SourceID: s.ID, FavoritedAt: at})
+	}
+	empty, err := galleries.Create(t.Context(), "Same", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids = append(ids, empty.ID)
+	for _, tc := range []struct {
+		sort BrowseSort
+		want []int64
+	}{
+		{SortTitle, ids},
+		{SortFavoritedAsc, []int64{ids[1], ids[2], ids[3], ids[0], ids[4]}},
+		{SortFavoritedDesc, []int64{ids[3], ids[1], ids[2], ids[0], ids[4]}},
+	} {
+		t.Run(string(tc.sort), func(t *testing.T) {
+			var got []int64
+			for page := int64(1); page <= 3; page++ {
+				listing, err := galleries.BrowseFiltered(t.Context(), "", page, 2, BrowseOptions{Sort: tc.sort, PandaFacts: facts})
+				if err != nil || listing.Total != 5 || listing.Page != page {
+					t.Fatalf("page %d: %+v, %v", page, listing, err)
+				}
+				for _, item := range listing.Items {
+					got = append(got, item.ID)
+					if item.PageCount != counts[item.ID] {
+						t.Fatalf("page count: %+v, want %d", item, counts[item.ID])
+					}
+				}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("page order: %v, want %v", got, tc.want)
 			}
 		})
 	}
