@@ -77,8 +77,6 @@ export default function Galleries({ search, page, categories, sort }: { search: 
           {result && <Badge color="gray">{result.total.toLocaleString()} {result.total === 1 ? 'gallery' : 'galleries'}</Badge>}
         </Flex>
         <GallerySearch key={search} search={search} searchHref={pageHref} />
-      </div>
-      <Flex align="center" gap="2" wrap="wrap">
         <PandaCategoryFilter categories={categories} onChange={(next) => { window.location.hash = listingLink(search, 1, next, sort) }} />
         <DropdownMenu.Root>
           <DropdownMenu.Trigger><Button variant="soft" color="gray">Sort · {sortLabels[sort]}</Button></DropdownMenu.Trigger>
@@ -89,7 +87,7 @@ export default function Galleries({ search, page, categories, sort }: { search: 
           </DropdownMenu.Content>
         </DropdownMenu.Root>
         {(search || categories.length > 0) && <Button asChild variant="ghost" color="gray"><a href={listingLink('', 1, [], sort)}>Clear all filters</a></Button>}
-      </Flex>
+      </div>
       {error && <Callout.Root size="1" color="red" role="alert">
         <Callout.Icon><ExclamationTriangleIcon /></Callout.Icon>
         <Flex align="center" justify="between" wrap="wrap" gap="3">

@@ -38,9 +38,9 @@ function App() {
             <Text size="5" weight="bold">tana</Text>
           </a>
           <nav aria-label="Main navigation" className="main-navigation">
-            {navigation.map(({ label, href, icon: Icon, active }) => <Button key={href} asChild variant={active ? 'soft' : 'ghost'} color={active ? undefined : 'gray'} className="main-nav-link">
-              <a href={href} aria-current={active ? 'page' : undefined}><Icon width="18" height="18" />{label}</a>
-            </Button>)}
+            {navigation.map(({ label, href, icon: Icon, active }) => <a key={href} href={href} aria-current={active ? 'page' : undefined} className="main-nav-link">
+              <Icon width="18" height="18" />{label}
+            </a>)}
           </nav>
         </aside>
         <main id="main-content" className="app-main" tabIndex={-1}>

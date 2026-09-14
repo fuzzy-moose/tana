@@ -12,11 +12,13 @@
 .gallery-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
-.gallery-toolbar > :first-child { flex-shrink: 0; }
-.gallery-search { width: min(480px, 100%); margin-left: auto; }
+.gallery-toolbar > :not(.gallery-search) { flex-shrink: 0; }
+.gallery-toolbar > .rt-Button { margin: 0; }
+.gallery-search { flex: 1 1 200px; min-width: 200px; max-width: 480px; margin-left: auto; }
 .gallery-search-input { position: relative; flex: 1; min-width: 0; }
 
 .gallery-tag-suggestions {
@@ -125,8 +127,7 @@
 
 @media (max-width: 900px) {
   .gallery-sort { display: none; }
-  .gallery-toolbar { flex-wrap: wrap; }
-  .gallery-toolbar .gallery-search { order: 1; width: 100%; }
+  .gallery-toolbar .gallery-search { order: 1; flex-basis: 100%; min-width: 0; max-width: none; }
   .gallery-toolbar > :last-child:not(.gallery-search) { margin-left: auto; }
 }
 
