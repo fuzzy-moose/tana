@@ -10,6 +10,20 @@ import (
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
+func HandleMetadataCollectionPause(service *metadata.Service, paused bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct{}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.SetMainBackgroundPaused(r.Context(), paused); err != nil {
+			metadataError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 func HandleLookupMetadata(service *metadata.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input struct {

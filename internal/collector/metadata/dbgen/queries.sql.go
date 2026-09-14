@@ -259,6 +259,17 @@ func (q *Queries) LookupMetadata(ctx context.Context, galleryID int64) (LookupMe
 	return i, err
 }
 
+const mainBackgroundPaused = `-- name: MainBackgroundPaused :one
+SELECT main_background_paused FROM metadata_collection_settings WHERE id = 1
+`
+
+func (q *Queries) MainBackgroundPaused(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, mainBackgroundPaused)
+	var main_background_paused int64
+	err := row.Scan(&main_background_paused)
+	return main_background_paused, err
+}
+
 const pendingFetches = `-- name: PendingFetches :many
 SELECT f.gallery_id, f.token FROM metadata_fetches f
 WHERE f.status = 'pending' AND NOT EXISTS (
@@ -423,5 +434,14 @@ type SaveMetadataParams struct {
 
 func (q *Queries) SaveMetadata(ctx context.Context, arg SaveMetadataParams) error {
 	_, err := q.db.ExecContext(ctx, saveMetadata, arg.GalleryID, arg.Body, arg.RefreshedAt)
+	return err
+}
+
+const setMainBackgroundPaused = `-- name: SetMainBackgroundPaused :exec
+UPDATE metadata_collection_settings SET main_background_paused = ? WHERE id = 1
+`
+
+func (q *Queries) SetMainBackgroundPaused(ctx context.Context, mainBackgroundPaused int64) error {
+	_, err := q.db.ExecContext(ctx, setMainBackgroundPaused, mainBackgroundPaused)
 	return err
 }

@@ -17,7 +17,9 @@ SELECT gallery_references, metadata_available, CAST(metadata_pending AS INTEGER)
 FROM counts;
 
 -- name: MetadataRetry :one
-SELECT next_attempt_at, last_error FROM metadata_retry WHERE id = 1;
+SELECT next_attempt_at, last_error,
+    (SELECT main_background_paused FROM metadata_collection_settings WHERE id = 1) AS main_background_paused
+FROM metadata_retry WHERE id = 1;
 
 -- name: RecentMetadataErrors :many
 WITH gallery_errors AS (

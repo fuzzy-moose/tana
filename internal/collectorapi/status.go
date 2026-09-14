@@ -14,6 +14,7 @@ type Status struct {
 }
 
 type MetadataStatus struct {
+	MainBackgroundPaused  bool            `json:"main_background_paused"`
 	MetadataErrors        []MetadataError `json:"metadata_errors"`
 	MetadataLastError     string          `json:"metadata_last_error,omitempty"`
 	MetadataRetryAt       *time.Time      `json:"metadata_retry_at,omitempty"`

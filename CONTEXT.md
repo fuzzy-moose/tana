@@ -119,6 +119,9 @@ Discovery of Panda gallery references through the child sitemaps listed in Panda
 **Collected Panda metadata**:
 The latest successfully retrieved metadata for an upstream Panda gallery, retained indefinitely even if the gallery becomes unavailable upstream.
 
+**Panda metadata collection pause**:
+A user-requested suspension of the main collector channel's background metadata retrieval and reference-import validation, lasting across restarts until explicitly resumed and allowing assigned batches to finish. Explicit metadata requests, proxy metadata collection, reference discovery, local import processing, and downloads remain available.
+
 **Panda catalog**:
 The browsable collection of collected Panda metadata across all discovery paths, with one entry per upstream gallery. Its coverage is limited to metadata already collected.
 

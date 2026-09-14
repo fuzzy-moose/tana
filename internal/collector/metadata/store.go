@@ -172,6 +172,10 @@ func (s *store) pendingRefsFor(ctx context.Context, background bool, reserved ma
 		if len(queued) != 0 {
 			return refs, nil
 		}
+		paused, err := s.q.MainBackgroundPaused(ctx)
+		if err != nil || paused != 0 {
+			return nil, err
+		}
 	}
 	rows, err := s.q.PendingRefs(ctx, limit)
 	if err != nil {

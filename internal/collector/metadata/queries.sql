@@ -26,6 +26,12 @@ WHERE r.gallery_id = ?;
 -- name: RetryState :one
 SELECT failures, next_attempt_at FROM metadata_retry WHERE id = 1;
 
+-- name: MainBackgroundPaused :one
+SELECT main_background_paused FROM metadata_collection_settings WHERE id = 1;
+
+-- name: SetMainBackgroundPaused :exec
+UPDATE metadata_collection_settings SET main_background_paused = ? WHERE id = 1;
+
 -- name: RecordBatchFailure :exec
 UPDATE metadata_retry SET failures = ?, next_attempt_at = ?, last_attempt_at = ?, last_error = ? WHERE id = 1;
 

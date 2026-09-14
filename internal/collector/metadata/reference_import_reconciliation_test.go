@@ -140,6 +140,7 @@ func TestReferenceImportReconciliationUpgradeResumesPastUnmatchedEntries(t *test
 		ALTER TABLE panda_ban_legacy RENAME TO panda_ban;
 		DROP TABLE panda_download_storage;
 		ALTER TABLE panda_downloads DROP COLUMN expected_size_bytes;
+		DROP TABLE metadata_collection_settings;
 		PRAGMA user_version = 15`); err != nil {
 		t.Fatal(err)
 	}

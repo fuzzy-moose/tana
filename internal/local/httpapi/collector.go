@@ -22,6 +22,29 @@ func HandleCollectorMetadataStatus(client *collectorapi.Client) http.Handler {
 	return handleCollectorStatusView(client, client.MetadataStatus)
 }
 
+func HandleCollectorMetadataCollectionPause(client *collectorapi.Client, paused bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			server.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "collector_not_configured"})
+			return
+		}
+		var input struct{}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := client.SetMainBackgroundPaused(r.Context(), paused); err != nil {
+			code := "collector_unavailable"
+			if upstream, ok := errors.AsType[*collectorapi.HTTPError](err); ok &&
+				(upstream.StatusCode == http.StatusUnauthorized || upstream.StatusCode == http.StatusForbidden) {
+				code = "collector_unauthorized"
+			}
+			server.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": code})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 func handleCollectorStatusView[T any](client *collectorapi.Client, read func(context.Context) (T, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {

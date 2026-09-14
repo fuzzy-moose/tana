@@ -42,6 +42,26 @@ func (s *Service) Close() {
 	s.workers.Wait()
 }
 
+// SetMainBackgroundPaused persists the main worker's background collection
+// setting. Serializing with claims lets assigned batches finish while preventing
+// further background claims once the pause is saved.
+func (s *Service) SetMainBackgroundPaused(ctx context.Context, paused bool) error {
+	s.dispatch.Lock()
+	defer s.dispatch.Unlock()
+	var value int64
+	if paused {
+		value = 1
+	}
+	if err := s.store.q.SetMainBackgroundPaused(ctx, value); err != nil {
+		return err
+	}
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
 // Get returns retained metadata, or sql.ErrNoRows when none has been collected.
 func (s *Service) Get(ctx context.Context, galleryID int64) (collectorapi.CollectedMetadata, error) {
 	row, err := s.store.q.GetMetadata(ctx, galleryID)

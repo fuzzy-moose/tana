@@ -16,6 +16,8 @@ func NewHandler(app *collector.App) http.Handler {
 	mux.Handle("GET /api/inventory/status", HandleInventoryStatus(app.Status))
 	mux.Handle("GET /api/favorites/status", HandleFavoritesStatus(app.Status))
 	mux.Handle("GET /api/metadata/status", HandleMetadataStatus(app.Status))
+	mux.Handle("POST /api/metadata/pause", HandleMetadataCollectionPause(app.Metadata, true))
+	mux.Handle("POST /api/metadata/resume", HandleMetadataCollectionPause(app.Metadata, false))
 	proxies := HandleMetadataProxies(app.MetadataProxies)
 	mux.Handle("GET /api/metadata/proxies", proxies)
 	mux.Handle("PUT /api/metadata/proxies", proxies)

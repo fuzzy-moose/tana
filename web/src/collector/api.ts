@@ -60,6 +60,7 @@ export interface InventoryStatus {
 }
 
 export interface MetadataStatus {
+  main_background_paused: boolean
   metadata_errors: { gallery_id: number, error: string, at?: string }[]
   metadata_last_error?: string
   metadata_retry_at?: string
@@ -115,6 +116,13 @@ export const getInventoryStatus = (signal: AbortSignal) => request<InventoryStat
 export const getFavoritesStatus = (signal: AbortSignal) => request<FavoritesStatus>('/api/collector/favorites/status', { signal }, collectorMessages)
 export const getMetadataStatus = (signal: AbortSignal) => request<MetadataStatus>('/api/collector/metadata/status', { signal }, collectorMessages)
 export const getSitemapStatus = (signal: AbortSignal) => request<SitemapStatus>('/api/collector/sitemap/status', { signal }, collectorMessages)
+
+export const setMainBackgroundPaused = (paused: boolean, signal: AbortSignal) => request<void>(`/api/collector/metadata/${paused ? 'pause' : 'resume'}`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: '{}',
+  signal,
+}, collectorMessages)
 
 export const syncFavorites = (category: string, full: boolean, signal: AbortSignal) => request('/api/collector/favorites/' + category + '/sync', {
   method: 'POST',

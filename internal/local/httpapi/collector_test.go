@@ -12,6 +12,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collector"
 	"github.com/fuzzy-moose/tana/internal/collector/favorites"
 	collectorhttp "github.com/fuzzy-moose/tana/internal/collector/httpapi"
+	"github.com/fuzzy-moose/tana/internal/collector/metadata"
 	"github.com/fuzzy-moose/tana/internal/collector/pandaban"
 	"github.com/fuzzy-moose/tana/internal/collector/status"
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
@@ -21,6 +22,43 @@ import (
 )
 
 type blockedFavorites struct{}
+
+func TestLocalCollectorMetadataPauseAndResume(t *testing.T) {
+	db, _, err := storage.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	logger := slog.New(slog.DiscardHandler)
+	service := metadata.New(ctx, db, nil, logger)
+	defer service.Close()
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{
+		Logger: logger, Metadata: service, Status: status.New(db, nil, pandaban.New(db), nil), APIToken: "server-secret",
+	}))
+	defer upstream.Close()
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(&local.App{Logger: logger, Collector: client})
+	for _, action := range []string{"pause", "pause", "resume", "resume"} {
+		r := httptest.NewRequest("POST", "/api/collector/metadata/"+action, strings.NewReader(`{}`))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != 204 || w.Body.Len() != 0 {
+			t.Fatalf("%s: %d %s", action, w.Code, w.Body)
+		}
+		w = httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", "/api/collector/metadata/status", nil))
+		var result collectorapi.MetadataStatus
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != 200 || result.MainBackgroundPaused != (action == "pause") {
+			t.Fatalf("status after %s: %d %s, %v", action, w.Code, w.Body, err)
+		}
+	}
+}
 
 func (blockedFavorites) GetFavoritesPage(ctx context.Context, _ int, _ string) (panda.FavoritesPage, error) {
 	<-ctx.Done()

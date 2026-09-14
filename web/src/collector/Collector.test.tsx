@@ -35,7 +35,7 @@ function statusResponse(input: RequestInfo | URL, connection = connected(), favo
     case '/api/library-deliveries': return Response.json({ batches: [] })
     case '/api/collector/favorites/status': return Response.json(favoriteStatus)
     case '/api/collector/inventory/status': return Response.json({ gallery_references: 150, metadata_available: 100, metadata_pending: 45, metadata_failed: 5, fetches_pending: 3, fetches_failed: 0 })
-    case '/api/collector/metadata/status': return Response.json({ metadata_errors: [{ gallery_id: 123, error: 'Gallery unavailable', at: '2026-09-06T09:00:00Z' }] })
+    case '/api/collector/metadata/status': return Response.json({ main_background_paused: false, metadata_errors: [{ gallery_id: 123, error: 'Gallery unavailable', at: '2026-09-06T09:00:00Z' }] })
     default: throw new Error(`Unexpected collector request: ${String(input)}`)
   }
 }
@@ -63,6 +63,32 @@ test('Collector overview loads inventory and request-group diagnostics', async (
     '/api/collector/status', '/api/collector/inventory/status', '/api/collector/metadata/status',
     '/api/collector/favorites/status',
   ]))
+})
+
+test('Collector overview pauses and resumes main background metadata collection', async () => {
+  let paused = false
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    const path = String(input)
+    if (init?.method === 'POST' && ['/api/collector/metadata/pause', '/api/collector/metadata/resume'].includes(path)) {
+      paused = path.endsWith('/pause')
+      return new Response(null, { status: 204 })
+    }
+    if (path === '/api/collector/metadata/status') return Response.json({ main_background_paused: paused, metadata_errors: [] })
+    return statusResponse(input)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  window.history.replaceState(null, '', '/#/collector')
+  const user = userEvent.setup()
+  render(<App />)
+  await user.click(await screen.findByRole('button', { name: 'Pause background metadata' }))
+  expect(await screen.findByText('Main background metadata collection is paused.')).toBeTruthy()
+  expect(screen.getByText(/Assigned batches may still finish/)).toBeTruthy()
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/metadata/pause', expect.objectContaining({ method: 'POST', body: '{}' }))
+  cleanup()
+  render(<App />)
+  await user.click(await screen.findByRole('button', { name: 'Resume background metadata' }))
+  expect(await screen.findByText('Main background metadata collection is enabled.')).toBeTruthy()
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/metadata/resume', expect.objectContaining({ method: 'POST', body: '{}' }))
 })
 
 test('Favorites page submits all-category sync and a selected full re-sync', async () => {

@@ -1,6 +1,7 @@
 import { getFavoritesStatus, getInventoryStatus, getMetadataStatus } from './api'
 import { useCollectorResource } from './useCollectorResource'
 import ResourceStatus from './ResourceStatus'
+import MetadataCollection from './MetadataCollection'
 
 function date(value: string) { return new Date(value).toLocaleString() }
 
@@ -12,6 +13,12 @@ export default function Overview({ available, refreshKey }: { available: boolean
   const diagnostics = metadata.data
 
   return <>
+    <section className="collector-panel" aria-labelledby="metadata-collection-title">
+      <h2 id="metadata-collection-title">Main metadata collection</h2>
+      <ResourceStatus name="Metadata collection status" loaded={!!diagnostics} available={available} {...metadata} />
+      {diagnostics && <MetadataCollection paused={diagnostics.main_background_paused} available={available && !metadata.stale}
+        onChanged={(paused) => metadata.update({ ...diagnostics, main_background_paused: paused })} />}
+    </section>
     <section className="collector-panel" aria-labelledby="inventory-title">
       <div className="collector-section-heading"><h2 id="inventory-title">Collector inventory</h2><span>Refreshes every 30 seconds</span></div>
       <ResourceStatus name="Inventory statistics" loaded={!!counts} available={available} {...inventory} />
@@ -31,7 +38,6 @@ export default function Overview({ available, refreshKey }: { available: boolean
       {favorites.data && <p>{favorites.data.authenticated_cooldown_until
         ? `Authenticated Panda requests (favorites and archive preparation) paused until ${date(favorites.data.authenticated_cooldown_until)}.`
         : 'No active authenticated Panda cooldown.'}</p>}
-      <ResourceStatus name="Metadata diagnostics" loaded={!!diagnostics} available={available} {...metadata} />
       {diagnostics && <>
         <p>{diagnostics.upstream_cooldown_until ? `Main unauthenticated Panda requests paused until ${date(diagnostics.upstream_cooldown_until)}.` : 'No active main unauthenticated Panda cooldown.'}</p>
         {diagnostics.metadata_retry_at && <p>Metadata retry after {date(diagnostics.metadata_retry_at)}.</p>}
