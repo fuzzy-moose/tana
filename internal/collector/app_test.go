@@ -3,6 +3,7 @@ package collector
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
+	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
 func TestAppLifecycle(t *testing.T) {
@@ -23,7 +25,11 @@ func TestAppLifecycle(t *testing.T) {
 			name = "explicit_download_directory"
 		}
 		t.Run(name, func(t *testing.T) {
-			body := []byte(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><link href="https://example.test/g/42/token/"/></entry></feed>`)
+			published := time.Now().UTC().Truncate(time.Second)
+			body := []byte(fmt.Sprintf(`<feed xmlns="http://www.w3.org/2005/Atom"><entry>
+				<title>Feed title</title><updated>%s</updated><link href="https://example.test/g/42/token/"/>
+				<content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>Tags: language:english</p></div></content>
+				</entry></feed>`, published.Format(time.RFC3339)))
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					_, _ = io.WriteString(w, `{"gmetadata":[{"gid":42,"token":"token","title":"Collected title"}]}`)
@@ -69,21 +75,55 @@ func TestAppLifecycle(t *testing.T) {
 				if err := app.db.QueryRow("SELECT count(*) FROM raw_feeds WHERE processed_at IS NOT NULL").Scan(&n); err != nil {
 					t.Fatal(err)
 				}
+				if n == 1 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("collector did not process feed")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			provisional, err := app.Catalog.List(t.Context(), collectorapi.CatalogOptions{Query: "language:english", PageSize: 24})
+			if err != nil || len(provisional.Items) != 1 {
+				t.Fatalf("feed metadata absent from catalog: %+v, %v", provisional, err)
+			}
+			item := provisional.Items[0]
+			if item.Title != "Feed title" || item.MetadataSource != "feed" || item.MetadataState != "waiting" ||
+				item.PostedAt == nil || !item.PostedAt.Equal(published) || item.PageCount != nil ||
+				item.FetchEligibleAt == nil || !item.FetchEligibleAt.Equal(published.Add(12*time.Hour)) {
+				t.Fatalf("unexpected provisional metadata: %+v", item)
+			}
+			if _, err := app.Metadata.Get(t.Context(), 42); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("feed description treated as collected metadata: %v", err)
+			}
+			lookup, err := app.Metadata.Lookup(t.Context(), []int64{42})
+			if err != nil || len(lookup.Galleries) != 0 || len(lookup.PendingIDs) != 1 {
+				t.Fatalf("local enrichment should wait for collected metadata: %+v, %v", lookup, err)
+			}
+			if _, err := app.Metadata.RequestFetch(t.Context(), []panda.GalleryRef{{ID: 42, Token: "token"}}); err != nil {
+				t.Fatal(err)
+			}
+			deadline = time.Now().Add(5 * time.Second)
+			for {
 				collected, err := app.Metadata.Get(t.Context(), 42)
 				if err != nil && !errors.Is(err, sql.ErrNoRows) {
 					t.Fatal(err)
 				}
-				if n == 1 && err == nil && collected.Metadata.Title == "Collected title" {
+				if err == nil && collected.Metadata.Title == "Collected title" {
 					break
 				}
 				if time.Now().After(deadline) {
-					t.Fatal("collector did not capture feed and collect metadata")
+					t.Fatal("explicit request did not bypass feed delay")
 				}
 				time.Sleep(time.Millisecond)
 			}
 			catalog, err := app.Catalog.List(t.Context(), collectorapi.CatalogOptions{Query: "title:collected", PageSize: 24})
-			if err != nil || len(catalog.Items) != 1 || catalog.Items[0].URL != upstream.URL+"/g/42/token/" {
+			if err != nil || len(catalog.Items) != 1 || catalog.Items[0].URL != upstream.URL+"/g/42/token/" || catalog.Items[0].MetadataSource != "collected" {
 				t.Fatalf("collected feed metadata absent from catalog: %+v, %v", catalog, err)
+			}
+			staleTags, err := app.Catalog.List(t.Context(), collectorapi.CatalogOptions{Query: "language:english", PageSize: 24})
+			if err != nil || len(staleTags.Items) != 0 {
+				t.Fatalf("collected metadata did not replace feed tags: %+v, %v", staleTags, err)
 			}
 			if err := app.Close(); err != nil {
 				t.Fatal(err)

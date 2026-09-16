@@ -6,8 +6,12 @@ export interface PandaGallery {
   gallery_id: number
   title: string
   thumbnail_url: string
-  page_count: number
-  posted_at: string
+  page_count: number | null
+  posted_at: string | null
+  metadata_source: 'feed' | 'collected'
+  metadata_state?: 'waiting' | 'failed'
+  fetch_eligible_at?: string
+  first_seen_at?: string
   url: string
 }
 

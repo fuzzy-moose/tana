@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/fuzzy-moose/tana/internal/collector/catalog"
 	"github.com/fuzzy-moose/tana/internal/collector/feed/dbgen"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
@@ -76,6 +77,10 @@ func (s *store) complete(ctx context.Context, id int64, entries []panda.FeedEntr
 	}
 	defer tx.Rollback()
 	q := s.q.WithTx(tx)
+	var capturedAt int64
+	if err := tx.QueryRowContext(ctx, "SELECT captured_at FROM raw_feeds WHERE id = ? AND processed_at IS NULL", id).Scan(&capturedAt); err != nil {
+		return nil, err
+	}
 	seen := make(map[int64]struct{}, len(entries))
 	overlap := false
 	for _, entry := range entries {
@@ -95,6 +100,25 @@ func (s *store) complete(ctx context.Context, id int64, entries []panda.FeedEntr
 			return nil, err
 		}
 		if err := q.SaveFeedGalleryRef(ctx, dbgen.SaveFeedGalleryRefParams{RawFeedID: id, GalleryID: ref.ID}); err != nil {
+			return nil, err
+		}
+		var firstSeenAt int64
+		if err := tx.QueryRowContext(ctx, `SELECT MIN(f.captured_at) FROM feed_gallery_refs s
+			JOIN raw_feeds f ON f.id = s.raw_feed_id WHERE s.gallery_id = ?`, ref.ID).Scan(&firstSeenAt); err != nil {
+			return nil, err
+		}
+		baseAt := firstSeenAt
+		if entry.PostedAt != nil {
+			baseAt = entry.PostedAt.UnixMilli()
+		}
+		// Retries may reveal an earlier sighting or publication time. They can
+		// shorten the wait, but repeated sightings must never postpone it.
+		if _, err := tx.ExecContext(ctx, `UPDATE gallery_refs
+			SET feed_metadata_base_at = MIN(COALESCE(feed_metadata_base_at, ?), ?)
+			WHERE gallery_id = ?`, baseAt, baseAt, ref.ID); err != nil {
+			return nil, err
+		}
+		if err := catalog.ProjectFeed(ctx, tx, entry, id, capturedAt, firstSeenAt); err != nil {
 			return nil, err
 		}
 	}

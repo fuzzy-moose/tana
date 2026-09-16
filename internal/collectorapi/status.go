@@ -14,11 +14,12 @@ type Status struct {
 }
 
 type MetadataStatus struct {
-	MainBackgroundPaused  bool            `json:"main_background_paused"`
-	MetadataErrors        []MetadataError `json:"metadata_errors"`
-	MetadataLastError     string          `json:"metadata_last_error,omitempty"`
-	MetadataRetryAt       *time.Time      `json:"metadata_retry_at,omitempty"`
-	UpstreamCooldownUntil *time.Time      `json:"upstream_cooldown_until,omitempty"`
+	FeedMetadataDelayHours int64           `json:"feed_metadata_delay_hours"`
+	MainBackgroundPaused   bool            `json:"main_background_paused"`
+	MetadataErrors         []MetadataError `json:"metadata_errors"`
+	MetadataLastError      string          `json:"metadata_last_error,omitempty"`
+	MetadataRetryAt        *time.Time      `json:"metadata_retry_at,omitempty"`
+	UpstreamCooldownUntil  *time.Time      `json:"upstream_cooldown_until,omitempty"`
 }
 
 func (c *Client) FavoritesStatus(ctx context.Context) (FavoritesStatus, error) {

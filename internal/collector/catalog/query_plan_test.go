@@ -13,7 +13,7 @@ func TestCatalogExclusionChecksCandidateTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	predicate += " AND g.category IN ('manga', 'doujinshi') AND g.expunged = 0"
+	predicate += " AND g.category IN ('manga', 'doujinshi') AND g.expunged IS NOT 1"
 	query, args := catalogPageQuery(predicate, args, []string{"manga", "doujinshi"}, false)
 	rows, err := db.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+query, append(args, 25)...)
 	if err != nil {
@@ -62,14 +62,14 @@ func TestCatalogCategoryQueriesUseIndexes(t *testing.T) {
 						args = append(args, category)
 					}
 					if tc.visible {
-						predicate += " AND g.expunged = 0"
+						predicate += " AND g.expunged IS NOT 1"
 					}
 					if direction != "first" {
 						comparison := "<"
 						if direction == "previous" {
 							comparison = ">"
 						}
-						predicate += " AND (g.posted, g.gallery_id) " + comparison + " (?, ?)"
+						predicate += " AND (g.ordered_at, g.gallery_id) " + comparison + " (?, ?)"
 						args = append(args, 100, 10)
 					}
 					query, args := catalogPageQuery(predicate, args, tc.categories, direction == "previous")
@@ -95,8 +95,8 @@ func TestCatalogCategoryQueriesUseIndexes(t *testing.T) {
 							} else {
 								covered = true
 							}
-							if direction != "first" && !strings.Contains(detail, "AND posted") {
-								t.Error("cursor must seek to its upload time")
+							if direction != "first" && !strings.Contains(detail, "AND ordered_at") {
+								t.Error("cursor must seek to its ordering time")
 							}
 						}
 					}

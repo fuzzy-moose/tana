@@ -66,6 +66,7 @@ func (s *Service) Metadata(ctx context.Context) (collectorapi.MetadataStatus, er
 		return result, err
 	}
 	result.MainBackgroundPaused = retry.MainBackgroundPaused != 0
+	result.FeedMetadataDelayHours = retry.FeedMetadataDelayHours
 	result.MetadataLastError = retry.LastError.String
 	if at := time.UnixMilli(retry.NextAttemptAt); at.After(time.Now()) {
 		result.MetadataRetryAt = &at

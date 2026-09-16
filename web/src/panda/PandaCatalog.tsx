@@ -116,16 +116,16 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
     </Callout.Root>}
 
     <div className="gallery-viewport" ref={viewportRef} aria-busy={loading}>
-      <div className="gallery-grid gallery-sizing" aria-hidden="true"><div className="gallery-card panda-card" ref={cardRef}><div className="gallery-cover" /><div className="gallery-title"><Text asChild size="1" weight="medium"><h2 /></Text></div><Text as="p" size="1">0 pages · 12/12/2026</Text></div></div>
+      <div className="gallery-grid gallery-sizing" aria-hidden="true"><div className="gallery-card panda-card" ref={cardRef}><div className="gallery-cover" /><div className="gallery-title"><Text asChild size="1" weight="medium"><h2 /></Text></div><Text as="p" size="1">0 pages · 12/12/2026</Text><div className="panda-feed-status" /></div></div>
       {!result && loading && !error && <Text as="p" size="2" color="gray" role="status">Loading Panda galleries…</Text>}
       {result && (result.items.length === 0 ? <Flex className="gallery-empty" direction="column" align="center" justify="center" gap="3">
-        <Heading as="h2" size="4">{cursor ? 'No more matching Panda galleries.' : filtered ? 'No matching Panda galleries.' : 'No collected Panda galleries yet.'}</Heading>
-        <Text as="p" size="2" color="gray">{cursor ? 'Browse back or return to the newest galleries.' : filtered ? 'Try different titles, tags, or categories, or bypass the default filter.' : 'Collect a feed to discover galleries, then return when metadata is available.'}</Text>
+        <Heading as="h2" size="4">{cursor ? 'No more matching Panda galleries.' : filtered ? 'No matching Panda galleries.' : 'No Panda galleries yet.'}</Heading>
+        <Text as="p" size="2" color="gray">{cursor ? 'Browse back or return to the newest galleries.' : filtered ? 'Try different titles, tags, or categories, or bypass the default filter.' : 'Collect a feed to discover galleries and browse their feed metadata.'}</Text>
         <Button asChild variant="soft"><a href={cursor ? pageHref(search) : filtered ? clearHref : '#/collector/feeds'}>{cursor ? 'Newest galleries' : filtered ? 'Show all Panda galleries' : 'Collect feeds'}</a></Button>
       </Flex> : <ul className="gallery-grid" aria-label="Panda galleries">{result.items.map((gallery) => <li key={gallery.gallery_id}><PandaCard gallery={gallery} /></li>)}</ul>)}
     </div>
     <div className="gallery-pagination">
-      <Text size="1" color="gray" className="gallery-sort">Upload date · Newest first</Text>
+      <Text size="1" color="gray" className="gallery-sort">Upload date (first seen if unknown) · Newest first</Text>
       <nav className="pagination" aria-label="Panda gallery pages">
         {result?.previous_cursor && !loading && !error
           ? <Button asChild variant="soft" color="gray"><a href={pageHref(search, result.previous_cursor)} rel="prev">Previous</a></Button>

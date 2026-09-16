@@ -308,16 +308,23 @@ func (q *Queries) PendingFetches(ctx context.Context, limit int64) ([]PendingFet
 
 const pendingRefs = `-- name: PendingRefs :many
 SELECT gallery_id, token FROM gallery_refs WHERE metadata_attempted_at IS NULL
-ORDER BY metadata_priority, gallery_id LIMIT ?
+AND (feed_metadata_base_at IS NULL OR feed_metadata_base_at <= ?1 -
+    (SELECT feed_metadata_delay_hours * 3600000 FROM metadata_collection_settings WHERE id = 1))
+ORDER BY metadata_priority, gallery_id LIMIT ?2
 `
+
+type PendingRefsParams struct {
+	Now        int64
+	BatchLimit int64
+}
 
 type PendingRefsRow struct {
 	GalleryID int64
 	Token     string
 }
 
-func (q *Queries) PendingRefs(ctx context.Context, limit int64) ([]PendingRefsRow, error) {
-	rows, err := q.db.QueryContext(ctx, pendingRefs, limit)
+func (q *Queries) PendingRefs(ctx context.Context, arg PendingRefsParams) ([]PendingRefsRow, error) {
+	rows, err := q.db.QueryContext(ctx, pendingRefs, arg.Now, arg.BatchLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -434,6 +441,15 @@ type SaveMetadataParams struct {
 
 func (q *Queries) SaveMetadata(ctx context.Context, arg SaveMetadataParams) error {
 	_, err := q.db.ExecContext(ctx, saveMetadata, arg.GalleryID, arg.Body, arg.RefreshedAt)
+	return err
+}
+
+const setFeedMetadataDelay = `-- name: SetFeedMetadataDelay :exec
+UPDATE metadata_collection_settings SET feed_metadata_delay_hours = ? WHERE id = 1
+`
+
+func (q *Queries) SetFeedMetadataDelay(ctx context.Context, feedMetadataDelayHours int64) error {
+	_, err := q.db.ExecContext(ctx, setFeedMetadataDelay, feedMetadataDelayHours)
 	return err
 }
 

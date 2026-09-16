@@ -35,7 +35,7 @@ function statusResponse(input: RequestInfo | URL, connection = connected(), favo
     case '/api/library-deliveries': return Response.json({ batches: [] })
     case '/api/collector/favorites/status': return Response.json(favoriteStatus)
     case '/api/collector/inventory/status': return Response.json({ gallery_references: 150, metadata_available: 100, metadata_pending: 45, metadata_failed: 5, fetches_pending: 3, fetches_failed: 0 })
-    case '/api/collector/metadata/status': return Response.json({ main_background_paused: false, metadata_errors: [{ gallery_id: 123, error: 'Gallery unavailable', at: '2026-09-06T09:00:00Z' }] })
+    case '/api/collector/metadata/status': return Response.json({ main_background_paused: false, feed_metadata_delay_hours: 12, metadata_errors: [{ gallery_id: 123, error: 'Gallery unavailable', at: '2026-09-06T09:00:00Z' }] })
     default: throw new Error(`Unexpected collector request: ${String(input)}`)
   }
 }
@@ -73,7 +73,7 @@ test('Collector overview pauses and resumes main background metadata collection'
       paused = path.endsWith('/pause')
       return new Response(null, { status: 204 })
     }
-    if (path === '/api/collector/metadata/status') return Response.json({ main_background_paused: paused, metadata_errors: [] })
+    if (path === '/api/collector/metadata/status') return Response.json({ main_background_paused: paused, feed_metadata_delay_hours: 12, metadata_errors: [] })
     return statusResponse(input)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -89,6 +89,32 @@ test('Collector overview pauses and resumes main background metadata collection'
   await user.click(await screen.findByRole('button', { name: 'Resume background metadata' }))
   expect(await screen.findByText('Main background metadata collection is enabled.')).toBeTruthy()
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/metadata/resume', expect.objectContaining({ method: 'POST', body: '{}' }))
+})
+
+test('saves the shared feed delay, including zero, across overview visits', async () => {
+  let hours = 12
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    if (String(input) === '/api/collector/metadata/settings') {
+      hours = JSON.parse(String(init?.body)).feed_metadata_delay_hours
+      return Response.json({ feed_metadata_delay_hours: hours })
+    }
+    if (String(input) === '/api/collector/metadata/status') return Response.json({ main_background_paused: false, feed_metadata_delay_hours: hours, metadata_errors: [] })
+    return statusResponse(input)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  window.history.replaceState(null, '', '/#/collector')
+  const user = userEvent.setup()
+  render(<App />)
+  const input = await screen.findByRole('spinbutton', { name: 'Feed metadata delay (hours)' }) as HTMLInputElement
+  expect(input.value).toBe('12')
+  await user.clear(input)
+  await user.type(input, '0')
+  await user.click(screen.getByRole('button', { name: 'Save feed metadata delay' }))
+  expect(await screen.findByText('Feed metadata delay saved.')).toBeTruthy()
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/metadata/settings', expect.objectContaining({ method: 'PUT', body: '{"feed_metadata_delay_hours":0}' }))
+  cleanup()
+  render(<App />)
+  expect((await screen.findByRole('spinbutton', { name: 'Feed metadata delay (hours)' }) as HTMLInputElement).value).toBe('0')
 })
 
 test('Favorites page submits all-category sync and a selected full re-sync', async () => {

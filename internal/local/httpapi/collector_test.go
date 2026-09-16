@@ -23,7 +23,7 @@ import (
 
 type blockedFavorites struct{}
 
-func TestLocalCollectorMetadataPauseAndResume(t *testing.T) {
+func TestLocalCollectorMetadataSettingsPauseAndResume(t *testing.T) {
 	db, _, err := storage.Open(t.Context(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +58,40 @@ func TestLocalCollectorMetadataPauseAndResume(t *testing.T) {
 			t.Fatalf("status after %s: %d %s, %v", action, w.Code, w.Body, err)
 		}
 	}
+	for _, tc := range []struct {
+		body  string
+		code  int
+		hours int64
+	}{
+		{`{"feed_metadata_delay_hours":24}`, 200, 24},
+		{`{"feed_metadata_delay_hours":-1}`, 400, 24},
+		{`{"feed_metadata_delay_hours":8761}`, 400, 24},
+		{`{"feed_metadata_delay_hours":1.5}`, 400, 24},
+		{`{}`, 400, 24},
+		{`{"feed_metadata_delay_hours":null}`, 400, 24},
+		{`{"feed_metadata_delay_hours":0}`, 200, 0},
+	} {
+		r := httptest.NewRequest("PUT", "/api/collector/metadata/settings", strings.NewReader(tc.body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != tc.code {
+			t.Fatalf("settings %s: %d %s", tc.body, w.Code, w.Body)
+		}
+		if tc.code == 200 {
+			var settings collectorapi.MetadataSettings
+			if err := json.Unmarshal(w.Body.Bytes(), &settings); err != nil || settings.FeedMetadataDelayHours != tc.hours {
+				t.Fatalf("settings response: %s, %v", w.Body, err)
+			}
+		}
+		w = httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", "/api/collector/metadata/status", nil))
+		var result collectorapi.MetadataStatus
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != 200 || result.FeedMetadataDelayHours != tc.hours {
+			t.Fatalf("settings status: %d %s, %v", w.Code, w.Body, err)
+		}
+	}
+
 }
 
 func (blockedFavorites) GetFavoritesPage(ctx context.Context, _ int, _ string) (panda.FavoritesPage, error) {

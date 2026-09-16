@@ -110,7 +110,7 @@ func TestCatalogSearchOrderingAndPagination(t *testing.T) {
 		t.Fatalf("filtered page: %+v, %v", result, err)
 	}
 	item := result.Items[0]
-	if item.PageCount != 12 || item.PostedAt.Unix() != 300 || item.URL != "https://favorites.example.test/g/1/token1/" || item.ThumbnailURL != entries[1].ThumbnailURL {
+	if item.PageCount == nil || *item.PageCount != 12 || item.PostedAt.Unix() != 300 || item.URL != "https://favorites.example.test/g/1/token1/" || item.ThumbnailURL != entries[1].ThumbnailURL {
 		t.Fatalf("browse fields: %+v", item)
 	}
 	result, err = s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 100, IncludeExpunged: true})

@@ -283,7 +283,7 @@ func TestTokenConflictDiscoveredWhileBatchIsInFlight(t *testing.T) {
 	if _, err := s.Get(t.Context(), 1); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("conflicting token stored metadata: %v", err)
 	}
-	rows, err := s.store.q.PendingRefs(t.Context(), 25)
+	rows, err := s.store.q.PendingRefs(t.Context(), dbgen.PendingRefsParams{Now: time.Now().UnixMilli(), BatchLimit: 25})
 	if err != nil || len(rows) != 1 || rows[0].Token != "token1" {
 		t.Fatalf("feed token altered or parked: %+v, %v", rows, err)
 	}

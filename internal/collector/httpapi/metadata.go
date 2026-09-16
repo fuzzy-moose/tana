@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/fuzzy-moose/tana/internal/collector/metadata"
+	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 	"github.com/fuzzy-moose/tana/internal/server"
 )
@@ -72,6 +73,8 @@ func HandleGetFetchJob(service *metadata.Service) http.Handler {
 
 func metadataError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, collectorapi.ErrInvalidMetadataSettings):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_metadata_settings", "message": err.Error()})
 	case errors.Is(err, metadata.ErrInvalidBatch):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_batch", "message": err.Error()})
 	case errors.Is(err, sql.ErrNoRows):
@@ -80,4 +83,25 @@ func metadataError(w http.ResponseWriter, r *http.Request, err error) {
 		server.GetHTTPContext(r).Err = err
 		server.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
 	}
+}
+
+func HandleMetadataSettings(service *metadata.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			FeedMetadataDelayHours *int64 `json:"feed_metadata_delay_hours"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if input.FeedMetadataDelayHours == nil {
+			metadataError(w, r, collectorapi.ErrInvalidMetadataSettings)
+			return
+		}
+		settings := collectorapi.MetadataSettings{FeedMetadataDelayHours: *input.FeedMetadataDelayHours}
+		if err := service.SetSettings(r.Context(), settings); err != nil {
+			metadataError(w, r, err)
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, settings)
+	})
 }

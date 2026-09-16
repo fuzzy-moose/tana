@@ -169,3 +169,20 @@ func (b *Batch) fetch(ctx context.Context, client *panda.Client, main bool) erro
 	s.logger.Info("metadata_batch_completed", "collected", collected, "failed", len(entries)-collected)
 	return nil
 }
+
+// SetSettings changes eligibility of waiting references; assigned batches finish.
+func (s *Service) SetSettings(ctx context.Context, settings collectorapi.MetadataSettings) error {
+	if err := settings.Validate(); err != nil {
+		return err
+	}
+	s.dispatch.Lock()
+	defer s.dispatch.Unlock()
+	if err := s.store.q.SetFeedMetadataDelay(ctx, settings.FeedMetadataDelayHours); err != nil {
+		return err
+	}
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+	return nil
+}

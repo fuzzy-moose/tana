@@ -35,5 +35,9 @@ func (c catalogCursor) encode() string {
 }
 
 func itemCursor(item collectorapi.CatalogItem, before bool) string {
-	return (catalogCursor{Posted: item.PostedAt.Unix(), GalleryID: item.GalleryID, Before: before}).encode()
+	orderedAt := item.PostedAt
+	if orderedAt == nil {
+		orderedAt = item.FirstSeenAt
+	}
+	return (catalogCursor{Posted: orderedAt.Unix(), GalleryID: item.GalleryID, Before: before}).encode()
 }

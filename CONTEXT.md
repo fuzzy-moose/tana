@@ -122,11 +122,17 @@ Discovery of Panda gallery references through the child sitemaps listed in Panda
 **Collected Panda metadata**:
 The latest successfully retrieved metadata for an upstream Panda gallery, retained indefinitely even if the gallery becomes unavailable upstream.
 
+**Provisional Panda metadata**:
+The latest captured feed description of a Panda gallery, used for catalog browsing while collected Panda metadata is unavailable, including after a failed collection attempt. It does not qualify as collected Panda metadata for local gallery enrichment and is superseded entirely by successful metadata collection.
+
+**Panda publication time**:
+The time an upstream Panda gallery was uploaded or published. For provisional metadata, the feed entry's timestamp supplies this time; collected metadata supplies it once available.
+
 **Panda metadata collection pause**:
 A user-requested suspension of the main collector channel's background metadata retrieval and reference-import validation, lasting across restarts until explicitly resumed and allowing assigned batches to finish. Explicit metadata requests, proxy metadata collection, reference discovery, local import processing, and downloads remain available.
 
 **Panda catalog**:
-The browsable collection of collected Panda metadata across all discovery paths, with one entry per upstream gallery. Its coverage is limited to metadata already collected.
+The browsable collection of Panda galleries described by collected or provisional Panda metadata, with one entry per upstream gallery. Missing descriptive values remain unknown.
 
 **Metadata refresh time**:
 The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.
@@ -145,6 +151,9 @@ A captured upstream feed in its original form, retained until successfully proce
 
 **Feed gallery reference**:
 A Panda gallery reference observed in a particular raw feed. The same gallery can appear in multiple raw feeds, with one sighting per gallery per raw feed.
+
+**Panda feed metadata delay**:
+The minimum age before automatic metadata collection for a feed-discovered Panda gallery, measured from upstream publication when known or otherwise its first feed sighting. Rediscovery through feeds or other automatic collection paths does not restart or bypass the delay; explicit metadata requests bypass it.
 
 **Feed continuity check**:
 A check for gallery IDs already seen in other processed feeds when a raw feed is processed. A nonempty feed containing only previously unseen gallery IDs indicates a possible collection gap; empty or unparseable feeds leave continuity unknown, and the first capture has no baseline. Discovery through Panda metadata alone does not establish feed continuity.

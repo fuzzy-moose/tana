@@ -101,3 +101,39 @@ func HandleCollectorSyncFavorites(client *collectorapi.Client) http.Handler {
 		server.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	})
 }
+
+func HandleCollectorMetadataSettings(client *collectorapi.Client) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			server.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "collector_not_configured"})
+			return
+		}
+		var input struct {
+			FeedMetadataDelayHours *int64 `json:"feed_metadata_delay_hours"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if input.FeedMetadataDelayHours == nil {
+			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_metadata_settings"})
+			return
+		}
+		result, err := client.SetMetadataSettings(r.Context(), collectorapi.MetadataSettings{FeedMetadataDelayHours: *input.FeedMetadataDelayHours})
+		if err != nil {
+			status, code := http.StatusBadGateway, "collector_unavailable"
+			if errors.Is(err, collectorapi.ErrInvalidMetadataSettings) {
+				status, code = http.StatusBadRequest, "invalid_metadata_settings"
+			} else if upstream, ok := errors.AsType[*collectorapi.HTTPError](err); ok {
+				if upstream.StatusCode == http.StatusUnauthorized || upstream.StatusCode == http.StatusForbidden {
+					code = "collector_unauthorized"
+				}
+				if upstream.StatusCode == http.StatusBadRequest {
+					status, code = http.StatusBadRequest, "invalid_metadata_settings"
+				}
+			}
+			server.WriteJSON(w, status, map[string]string{"error": code})
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, result)
+	})
+}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
@@ -40,14 +41,37 @@ func TestParseFeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	posted := time.Date(2026, 9, 5, 12, 34, 56, 0, time.UTC)
 	preview := panda.FeedEntry{
 		GalleryRef:   panda.GalleryRef{ID: 1234567, Token: "0123456789"},
 		Title:        "[Example Circle] Tea & Sketches [English]",
 		ThumbnailURL: "https://thumbs.example.test/w/01/234/56789-example.webp",
+		PostedAt:     &posted,
+		Uploader:     "example_uploader",
+		Description:  "An illustrated afternoon of tea and sketching.",
+		Tags:         []string{"language:english", "artist:example artist"},
 	}
 	want := []panda.FeedEntry{preview, {GalleryRef: panda.GalleryRef{ID: 42, Token: "next"}}, preview}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries = %+v, want %+v", got, want)
+	}
+}
+
+func TestParseFeedSeparatesTagsFromXHTMLDescription(t *testing.T) {
+	input := atomFeed(`<entry><link href="/g/7/token/" /><updated>2026-09-05T14:34:56+02:00</updated>
+		<content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">
+		<p>Tags: language:english, <span>artist:tea &amp; sketches</span>, plain tag<br/><br/>Description: Other, words</p>
+		</div></content></entry>`)
+	entries, err := panda.ParseFeed(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := entries[0]
+	if !reflect.DeepEqual(entry.Tags, []string{"language:english", "artist:tea & sketches", "plain tag"}) || entry.Description != "Other, words" {
+		t.Fatalf("description mixed with tags: %+v", entry)
+	}
+	if entry.PostedAt == nil || entry.PostedAt.Format(time.RFC3339) != "2026-09-05T12:34:56Z" {
+		t.Fatalf("publication timestamp = %v", entry.PostedAt)
 	}
 }
 

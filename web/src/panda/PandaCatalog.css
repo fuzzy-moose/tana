@@ -1,4 +1,6 @@
 .panda-card > p { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.panda-feed-status { min-height: 64px; }
+.panda-feed-status p { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .panda-lookup-input { flex: 1; min-width: 0; }
 .panda-lookup-result { overflow-wrap: anywhere; }
 .panda-metadata pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

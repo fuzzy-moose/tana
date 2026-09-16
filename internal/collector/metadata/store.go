@@ -177,7 +177,7 @@ func (s *store) pendingRefsFor(ctx context.Context, background bool, reserved ma
 			return nil, err
 		}
 	}
-	rows, err := s.q.PendingRefs(ctx, limit)
+	rows, err := s.q.PendingRefs(ctx, dbgen.PendingRefsParams{Now: time.Now().UnixMilli(), BatchLimit: limit})
 	if err != nil {
 		return nil, err
 	}

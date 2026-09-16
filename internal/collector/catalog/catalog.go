@@ -72,7 +72,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		}
 	}
 	if !options.IncludeExpunged {
-		predicate += " AND g.expunged = 0"
+		predicate += " AND g.expunged IS NOT 1"
 	}
 	if options.Cursor != "" {
 		comparison := "<"
@@ -82,7 +82,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		if cursor.Inclusive {
 			comparison += "="
 		}
-		predicate += " AND (g.posted, g.gallery_id) " + comparison + " (?, ?)"
+		predicate += " AND (g.ordered_at, g.gallery_id) " + comparison + " (?, ?)"
 		args = append(args, cursor.Posted, cursor.GalleryID)
 	}
 	pageQuery, pageArgs := catalogPageQuery(predicate, args, pageCategories, cursor.Before)
@@ -90,11 +90,15 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if cursor.Before {
 		order = "ASC"
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT g.gallery_id, g.title, g.thumbnail_url, g.page_count, g.posted, r.token
+	rows, err := tx.QueryContext(ctx, `SELECT g.gallery_id, g.title, g.thumbnail_url, g.page_count, g.posted, r.token,
+		g.metadata_source, g.first_seen_at, r.metadata_error,
+		r.feed_metadata_base_at + settings.feed_metadata_delay_hours * 3600000,
+		EXISTS (SELECT 1 FROM metadata_fetches f WHERE f.gallery_id = r.gallery_id AND f.token = r.token AND f.status = 'pending')
 		FROM (`+pageQuery+`) page
 		JOIN catalog_galleries g ON g.gallery_id = page.gallery_id
 		JOIN gallery_refs r ON r.gallery_id = page.gallery_id
-		ORDER BY page.posted `+order+`, page.gallery_id `+order,
+		JOIN metadata_collection_settings settings ON settings.id = 1
+		ORDER BY page.ordered_at `+order+`, page.gallery_id `+order,
 		append(pageArgs, result.PageSize+1)...)
 	if err != nil {
 		return result, err
@@ -102,12 +106,32 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	defer rows.Close()
 	for rows.Next() {
 		var item collectorapi.CatalogItem
-		var posted int64
+		var posted, firstSeen, eligible sql.NullInt64
+		var metadataError sql.NullString
+		var explicitPending bool
 		var token string
-		if err := rows.Scan(&item.GalleryID, &item.Title, &item.ThumbnailURL, &item.PageCount, &posted, &token); err != nil {
+		if err := rows.Scan(&item.GalleryID, &item.Title, &item.ThumbnailURL, &item.PageCount, &posted, &token,
+			&item.MetadataSource, &firstSeen, &metadataError, &eligible, &explicitPending); err != nil {
 			return result, err
 		}
-		item.PostedAt = time.Unix(posted, 0).UTC()
+		if posted.Valid {
+			at := time.Unix(posted.Int64, 0).UTC()
+			item.PostedAt = &at
+		}
+		if item.MetadataSource == "feed" {
+			item.MetadataState = "waiting"
+			if metadataError.Valid && metadataError.String != "" && !explicitPending {
+				item.MetadataState = "failed"
+			}
+			if firstSeen.Valid {
+				at := time.UnixMilli(firstSeen.Int64).UTC()
+				item.FirstSeenAt = &at
+			}
+			if eligible.Valid && !explicitPending {
+				at := time.UnixMilli(eligible.Int64).UTC()
+				item.FetchEligibleAt = &at
+			}
+		}
 		item.URL = s.GalleryURL(panda.GalleryRef{ID: item.GalleryID, Token: token})
 		result.Items = append(result.Items, item)
 	}
@@ -143,7 +167,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 }
 
 func catalogPageQuery(predicate string, args []any, categories []string, before bool) (string, []any) {
-	query := "SELECT g.gallery_id, g.posted FROM catalog_galleries g WHERE " + predicate
+	query := "SELECT g.gallery_id, g.ordered_at FROM catalog_galleries g WHERE " + predicate
 	pageArgs := args
 	if len(categories) > 1 {
 		// Merge ordered category scans so LIMIT can stop them before reading every match.
@@ -160,7 +184,7 @@ func catalogPageQuery(predicate string, args []any, categories []string, before 
 	if before {
 		order = "ASC"
 	}
-	return query + " ORDER BY posted " + order + ", gallery_id " + order + " LIMIT ?", pageArgs
+	return query + " ORDER BY ordered_at " + order + ", gallery_id " + order + " LIMIT ?", pageArgs
 }
 
 func catalogMatch(term gallerysearch.Term) (string, []any) {

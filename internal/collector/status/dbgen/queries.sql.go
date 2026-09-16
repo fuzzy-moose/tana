@@ -54,20 +54,27 @@ func (q *Queries) InventoryStatistics(ctx context.Context) (InventoryStatisticsR
 
 const metadataRetry = `-- name: MetadataRetry :one
 SELECT next_attempt_at, last_error,
-    (SELECT main_background_paused FROM metadata_collection_settings WHERE id = 1) AS main_background_paused
+    (SELECT main_background_paused FROM metadata_collection_settings WHERE id = 1) AS main_background_paused,
+    (SELECT feed_metadata_delay_hours FROM metadata_collection_settings WHERE id = 1) AS feed_metadata_delay_hours
 FROM metadata_retry WHERE id = 1
 `
 
 type MetadataRetryRow struct {
-	NextAttemptAt        int64
-	LastError            sql.NullString
-	MainBackgroundPaused int64
+	NextAttemptAt          int64
+	LastError              sql.NullString
+	MainBackgroundPaused   int64
+	FeedMetadataDelayHours int64
 }
 
 func (q *Queries) MetadataRetry(ctx context.Context) (MetadataRetryRow, error) {
 	row := q.db.QueryRowContext(ctx, metadataRetry)
 	var i MetadataRetryRow
-	err := row.Scan(&i.NextAttemptAt, &i.LastError, &i.MainBackgroundPaused)
+	err := row.Scan(
+		&i.NextAttemptAt,
+		&i.LastError,
+		&i.MainBackgroundPaused,
+		&i.FeedMetadataDelayHours,
+	)
 	return i, err
 }
 

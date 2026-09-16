@@ -215,3 +215,67 @@ func TestOpenBackfillsCategoryInExistingCatalogProjections(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenPreservesCatalogAndTagsWhenAddingProvisionalMetadata(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "collector.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatal(err)
+	}
+	files, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files[:26] {
+		ddl, err := migrations.ReadFile("migrations/" + file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(ddl)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO gallery_refs (gallery_id, token) VALUES (1, 'token1'), (2, 'token2');
+		INSERT INTO gallery_metadata (gallery_id, body, refreshed_at) VALUES (1, '{}', 1000);
+		INSERT INTO catalog_galleries
+			(gallery_id, title, title_lower, title_japanese_lower, thumbnail_url, page_count, posted, expunged, category)
+			VALUES (1, 'Retained title', 'retained title', '', 'thumbnail', 15, 500, 0, 'manga');
+		INSERT INTO catalog_tags (id, namespace, value, value_lower) VALUES (1, 'artist', 'Retained artist', 'retained artist');
+		INSERT INTO catalog_gallery_tags (gallery_id, tag_id) VALUES (1, 1);
+		INSERT INTO raw_feeds (id, captured_at, feed_url, body, processed_at) VALUES (1, 2000, 'feed', X'', 2100), (2, 1000, 'feed', X'', 1100);
+		INSERT INTO feed_gallery_refs (raw_feed_id, gallery_id) VALUES (1, 2), (2, 2);
+		PRAGMA user_version = 26;`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		migrated, _, err := Open(t.Context(), dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var title, tag, source, parent string
+		var pages, posted, ordered, base, indexes int64
+		err = migrated.QueryRow(`SELECT g.title, t.value, g.metadata_source, g.page_count, g.posted, g.ordered_at,
+			(SELECT feed_metadata_base_at FROM gallery_refs WHERE gallery_id = 2),
+			(SELECT "table" FROM pragma_foreign_key_list('catalog_galleries')),
+			(SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name IN ('catalog_posted', 'catalog_visible_posted', 'catalog_category_posted', 'catalog_tag_galleries'))
+			FROM catalog_galleries g JOIN catalog_gallery_tags gt ON gt.gallery_id = g.gallery_id
+			JOIN catalog_tags t ON t.id = gt.tag_id WHERE g.gallery_id = 1`).Scan(&title, &tag, &source, &pages, &posted, &ordered, &base, &parent, &indexes)
+		if err != nil || title != "Retained title" || tag != "Retained artist" || source != "collected" || pages != 15 || posted != 500 || ordered != 500 || base != 1000 || parent != "gallery_refs" || indexes != 4 {
+			t.Fatalf("migrated catalog: title=%q tag=%q source=%q pages=%d posted=%d ordered=%d base=%d parent=%q indexes=%d: %v", title, tag, source, pages, posted, ordered, base, parent, indexes, err)
+		}
+		var violations int
+		if err := migrated.QueryRow("SELECT count(*) FROM pragma_foreign_key_check").Scan(&violations); err != nil || violations != 0 {
+			t.Fatalf("foreign key violations=%d: %v", violations, err)
+		}
+		if err := migrated.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

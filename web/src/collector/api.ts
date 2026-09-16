@@ -60,12 +60,18 @@ export interface InventoryStatus {
 }
 
 export interface MetadataStatus {
+  feed_metadata_delay_hours: number
   main_background_paused: boolean
   metadata_errors: { gallery_id: number, error: string, at?: string }[]
   metadata_last_error?: string
   metadata_retry_at?: string
   upstream_cooldown_until?: string
 }
+
+export const saveFeedMetadataDelay = (hours: number, signal: AbortSignal) => request<{ feed_metadata_delay_hours: number }>('/api/collector/metadata/settings', {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ feed_metadata_delay_hours: hours }), signal,
+}, collectorMessages)
 
 export interface SitemapStatus {
   state: 'idle' | 'running' | 'completed' | 'incomplete' | 'cancelled'
@@ -108,6 +114,7 @@ export const collectorMessages: Record<string, string> = {
   collector_invalid_response: 'The collector returned an unexpected status response.',
   collector_unavailable: 'The request could not be confirmed. Check collector status and try again.',
   invalid_download_categories: 'Select distinct favorite categories from 0 to 9.',
+  invalid_metadata_settings: 'Enter a whole number of hours from 0 to 8760.',
   sitemap_state_conflict: 'Sitemap collection changed state. Refresh its status and try again.',
 }
 

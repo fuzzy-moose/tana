@@ -18,7 +18,8 @@ FROM counts;
 
 -- name: MetadataRetry :one
 SELECT next_attempt_at, last_error,
-    (SELECT main_background_paused FROM metadata_collection_settings WHERE id = 1) AS main_background_paused
+    (SELECT main_background_paused FROM metadata_collection_settings WHERE id = 1) AS main_background_paused,
+    (SELECT feed_metadata_delay_hours FROM metadata_collection_settings WHERE id = 1) AS feed_metadata_delay_hours
 FROM metadata_retry WHERE id = 1;
 
 -- name: RecentMetadataErrors :many

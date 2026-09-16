@@ -1,6 +1,8 @@
 -- name: PendingRefs :many
 SELECT gallery_id, token FROM gallery_refs WHERE metadata_attempted_at IS NULL
-ORDER BY metadata_priority, gallery_id LIMIT ?;
+AND (feed_metadata_base_at IS NULL OR feed_metadata_base_at <= sqlc.arg(now) -
+    (SELECT feed_metadata_delay_hours * 3600000 FROM metadata_collection_settings WHERE id = 1))
+ORDER BY metadata_priority, gallery_id LIMIT sqlc.arg(batch_limit);
 
 -- name: SaveGalleryRef :exec
 INSERT INTO gallery_refs (gallery_id, token) VALUES (?, ?)
@@ -93,3 +95,6 @@ DELETE FROM metadata_fetch_jobs WHERE completed_at <= ?;
 DELETE FROM metadata_fetches WHERE status != 'pending' AND NOT EXISTS (
     SELECT 1 FROM metadata_fetch_job_entries e WHERE e.fetch_id = metadata_fetches.id
 );
+
+-- name: SetFeedMetadataDelay :exec
+UPDATE metadata_collection_settings SET feed_metadata_delay_hours = ? WHERE id = 1;

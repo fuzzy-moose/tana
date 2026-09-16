@@ -3,6 +3,7 @@ import { getFavoritesStatus, getInventoryStatus, getMetadataStatus } from './api
 import { useCollectorResource } from './useCollectorResource'
 import ResourceStatus from './ResourceStatus'
 import MetadataCollection from './MetadataCollection'
+import FeedMetadataDelay from './FeedMetadataDelay'
 
 function date(value: string) { return new Date(value).toLocaleString() }
 
@@ -15,10 +16,12 @@ export default function Overview({ available, refreshKey }: { available: boolean
 
   return <>
     <Flex direction="column" gap="4" asChild><section aria-labelledby="metadata-collection-title">
-      <Heading as="h2" size="4" id="metadata-collection-title">Main metadata collection</Heading>
+      <Heading as="h2" size="4" id="metadata-collection-title">Metadata collection</Heading>
       <ResourceStatus name="Metadata collection status" loaded={!!diagnostics} available={available} {...metadata} />
       {diagnostics && <MetadataCollection paused={diagnostics.main_background_paused} available={available && !metadata.stale}
         onChanged={(paused) => metadata.update({ ...diagnostics, main_background_paused: paused })} />}
+      {diagnostics && <FeedMetadataDelay hours={diagnostics.feed_metadata_delay_hours} available={available && !metadata.stale}
+        onSaved={(hours) => metadata.update({ ...diagnostics, feed_metadata_delay_hours: hours })} />}
     </section></Flex>
     <Flex direction="column" gap="4" asChild><section aria-labelledby="inventory-title">
       <Flex align="center" justify="between" wrap="wrap" gap="3"><Heading as="h2" size="4" id="inventory-title">Collector inventory</Heading><span>Refreshes every 30 seconds</span></Flex>
