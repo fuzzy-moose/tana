@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import GalleryDetail from './GalleryDetail'
@@ -74,7 +74,7 @@ test.each([200, 404, 503])('looks up an optional Panda link without delaying gal
   await screen.findByRole('heading', { name: 'Manga' })
   expect(screen.getByRole('link', { name: 'Read gallery' })).toBeTruthy()
   expect(screen.queryByRole('link', { name: 'Open on Panda' })).toBeNull()
-  expect(fetchMock).toHaveBeenCalledWith('/api/collector/catalog/lookup', expect.objectContaining({ method: 'POST', body: '{"gid":42}' }))
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/collector/catalog/lookup', expect.objectContaining({ method: 'POST', body: '{"gid":42}' })))
   await act(async () => finishLookup(Response.json(status === 200
     ? { gid: 42, token: '0123456789', url: 'https://panda.test/g/42/0123456789/' }
     : { error: status === 404 ? 'gallery_not_found' : 'collector_unavailable' }, { status })))
