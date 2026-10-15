@@ -77,6 +77,18 @@ func (s *Service) enqueue(categories []int, full bool) error {
 	return nil
 }
 
+// ClearBanRetries resumes syncs waiting only for an authenticated ban.
+func (s *Service) ClearBanRetries(ctx context.Context) error {
+	if err := s.store.q.ClearBanRetries(ctx, panda.BanErrorText); err != nil {
+		return err
+	}
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
 func (s *Service) wait(ctx context.Context, delay time.Duration) {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()

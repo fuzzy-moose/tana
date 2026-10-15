@@ -27,6 +27,32 @@ func (s *Service) banUntil(ctx context.Context, id, endpoint string) (int64, err
 	return max(until, s.observed["channel:"+id], s.observed["endpoint:"+endpoint]), err
 }
 
+// ResetBans lifts every channel and endpoint ban and the retry waits they caused.
+func (s *Service) ResetBans(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, statement := range []string{
+		`UPDATE metadata_proxy_bans SET until_at = 0`,
+		`UPDATE metadata_proxy_channels SET ban_until = 0`,
+		`UPDATE metadata_proxy_channels SET failures = 0, retry_at = 0, last_error = '' WHERE last_error = 'panda_banned'`,
+	} {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	clear(s.observed)
+	s.notify()
+	return nil
+}
+
 func (b *banState) Extend(ctx context.Context, until time.Time) error {
 	s := b.service
 	s.mu.Lock()

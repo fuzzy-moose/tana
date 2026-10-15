@@ -1,7 +1,3 @@
----
-status: accepted
----
-
 # Preserve favorite download history independently of downloads
 
 The first manually started favorites sync establishes a baseline across all categories, including on an existing installation, to avoid downloading an existing backlog. All categories must finish before automatic downloads begin; discoveries during initialization and its retries belong to the baseline. The collector supports one fixed Panda account, with no account switching or separate account baselines.

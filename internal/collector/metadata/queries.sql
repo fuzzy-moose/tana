@@ -98,3 +98,7 @@ DELETE FROM metadata_fetches WHERE status != 'pending' AND NOT EXISTS (
 
 -- name: SetFeedMetadataDelay :exec
 UPDATE metadata_collection_settings SET feed_metadata_delay_hours = ? WHERE id = 1;
+
+-- name: ClearBanRetry :exec
+UPDATE metadata_retry SET failures = 0, next_attempt_at = 0
+WHERE id = 1 AND instr(last_error, sqlc.arg(ban_error)) > 0;

@@ -4,6 +4,7 @@ import { useCollectorResource } from './useCollectorResource'
 import ResourceStatus from './ResourceStatus'
 import MetadataCollection from './MetadataCollection'
 import FeedMetadataDelay from './FeedMetadataDelay'
+import BanReset from './BanReset'
 
 function date(value: string) { return new Date(value).toLocaleString() }
 
@@ -42,8 +43,12 @@ export default function Overview({ available, refreshKey }: { available: boolean
       {favorites.data && <Text as="p" size="2">{favorites.data.authenticated_cooldown_until
         ? `Authenticated Panda requests (favorites and archive preparation) paused until ${date(favorites.data.authenticated_cooldown_until)}.`
         : 'No active authenticated Panda cooldown.'}</Text>}
+      {favorites.data?.authenticated_cooldown_until && <BanReset group="authenticated" label="Reset authenticated cooldown"
+        available={available && !favorites.stale} onReset={favorites.refresh} />}
       {diagnostics && <>
         <Text as="p" size="2">{diagnostics.upstream_cooldown_until ? `Main unauthenticated Panda requests paused until ${date(diagnostics.upstream_cooldown_until)}.` : 'No active main unauthenticated Panda cooldown.'}</Text>
+        {diagnostics.upstream_cooldown_until && <BanReset group="main" label="Reset main cooldown"
+          available={available && !metadata.stale} onReset={metadata.refresh} />}
         {diagnostics.metadata_retry_at && <Text as="p" size="2">Metadata retry after {date(diagnostics.metadata_retry_at)}.</Text>}
         {diagnostics.metadata_last_error && <Text as="p" size="2" color="red">Metadata collection: {diagnostics.metadata_last_error}</Text>}
         {diagnostics.metadata_errors.length > 0 && <><Heading as="h3" size="3">Recent metadata errors</Heading><Flex direction="column" gap="2" asChild><ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{diagnostics.metadata_errors.map((item) => <Flex direction="column" gap="1" key={item.gallery_id} asChild><li><strong>Gallery {item.gallery_id}</strong><span>{item.error}</span><Text size="1" color="gray">{item.at ? date(item.at) : '—'}</Text></li></Flex>)}</ul></Flex></>}

@@ -132,6 +132,15 @@ func (s *Service) signal() {
 	}
 }
 
+// ClearBanRetries resumes queued jobs waiting only for an authenticated ban.
+func (s *Service) ClearBanRetries(ctx context.Context) error {
+	if err := s.q.ClearBanRetries(ctx); err != nil {
+		return err
+	}
+	s.signal()
+	return nil
+}
+
 func (s *Service) path(id int64) string {
 	return filepath.Join(s.dir, fmt.Sprintf("[%d].zip", id))
 }

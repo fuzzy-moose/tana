@@ -34,6 +34,14 @@ func (s *State) Until(ctx context.Context) (time.Time, error) {
 	return until, err
 }
 
+// Reset lifts the group's ban, including one observed but not yet persisted.
+func (s *State) Reset(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.observed = time.Time{}
+	return s.q.ResetBan(ctx, s.id)
+}
+
 func (s *State) Extend(ctx context.Context, until time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

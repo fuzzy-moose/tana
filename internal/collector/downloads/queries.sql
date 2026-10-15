@@ -35,3 +35,6 @@ UPDATE panda_download_storage SET reason = ?, archive_bytes = ?, gallery_id = ? 
 
 -- name: SetDownloadExpectedSize :exec
 UPDATE panda_downloads SET expected_size_bytes = ?, updated_at = ? WHERE gallery_id = ?;
+
+-- name: ClearBanRetries :exec
+UPDATE panda_downloads SET retry_at = 0 WHERE state = 'queued' AND last_error = 'panda_banned';

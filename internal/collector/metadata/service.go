@@ -62,6 +62,18 @@ func (s *Service) SetMainBackgroundPaused(ctx context.Context, paused bool) erro
 	return nil
 }
 
+// ClearBanRetry ends the main worker's cooldown when a ban caused it.
+func (s *Service) ClearBanRetry(ctx context.Context) error {
+	if err := s.store.q.ClearBanRetry(ctx, panda.BanErrorText); err != nil {
+		return err
+	}
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
 // Get returns retained metadata, or sql.ErrNoRows when none has been collected.
 func (s *Service) Get(ctx context.Context, galleryID int64) (collectorapi.CollectedMetadata, error) {
 	row, err := s.store.q.GetMetadata(ctx, galleryID)

@@ -84,6 +84,15 @@ func (q *Queries) CategoryStatistics(ctx context.Context, arg CategoryStatistics
 	return items, nil
 }
 
+const clearBanRetries = `-- name: ClearBanRetries :exec
+UPDATE favorite_syncs SET retry_at = 0 WHERE state = 'running' AND instr(last_error, ?1) > 0
+`
+
+func (q *Queries) ClearBanRetries(ctx context.Context, banError string) error {
+	_, err := q.db.ExecContext(ctx, clearBanRetries, banError)
+	return err
+}
+
 const clearDownloadCategories = `-- name: ClearDownloadCategories :exec
 DELETE FROM favorite_download_categories
 `

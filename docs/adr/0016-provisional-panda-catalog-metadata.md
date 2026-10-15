@@ -1,7 +1,3 @@
----
-status: accepted
----
-
 # Browse provisional Panda metadata while upstream changes settle
 
 Newly published Panda galleries can change before their metadata settles. Feed descriptions make these galleries browsable during a configurable collection delay, trading initial completeness for earlier catalog availability and a more settled collected snapshot. Provisional metadata remains separate from collected metadata because applying a feed snapshot to local galleries would otherwise complete enrichment prematurely.

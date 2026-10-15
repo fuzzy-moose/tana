@@ -53,3 +53,10 @@ ON CONFLICT (url) DO UPDATE SET etag = excluded.etag, last_modified = excluded.l
 -- name: SaveGalleryRef :execrows
 INSERT INTO gallery_refs (gallery_id, token, metadata_priority) VALUES (?, ?, 1)
 ON CONFLICT (gallery_id) DO NOTHING;
+
+-- name: ClearChildBanRetries :exec
+UPDATE sitemap_children SET retry_at = 0 WHERE state = 'pending' AND last_error = 'panda_banned';
+
+-- name: ClearRunBanRetry :exec
+UPDATE sitemap_run SET retry_at = 0, next_request_at = min(next_request_at, CAST(sqlc.arg(next_request_at) AS INTEGER))
+WHERE id = 1 AND last_error = 'panda_banned';

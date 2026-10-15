@@ -91,6 +91,30 @@ test('Collector overview pauses and resumes main background metadata collection'
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/metadata/resume', expect.objectContaining({ method: 'POST', body: '{}' }))
 })
 
+test('Collector overview resets the main Panda cooldown', async () => {
+  let banned = true
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    const path = String(input)
+    if (init?.method === 'POST' && path === '/api/collector/bans/main/reset') {
+      banned = false
+      return new Response(null, { status: 204 })
+    }
+    if (path === '/api/collector/metadata/status') return Response.json({
+      main_background_paused: false, feed_metadata_delay_hours: 12, metadata_errors: [],
+      ...(banned ? { upstream_cooldown_until: '2099-01-01T00:00:00Z' } : {}),
+    })
+    return statusResponse(input)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  window.history.replaceState(null, '', '/#/collector')
+  const user = userEvent.setup()
+  render(<App />)
+  await user.click(await screen.findByRole('button', { name: 'Reset main cooldown' }))
+  expect(await screen.findByText('No active main unauthenticated Panda cooldown.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Reset main cooldown' })).toBeNull()
+  expect(fetchMock).toHaveBeenCalledWith('/api/collector/bans/main/reset', expect.objectContaining({ method: 'POST', body: '{}' }))
+})
+
 test('saves the shared feed delay, including zero, across overview visits', async () => {
   let hours = 12
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {

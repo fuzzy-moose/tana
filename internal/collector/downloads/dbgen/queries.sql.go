@@ -9,6 +9,15 @@ import (
 	"context"
 )
 
+const clearBanRetries = `-- name: ClearBanRetries :exec
+UPDATE panda_downloads SET retry_at = 0 WHERE state = 'queued' AND last_error = 'panda_banned'
+`
+
+func (q *Queries) ClearBanRetries(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearBanRetries)
+	return err
+}
+
 const countDownloadsByState = `-- name: CountDownloadsByState :many
 SELECT state, count(*) AS count FROM panda_downloads GROUP BY state
 `

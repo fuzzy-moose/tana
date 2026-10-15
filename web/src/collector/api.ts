@@ -131,6 +131,15 @@ export const setMainBackgroundPaused = (paused: boolean, signal: AbortSignal) =>
   signal,
 }, collectorMessages)
 
+export type BanGroup = 'main' | 'authenticated' | 'proxies'
+
+export const resetBan = (group: BanGroup, signal: AbortSignal) => request<void>(`/api/collector/bans/${group}/reset`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: '{}',
+  signal,
+}, collectorMessages)
+
 export const syncFavorites = (category: string, full: boolean, signal: AbortSignal) => request('/api/collector/favorites/' + category + '/sync', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },

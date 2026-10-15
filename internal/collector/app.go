@@ -33,6 +33,7 @@ type App struct {
 	ReferenceImports *metadata.ReferenceImports
 	Status           *status.Service
 	Ban              *pandaban.State
+	Bans             *Bans
 	Catalog          *catalog.Service
 	Feeds            *feed.Service
 	APIToken         string
@@ -133,6 +134,8 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		ReferenceImports: imports,
 		Status:           status.New(db, favoritesService, ban, authenticatedBan),
 		Ban:              ban,
+		Bans: &Bans{main: ban, authenticated: authenticatedBan, metadata: metadataService, sitemap: sitemapService,
+			proxies: proxies, favorites: favoritesService, downloads: downloadService},
 	}, nil
 }
 

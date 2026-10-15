@@ -77,12 +77,31 @@ func (q *Queries) ChildCounts(ctx context.Context) (ChildCountsRow, error) {
 	return i, err
 }
 
+const clearChildBanRetries = `-- name: ClearChildBanRetries :exec
+UPDATE sitemap_children SET retry_at = 0 WHERE state = 'pending' AND last_error = 'panda_banned'
+`
+
+func (q *Queries) ClearChildBanRetries(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearChildBanRetries)
+	return err
+}
+
 const clearChildren = `-- name: ClearChildren :exec
 DELETE FROM sitemap_children
 `
 
 func (q *Queries) ClearChildren(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, clearChildren)
+	return err
+}
+
+const clearRunBanRetry = `-- name: ClearRunBanRetry :exec
+UPDATE sitemap_run SET retry_at = 0, next_request_at = min(next_request_at, CAST(?1 AS INTEGER))
+WHERE id = 1 AND last_error = 'panda_banned'
+`
+
+func (q *Queries) ClearRunBanRetry(ctx context.Context, nextRequestAt int64) error {
+	_, err := q.db.ExecContext(ctx, clearRunBanRetry, nextRequestAt)
 	return err
 }
 

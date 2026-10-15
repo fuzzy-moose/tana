@@ -25,6 +25,16 @@ func (q *Queries) AttachFetch(ctx context.Context, arg AttachFetchParams) error 
 	return err
 }
 
+const clearBanRetry = `-- name: ClearBanRetry :exec
+UPDATE metadata_retry SET failures = 0, next_attempt_at = 0
+WHERE id = 1 AND instr(last_error, ?1) > 0
+`
+
+func (q *Queries) ClearBanRetry(ctx context.Context, banError string) error {
+	_, err := q.db.ExecContext(ctx, clearBanRetry, banError)
+	return err
+}
+
 const completeFetch = `-- name: CompleteFetch :exec
 UPDATE metadata_fetches SET status = ?, error = ?, refreshed_at = ?
 WHERE gallery_id = ? AND token = ? AND status = 'pending'

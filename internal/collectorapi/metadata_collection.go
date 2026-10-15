@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -19,6 +20,21 @@ func (c *Client) SetMainBackgroundPaused(ctx context.Context, paused bool) error
 		action = "pause"
 	}
 	response, err := c.controlRequest(ctx, http.MethodPost, "/api/metadata/"+action, strings.NewReader(`{}`))
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return &HTTPError{StatusCode: response.StatusCode}
+	}
+	return nil
+}
+
+// ResetBan lifts the "main", "authenticated", or "proxies" request group's ban.
+func (c *Client) ResetBan(ctx context.Context, group string) error {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	response, err := c.controlRequest(ctx, http.MethodPost, "/api/bans/"+url.PathEscape(group)+"/reset", strings.NewReader(`{}`))
 	if err != nil {
 		return err
 	}

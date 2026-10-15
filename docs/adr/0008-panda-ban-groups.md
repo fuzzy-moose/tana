@@ -1,7 +1,3 @@
----
-status: accepted
----
-
 # Persist Panda bans by request group
 
 Requests within a Panda ban group share a persisted deadline so a ban prevents further requests through that group across restarts. Main unauthenticated metadata requests and sitemap collection share one ban; authenticated favorites and archive preparation share another, along with their session and request pacing. Each metadata proxy channel owns an independent ban so separate routes can pause and progress independently. Group isolation does not assume independent upstream rate allowances.

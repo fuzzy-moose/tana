@@ -33,3 +33,12 @@ func (q *Queries) ExtendBan(ctx context.Context, arg ExtendBanParams) error {
 	_, err := q.db.ExecContext(ctx, extendBan, arg.UntilAt, arg.ID)
 	return err
 }
+
+const resetBan = `-- name: ResetBan :exec
+UPDATE panda_ban SET until_at = 0 WHERE id = ?
+`
+
+func (q *Queries) ResetBan(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, resetBan, id)
+	return err
+}

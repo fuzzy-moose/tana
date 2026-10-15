@@ -1,7 +1,3 @@
----
-status: accepted
----
-
 # Consume collector archives after library delivery
 
 Explicit delivery into a Tana library transfers responsibility for the archive to Tana: remove the collector copy only after the destination file is safely saved and its source imported. This makes library delivery responsible for collector cleanup while preserving a recoverable collector copy when saving or importing fails; an import retry reuses the saved local file.

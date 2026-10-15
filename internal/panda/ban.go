@@ -16,8 +16,12 @@ import (
 
 type BanError struct{ Until time.Time }
 
+// BanErrorText begins every BanError message, including wrapped ones that
+// workers persist as their last error.
+const BanErrorText = "panda: temporarily banned until "
+
 func (e *BanError) Error() string {
-	return "panda: temporarily banned until " + e.Until.UTC().Format(time.RFC3339)
+	return BanErrorText + e.Until.UTC().Format(time.RFC3339)
 }
 
 var htmlTag = regexp.MustCompile(`(?i)<\s*(?:[a-z][a-z0-9]*\b|!doctype\b|!--|/)`)

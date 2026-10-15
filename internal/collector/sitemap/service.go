@@ -87,6 +87,23 @@ func (s *Service) signal() {
 	}
 }
 
+// ClearBanRetries resumes requests waiting only for the main ban while
+// keeping one request interval after the response that reported it.
+func (s *Service) ClearBanRetries(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := s.transaction(ctx, func(q *dbgen.Queries) error {
+		if err := q.ClearChildBanRetries(ctx); err != nil {
+			return err
+		}
+		return q.ClearRunBanRetry(ctx, time.Now().Add(s.requestInterval).UnixMilli())
+	})
+	if err == nil {
+		s.signal()
+	}
+	return err
+}
+
 func (s *Service) Start(ctx context.Context, force bool) (collectorapi.SitemapStatus, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

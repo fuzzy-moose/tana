@@ -1,7 +1,3 @@
----
-status: accepted
----
-
 # Explicit cleanup of superseded sources
 
 Cleanup may permanently delete local archives when collected Panda parent references prove that a newer source is present in a registered library; favorites and collector downloads do not establish local possession. Filename-derived Panda IDs are accepted for this explicit, reviewable cleanup, with ambiguous matches skipped, because maintaining a separate verified association is outside the chosen scope. The chain from replacement to superseded source must be complete; the superseded gallery's own metadata and history before it need not be known, and intermediate versions need not have local sources.

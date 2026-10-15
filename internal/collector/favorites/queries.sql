@@ -141,3 +141,6 @@ INSERT INTO favorite_observations (gallery_id) SELECT DISTINCT gallery_id FROM f
 UPDATE favorite_syncs SET state = 'queued', finished_at = 0, retry_at = 0, failures = 0, restarted = 0
 WHERE state = 'failed' AND (SELECT baseline_state FROM favorite_download_settings WHERE id = 1) = 'collecting'
     AND category_id IN (SELECT id FROM favorite_categories WHERE host = ? AND account_key = ?);
+
+-- name: ClearBanRetries :exec
+UPDATE favorite_syncs SET retry_at = 0 WHERE state = 'running' AND instr(last_error, sqlc.arg(ban_error)) > 0;

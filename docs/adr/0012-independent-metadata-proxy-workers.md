@@ -1,7 +1,3 @@
----
-status: accepted
----
-
 # Isolate metadata proxy workers and share collection work
 
 Optional Panda metadata proxy channels use independent metadata limiters and failure cooldowns so collection through separate proxies can pause and progress independently. Ban boundaries and persistence follow [ADR 0008](0008-panda-ban-groups.md). A proxy failure leaves gallery work available to healthy workers because it does not establish gallery unavailability.

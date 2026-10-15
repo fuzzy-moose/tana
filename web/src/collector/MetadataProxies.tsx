@@ -4,6 +4,7 @@ import { channelInput, deleteMetadataProxy, getMetadataProxies, importMetadataPr
 import type { MetadataProxyChannel, MetadataProxyImportInput, MetadataProxyImportResult, MetadataProxyInput, MetadataProxyStatus } from './metadataProxies'
 import { useCollectorResource } from './useCollectorResource'
 import ResourceStatus from './ResourceStatus'
+import BanReset from './BanReset'
 
 interface Draft extends MetadataProxyInput {
   id: string
@@ -104,6 +105,8 @@ export default function MetadataProxies({ available, refreshKey }: { available: 
       </label></Flex>
       <Text as="p" size="1" color="gray">Includes idle and disabled channels. New channels get 5 minutes to succeed. Active batches finish before removal.</Text>
       <Text as="p" size="1" color="gray">Up to 25 galleries per batch · one batch per channel every {resource.data.rate_interval_ms / 1000} seconds.</Text>
+      {resource.data.channels.some((channel) => channel.ban_until) && <BanReset group="proxies" label="Reset all proxy cooldowns"
+        available={!disabled} onReset={resource.refresh} />}
     </>}
     {notice && <Text as="p" size="2" color="green" role="status">{notice}</Text>}
     {error && <Text as="p" size="2" color="red" role="alert">{error}</Text>}
