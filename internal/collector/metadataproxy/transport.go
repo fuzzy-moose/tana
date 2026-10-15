@@ -35,7 +35,7 @@ func (s *Service) client(ch channel, limiter *rate.Limiter) (*panda.Client, *htt
 	ban := &banState{service: s, id: ch.ID, endpoint: ch.Endpoint}
 	client, err := panda.NewClient(s.config.APIURL, &http.Client{
 		Timeout:   time.Minute,
-		Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, verified)),
+		Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, verified, s.logger.With("channel_id", ch.ID))),
 	})
 	return client, transport, err
 }

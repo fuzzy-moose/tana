@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -20,15 +21,19 @@ func (e *BanError) Error() string {
 }
 
 var htmlTag = regexp.MustCompile(`(?i)<\s*(?:[a-z][a-z0-9]*\b|!doctype\b|!--|/)`)
+var ipWord = regexp.MustCompile(`(?i)\bip\b`)
 var banDuration = regexp.MustCompile(`(?i)\b(\d+)\s*(days?|hours?|minutes?|seconds?)\b`)
 
 // DetectBan examines text, not Content-Type: Panda may serve a text ban as HTML
-// or with a successful HTTP status. Never interpret gallery HTML as ban text.
+// or with a successful HTTP status. Never interpret gallery HTML or JSON as ban
+// text: titles, tags, and torrent names routinely contain ban keywords.
 func DetectBan(body []byte, at time.Time) *BanError {
+	if trimmed := bytes.TrimSpace(body); len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+		return nil
+	}
 	text := strings.ToLower(string(body))
-	if htmlTag.Match(body) || !strings.Contains(text, "ban") ||
-		!(strings.Contains(text, "ip") || strings.Contains(text, "temporar")) ||
-		!(strings.Contains(text, "excessive") || strings.Contains(text, "pageload") || strings.Contains(text, "expires")) {
+	if htmlTag.Match(body) || !ipWord.MatchString(text) || !strings.Contains(text, "banned") ||
+		!(strings.Contains(text, "excessive") || strings.Contains(text, "ban expires")) {
 		return nil
 	}
 	delay := time.Duration(0)
@@ -72,16 +77,21 @@ type BanState interface {
 
 // BanTransport belongs inside the rate limiter so a ban discovered while
 // waiting for a token is checked immediately before sending the request.
-func BanTransport(state BanState, transport http.RoundTripper) http.RoundTripper {
+// A nil logger discards ban reports.
+func BanTransport(state BanState, transport http.RoundTripper, logger *slog.Logger) http.RoundTripper {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	return &banTransport{state: state, transport: transport}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	return &banTransport{state: state, transport: transport, logger: logger}
 }
 
 type banTransport struct {
 	state     BanState
 	transport http.RoundTripper
+	logger    *slog.Logger
 }
 
 func (t *banTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -107,6 +117,9 @@ func (t *banTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	if ban := DetectBan(prefix, time.Now()); ban != nil {
 		resp.Body.Close()
+		// The text shows why a response counted as a ban, e.g. a false detection.
+		t.logger.Warn("panda_ban_detected", "host", req.URL.Host, "path", req.URL.Path,
+			"until", ban.Until.UTC(), "text", banExcerpt(prefix))
 		// A canceled request must still record an observed ban before shutdown.
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(req.Context()), 5*time.Second)
 		defer cancel()
@@ -117,6 +130,17 @@ func (t *banTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	resp.Body = &prefixedBody{Reader: io.MultiReader(bytes.NewReader(prefix), resp.Body), Closer: resp.Body}
 	return resp, nil
+}
+
+var excerptIP = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}\b|\b[0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{0,4}){2,7}\b`)
+
+// banExcerpt keeps the start of a ban text without the client's IP address.
+func banExcerpt(body []byte) string {
+	text := strings.Join(strings.Fields(string(body)), " ")
+	if len(text) > 200 {
+		text = strings.ToValidUTF8(text[:200], "")
+	}
+	return excerptIP.ReplaceAllString(text, "[ip]")
 }
 
 type prefixedBody struct {

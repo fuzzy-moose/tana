@@ -58,7 +58,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 	ban := pandaban.New(db)
 	authenticatedBan := pandaban.NewAuthenticated(db)
 	client, err := panda.NewClient(cfg.Panda.APIURL, &http.Client{
-		Timeout: time.Minute, Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, nil)),
+		Timeout: time.Minute, Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, nil, logger)),
 	})
 	if err != nil {
 		db.Close()
@@ -70,7 +70,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	authClient, err := panda.NewAuthenticatedClient(cfg.AuthenticatedPanda, &http.Client{
-		Timeout: time.Minute, Transport: panda.RateLimitedTransport(authLimiter, panda.BanTransport(authenticatedBan, nil)),
+		Timeout: time.Minute, Transport: panda.RateLimitedTransport(authLimiter, panda.BanTransport(authenticatedBan, nil, logger)),
 	})
 	if err != nil {
 		db.Close()
@@ -92,7 +92,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	sitemapService, err := sitemap.New(ctx, db, cfg.Sitemap, &http.Client{
 		// Redirects count as requests too; index children currently redirect hosts.
-		Timeout: 5 * time.Minute, Transport: panda.RateLimitedTransport(sitemapLimiter, panda.BanTransport(ban, nil)),
+		Timeout: 5 * time.Minute, Transport: panda.RateLimitedTransport(sitemapLimiter, panda.BanTransport(ban, nil, logger)),
 	}, logger)
 	if err != nil {
 		favoritesService.Close()

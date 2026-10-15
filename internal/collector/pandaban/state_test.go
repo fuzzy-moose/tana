@@ -40,11 +40,11 @@ func TestBanScopesAreIndependentAndSurviveReopen(t *testing.T) {
 					ArchiverURL: upstream.URL + "/archive", FavoritesURL: upstream.URL + "/favorites",
 					Cookies: map[string]string{"ipb_member_id": "42", "ipb_pass_hash": "hash", "sp": "3"},
 				}
-				favorites, err := panda.NewAuthenticatedClient(cfg, &http.Client{Transport: panda.BanTransport(authenticated, nil)})
+				favorites, err := panda.NewAuthenticatedClient(cfg, &http.Client{Transport: panda.BanTransport(authenticated, nil, nil)})
 				if err != nil {
 					t.Fatal(err)
 				}
-				metadata, err := panda.NewClient(upstream.URL+"/metadata", &http.Client{Transport: panda.BanTransport(main, nil)})
+				metadata, err := panda.NewClient(upstream.URL+"/metadata", &http.Client{Transport: panda.BanTransport(main, nil, nil)})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -106,14 +106,14 @@ func TestBanScopesAreIndependentAndSurviveReopen(t *testing.T) {
 						t.Fatalf("ban not retained: %v want %v, %v", restored, want, err)
 					}
 				}
-				metadata, err = panda.NewClient(upstream.URL+"/metadata", &http.Client{Transport: panda.BanTransport(main, nil)})
+				metadata, err = panda.NewClient(upstream.URL+"/metadata", &http.Client{Transport: panda.BanTransport(main, nil, nil)})
 				if err != nil {
 					t.Fatal(err)
 				}
 				// A new host, account, and cookies still share the authenticated ban.
 				cfg.FavoritesURL, cfg.ArchiverURL = "https://changed.test/favorites", "https://changed.test/archive"
 				cfg.AccountKey, cfg.Cookies = "99", map[string]string{"ipb_member_id": "99", "ipb_pass_hash": "changed"}
-				favorites, err = panda.NewAuthenticatedClient(cfg, &http.Client{Transport: panda.BanTransport(authenticated, nil)})
+				favorites, err = panda.NewAuthenticatedClient(cfg, &http.Client{Transport: panda.BanTransport(authenticated, nil, nil)})
 				if err != nil {
 					t.Fatal(err)
 				}
