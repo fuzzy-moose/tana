@@ -206,16 +206,16 @@ test('saves the shared feed delay, including zero, across overview visits', asyn
   window.history.replaceState(null, '', '/#/collector')
   const user = userEvent.setup()
   render(<App />)
-  const input = await screen.findByRole('spinbutton', { name: 'Feed metadata delay (hours)' }) as HTMLInputElement
+  const input = await screen.findByRole('spinbutton', { name: 'Feed metadata delay' }) as HTMLInputElement
   expect(input.value).toBe('12')
   await user.clear(input)
   await user.type(input, '0')
-  await user.click(screen.getByRole('button', { name: 'Save feed metadata delay' }))
+  await user.click(screen.getByRole('button', { name: 'Save' }))
   expect(await screen.findByText('Feed metadata delay saved.')).toBeTruthy()
   expect(fetchMock).toHaveBeenCalledWith('/api/collector/metadata/settings', expect.objectContaining({ method: 'PUT', body: '{"feed_metadata_delay_hours":0}' }))
   cleanup()
   render(<App />)
-  expect((await screen.findByRole('spinbutton', { name: 'Feed metadata delay (hours)' }) as HTMLInputElement).value).toBe('0')
+  expect((await screen.findByRole('spinbutton', { name: 'Feed metadata delay' }) as HTMLInputElement).value).toBe('0')
 })
 
 test('inventory failure does not prevent navigating to downloads or managing a download', async () => {

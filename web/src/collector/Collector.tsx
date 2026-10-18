@@ -49,7 +49,7 @@ export default function Collector({ page }: { page: CollectorPage }) {
 
   return <HeaderAsideContext.Provider value={setAside}><section aria-labelledby="collector-title" className="collector-shell">
     <div className="collector-nav-region" data-expanded={expanded}>
-      <Box display={{ initial: 'block', sm: 'none' }}>
+      <Box display={{ initial: 'block', xs: 'none' }}>
         <Button variant="soft" color="gray" className="collector-nav-toggle" aria-expanded={expanded} aria-controls="collector-sidebar"
           onClick={() => setExpandedFor(expanded ? null : page)}>
           <span>Collector · {current.label}</span><Chevron />

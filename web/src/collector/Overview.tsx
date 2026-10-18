@@ -16,7 +16,7 @@ import './Overview.css'
 import { formatDate } from './formatDate'
 
 function ServiceCard({ title, value, tone, detail, children }: { title: string, value: string, tone?: Tone, detail?: string, children?: ReactNode }) {
-  return <Card className={tone === 'amber' ? 'overview-card-amber' : undefined}><Flex direction="column" gap="2">
+  return <Card size="2" className={tone === 'amber' ? 'collector-card-amber' : undefined}><Flex direction="column" gap="2">
     <Text size="1" color="gray">{title}</Text>
     <Flex align="center" gap="2">
       {tone && <span className="overview-dot" aria-hidden style={{ color: `var(--${tone}-9)` }} />}

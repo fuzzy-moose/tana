@@ -100,7 +100,7 @@ export default function MetadataProxies({ available, refreshKey, interval, refre
     {error && !dialogOpen && <Text as="p" size="2" color="red" role="alert">{error}</Text>}
     {data && <>
       <div className="metadata-proxies-top">
-        <Card className="metadata-proxies-settings"><Flex direction="column" gap="4" asChild><section aria-labelledby="proxy-settings-title">
+        <Card size="2" className="metadata-proxies-settings"><Flex direction="column" gap="4" asChild><section aria-labelledby="proxy-settings-title">
           <Flex direction="column" gap="1">
             <Heading as="h2" size="4" id="proxy-settings-title">Settings</Heading>
             <Text size="1" color="gray">Apply to this collector for all Tana clients.</Text>
@@ -120,7 +120,7 @@ export default function MetadataProxies({ available, refreshKey, interval, refre
             </Flex>
           </Flex>
         </section></Flex></Card>
-        <Card className="metadata-proxies-status"><Flex direction="column" gap="4" height="100%" asChild><section aria-labelledby="proxy-summary-title">
+        <Card size="2" className="metadata-proxies-status"><Flex direction="column" gap="4" height="100%" asChild><section aria-labelledby="proxy-summary-title">
           <Flex direction="column" gap="1">
             <Heading as="h2" size="4" id="proxy-summary-title">Channel status</Heading>
             <Text size="1" color="gray">Up to 25 galleries per batch · one batch per channel every {data.rate_interval_ms / 1000} s.</Text>
@@ -156,7 +156,7 @@ export default function MetadataProxies({ available, refreshKey, interval, refre
         </Table.Row></Table.Header>
         <Table.Body>{channels.map((channel) => {
           const removing = channel.state === 'removing'
-          return <Table.Row key={channel.id} className={channel.state === 'authentication_required' ? 'metadata-proxies-attention' : undefined}>
+          return <Table.Row key={channel.id} className={channel.state === 'authentication_required' ? 'collector-row-failed' : undefined}>
             <Table.Cell><Switch aria-label={`Enable ${channel.name}`} checked={channel.enabled} disabled={disabled || removing}
               onCheckedChange={(checked) => { void change((signal) => saveMetadataProxy(channel.id, { ...channelInput(channel), enabled: checked }, signal), 'Channel settings saved.') }} /></Table.Cell>
             <Table.RowHeaderCell scope="row">

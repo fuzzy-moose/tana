@@ -56,7 +56,7 @@ function CaptureList({ available, refreshKey, interval, failedOnly, page }: {
         <Table.ColumnHeaderCell scope="col" justify="end">Size</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell scope="col" justify="end"><VisuallyHidden>Actions</VisuallyHidden></Table.ColumnHeaderCell>
       </Table.Row></Table.Header>
-      <Table.Body>{data.captures.map((capture) => <Table.Row key={capture.id}>
+      <Table.Body>{data.captures.map((capture) => <Table.Row key={capture.id} className={capture.state === 'failed' ? 'collector-row-failed' : undefined}>
         <Table.RowHeaderCell scope="row">{capture.id}</Table.RowHeaderCell>
         <Table.Cell>{formatDate(capture.captured_at)}</Table.Cell>
         <Table.Cell><StatusBadge tone={tones[capture.state]} detail={capture.error}>{states[capture.state]}</StatusBadge></Table.Cell>

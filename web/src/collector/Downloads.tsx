@@ -78,7 +78,7 @@ export default function Downloads({ available, refreshKey, interval }: Collector
         {' '}Downloads resume automatically at {formatBytes(storage.resume_at_bytes)} free. Completed downloads can still be added to a library.
       </Text>}
       <Grid columns={{ initial: '1', md: '2' }} gap="4" align="start">
-        <Card><Flex direction="column" gap="2" minWidth="0">
+        <Card size="2"><Flex direction="column" gap="2" minWidth="0">
           <Heading as="h2" size="3" id="add-download-title">Add a download</Heading>
           <form aria-labelledby="add-download-title" onSubmit={async (event) => {
             event.preventDefault()
@@ -122,7 +122,7 @@ export default function Downloads({ available, refreshKey, interval }: Collector
         <Table.Header><Table.Row>
           <Table.ColumnHeaderCell scope="col">Gallery</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col">State</Table.ColumnHeaderCell>
-          <Table.ColumnHeaderCell scope="col">Size</Table.ColumnHeaderCell>
+          <Table.ColumnHeaderCell scope="col" justify="end">Size</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col">Updated</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col" justify="end"><VisuallyHidden>Actions</VisuallyHidden></Table.ColumnHeaderCell>
         </Table.Row></Table.Header>
@@ -132,7 +132,7 @@ export default function Downloads({ available, refreshKey, interval }: Collector
           return <Table.Row key={job.gallery_id}>
             <Table.RowHeaderCell scope="row">Gallery {job.gallery_id}</Table.RowHeaderCell>
             <Table.Cell><StatusBadge tone={tones[job.state]} detail={jobDetails(job)}>{downloadState(job)}</StatusBadge></Table.Cell>
-            <Table.Cell>{job.state === 'completed' ? formatBytes(job.size_bytes) : job.expected_size_bytes ? `~ ${formatBytes(job.expected_size_bytes)}` : '—'}</Table.Cell>
+            <Table.Cell justify="end">{job.state === 'completed' ? formatBytes(job.size_bytes) : job.expected_size_bytes ? `~ ${formatBytes(job.expected_size_bytes)}` : '—'}</Table.Cell>
             <Table.Cell>{formatDate(job.updated_at)}<Text as="div" size="1" color="gray" mt="1">Added {formatDate(job.created_at)}</Text></Table.Cell>
             <Table.Cell><RowActions slot1Width={120} slot2Width={96} deleteSlot
               slot1={job.state === 'completed'

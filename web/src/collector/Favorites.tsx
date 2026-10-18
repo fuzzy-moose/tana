@@ -117,33 +117,35 @@ export default function Favorites({ available, refreshKey, interval }: Collector
     <ResourceStatus name="Favorite statistics" plural loaded={!!status} available={available} {...favorites} />
     {status && <>
       <Grid columns={{ initial: '1', xs: '2', md: '4' }} gap="4" asChild><dl style={{ margin: 0 }}>
-        {[
+        {([
           ['Collected favorites', sum.toLocaleString()],
-          ['Sync activity', `${running} running · ${queued} queued`],
-          ['Download baseline', baseline === 'collecting' ? `Collecting ${status.downloads?.baseline_categories} of 10` : baseline ? baselineLabels[baseline] : '—'],
-          ['Authenticated requests', status.authenticated_cooldown_until ? `Paused until ${formatDate(status.authenticated_cooldown_until)}` : 'No cooldown'],
-        ].map(([label, value]) => <Card key={label} asChild><div>
+          ['Sync activity', `${running} running · ${queued} queued`, running > 0 ? 'blue' : undefined],
+          ['Download baseline', baseline === 'collecting' ? `Collecting ${status.downloads?.baseline_categories} of 10` : baseline ? baselineLabels[baseline] : '—', baseline === 'ready' ? 'green' : undefined],
+          status.authenticated_cooldown_until
+            ? ['Authenticated requests', `Paused until ${formatDate(status.authenticated_cooldown_until)}`, 'amber']
+            : ['Authenticated requests', 'No cooldown'],
+        ] as [string, string, ('blue' | 'green' | 'amber')?][]).map(([label, value, color]) => <Card key={label} size="2" className={color === 'amber' ? 'collector-card-amber' : undefined} asChild><div>
           <Text as="div" size="1" color="gray" asChild><dt>{label}</dt></Text>
-          <Text as="div" size="5" weight="medium" mt="1" asChild><dd style={{ margin: 0 }}>{value}</dd></Text>
+          <Text as="div" size="5" weight="medium" color={color} mt="1" asChild><dd style={{ margin: 0 }}>{value}</dd></Text>
         </div></Card>)}
       </dl></Grid>
-      <Card><Flex align="end" wrap="wrap" gap="4" asChild><form onSubmit={(event) => { event.preventDefault(); if (!disabled) sync(category, full) }}>
-        <Flex direction="column" gap="1" minWidth="220px" asChild><label>
-          <Text size="2">Category</Text>
+      <Card size="2"><Flex align="end" wrap="wrap" gap="3" asChild><form onSubmit={(event) => { event.preventDefault(); if (!disabled) sync(category, full) }}>
+        <Flex direction="column" gap="1" flexGrow="1" minWidth="220px" asChild><label>
+          <Text size="1" color="gray">Category</Text>
           <Select.Root value={category} onValueChange={setCategory} disabled={disabled}><Select.Trigger aria-label="Favorite category" /><Select.Content>
             <Select.Item value="all">All ten categories</Select.Item>
             {status.categories.map((item) => <Select.Item key={item.category} value={String(item.category)}>{item.name ? `${item.category} · ${item.name}` : categoryName(item)}</Select.Item>)}
           </Select.Content></Select.Root>
         </label></Flex>
         <Flex direction="column" gap="1" asChild><fieldset disabled={disabled}>
-          <Text as="div" size="2" id="sync-mode-label">Mode</Text>
+          <Text as="div" size="1" color="gray" id="sync-mode-label">Mode</Text>
           <SegmentedControl.Root value={full ? 'full' : 'incremental'} onValueChange={(value) => setFull(value === 'full')} aria-labelledby="sync-mode-label">
             <SegmentedControl.Item value="incremental">Incremental</SegmentedControl.Item>
             <SegmentedControl.Item value="full">Full re-sync</SegmentedControl.Item>
           </SegmentedControl.Root>
         </fieldset></Flex>
         <Button size="2" variant="solid" type="submit" disabled={disabled}>{syncing ? 'Requesting…' : 'Sync favorites'}</Button>
-        <Text as="p" size="1" color="gray" style={{ flex: '1 1 240px' }}>{baseline && baseline !== 'ready'
+        <Text as="p" size="1" color="gray" style={{ flex: '1 1 100%' }}>{baseline && baseline !== 'ready'
           ? 'Until the baseline is complete, sync collects all ten categories without downloading favorites.'
           : full ? 'Full re-sync reconciles removed favorites. Collected gallery references and metadata are retained.' : 'Collects the newest favorites since the last sync.'}</Text>
       </form></Flex></Card>
@@ -154,19 +156,19 @@ export default function Favorites({ available, refreshKey, interval }: Collector
       <TableCard caption="Favorite categories for the current account" collectorPage="favorites" columns={[undefined, 100, 190, 150, 140, 190]} minWidth={900}>
         <Table.Header><Table.Row>
           <Table.ColumnHeaderCell scope="col">Category</Table.ColumnHeaderCell>
-          <Table.ColumnHeaderCell scope="col">Favorites</Table.ColumnHeaderCell>
+          <Table.ColumnHeaderCell scope="col" justify="end">Favorites</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col">Sync</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col">Last success</Table.ColumnHeaderCell>
-          <Table.ColumnHeaderCell scope="col">Auto-download</Table.ColumnHeaderCell>
+          <Table.ColumnHeaderCell scope="col" justify="center">Auto-download</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col" justify="end"><VisuallyHidden>Actions</VisuallyHidden></Table.ColumnHeaderCell>
         </Table.Row></Table.Header>
         <Table.Body>
-          {rows.map((item) => <Table.Row key={item.category}>
+          {rows.map((item) => <Table.Row key={item.category} className={stateTone(item) === 'red' ? 'collector-row-failed' : undefined}>
             <Table.RowHeaderCell scope="row">{categoryName(item)}{item.name && <Text as="div" size="1" color="gray" mt="1">Category {item.category}</Text>}</Table.RowHeaderCell>
-            <Table.Cell>{item.last_synced_at || item.last_saved_at ? item.favorites.toLocaleString() : '—'}</Table.Cell>
+            <Table.Cell justify="end">{item.last_synced_at || item.last_saved_at ? item.favorites.toLocaleString() : '—'}</Table.Cell>
             <Table.Cell><StatusBadge tone={stateTone(item)} detail={stateDetails(item)}>{stateLabel(item)}</StatusBadge></Table.Cell>
             <Table.Cell>{item.last_synced_at ? formatDate(item.last_synced_at) : 'Never synced'}</Table.Cell>
-            <Table.Cell>{status.downloads
+            <Table.Cell justify="center">{status.downloads
               ? <Checkbox aria-label={`Auto-download ${categoryName(item)}`} disabled={disabled || saving} checked={selected.includes(item.category)} onCheckedChange={(checked) => {
                 setDraft(checked === true ? [...selected, item.category].sort((a, b) => a - b) : selected.filter((id) => id !== item.category))
                 saveMutation.setNotice('')
@@ -177,10 +179,10 @@ export default function Favorites({ available, refreshKey, interval }: Collector
           </Table.Row>)}
           {collapsible && <Table.Row>
             <Table.RowHeaderCell scope="row">Categories {categoryRanges(emptyCategories.map((item) => item.category))}</Table.RowHeaderCell>
-            <Table.Cell>0</Table.Cell>
+            <Table.Cell justify="end">0</Table.Cell>
             <Table.Cell>{emptyCompleted ? <StatusBadge tone="green">Completed</StatusBadge> : <StatusBadge tone="gray">Idle</StatusBadge>}</Table.Cell>
             <Table.Cell>{emptySynced ? formatDate(emptySynced) : '—'}</Table.Cell>
-            <Table.Cell>—</Table.Cell>
+            <Table.Cell justify="center">—</Table.Cell>
             <Table.Cell><RowActions slot1Width={160} slot1={<Button size="2" variant="soft" color="gray" type="button" style={{ width: '100%' }}
               onClick={() => setShowEmpty((value) => !value)}>{showEmpty ? 'Hide' : 'Show'} {emptyCategories.length} empty</Button>} /></Table.Cell>
           </Table.Row>}

@@ -17,7 +17,7 @@ export default function FeedCapture({ available, refreshKey, interval, onCapture
     void mutation.run(async (signal) => resource.update(await refreshFeed(signal)), { onSuccess: onCaptured })
   }
 
-  return <Card>
+  return <Card size="2">
     <Flex direction="column" gap="3" asChild><section aria-labelledby="latest-feed-title">
       <Flex align="center" justify="between" wrap="wrap" gap="3">
         <Flex direction="column" gap="1">

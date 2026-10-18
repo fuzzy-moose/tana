@@ -30,7 +30,7 @@ export default function ReferenceImports({ available, refreshKey, interval }: Co
   return (
     <Flex direction="column" gap="4" asChild><section aria-labelledby="reference-imports-title">
       <div className="reference-imports-top">
-        <Card className="reference-imports-upload"><Flex direction="column" gap="2" asChild><form onSubmit={(event) => {
+        <Card size="2" className="reference-imports-upload"><Flex direction="column" gap="2" asChild><form onSubmit={(event) => {
           event.preventDefault()
           void history.submit(files)
         }}>
@@ -50,7 +50,7 @@ export default function ReferenceImports({ available, refreshKey, interval }: Co
           {history.notice && <Text as="p" size="2" color="green" role="status">{history.notice}</Text>}
           {history.uploadErrors.map((error, index) => <Text as="p" size="2" color="red" key={index} role="alert">{error}</Text>)}
         </form></Flex></Card>
-        <Card className="reference-imports-format"><Flex direction="column" gap="2" align="start" asChild><section aria-labelledby="reference-format-title" id="reference-format">
+        <Card size="2" className="reference-imports-format"><Flex direction="column" gap="2" align="start" asChild><section aria-labelledby="reference-format-title" id="reference-format">
           <Heading as="h2" size="3" id="reference-format-title">File format</Heading>
           <Code size="2">123,abc</Code>
           <Text size="1" color="gray">One <Code>id,token</Code> per line · no header · blank lines ignored</Text>

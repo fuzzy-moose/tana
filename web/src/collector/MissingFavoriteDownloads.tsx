@@ -77,7 +77,7 @@ export default function MissingFavoriteDownloads({ category, available, onClose,
   const name = category.name || `Category ${category.category}`
   const blocked = !available || loading || submitting
 
-  return <Card asChild><section aria-labelledby="missing-favorite-title"><Flex direction="column" gap="3">
+  return <Card size="2" asChild><section aria-labelledby="missing-favorite-title"><Flex direction="column" gap="3">
     <Flex align="center" justify="between" wrap="wrap" gap="3">
       <Heading as="h3" size="3" id="missing-favorite-title" ref={heading} tabIndex={-1}>Download missing favorites · {name}</Heading>
       <Button size="2" variant="soft" type="button" disabled={submitting} onClick={onClose} color="gray">{result ? 'Close' : 'Cancel'}</Button>

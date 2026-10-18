@@ -1,4 +1,4 @@
-import { Button, Flex, Text, TextField } from '@radix-ui/themes'
+import { Box, Button, Flex, Text, TextField } from '@radix-ui/themes'
 import { useEffect, useRef, useState } from 'react'
 import { saveFeedMetadataDelay } from './api'
 
@@ -38,12 +38,18 @@ export default function FeedMetadataDelay({ hours, available, onSaved }: {
     }
   }
 
-  return <Flex direction="column" gap="3" asChild><form onSubmit={(event) => { event.preventDefault(); void save() }}>
-    <Text as="label" size="2" htmlFor="feed-metadata-delay">Feed metadata delay (hours)</Text>
-    <TextField.Root id="feed-metadata-delay" type="number" min={0} max={8760} step={1} required
-      value={value} disabled={!available || pending} onChange={(event) => { setDraft(event.target.value); setNotice('') }} />
+  return <Flex direction="column" gap="2" asChild><form onSubmit={(event) => { event.preventDefault(); void save() }}>
+    <Text as="label" size="1" color="gray" htmlFor="feed-metadata-delay">Feed metadata delay</Text>
+    <Flex gap="2">
+      <Box flexGrow="1" minWidth="0">
+        <TextField.Root id="feed-metadata-delay" type="number" min={0} max={8760} step={1} required
+          value={value} disabled={!available || pending} onChange={(event) => { setDraft(event.target.value); setNotice('') }}>
+          <TextField.Slot side="right"><Text size="2" color="gray">hours</Text></TextField.Slot>
+        </TextField.Root>
+      </Box>
+      <Button type="submit" size="2" variant="soft" color="gray" disabled={!available || pending || draft === null || !valid}>{pending ? 'Saving…' : 'Save'}</Button>
+    </Flex>
     <Text as="p" size="1" color="gray">Wait after publication (or first sighting when unknown) before collecting metadata for feed discoveries. Applies to waiting galleries on all collector workers. Explicit requests remain immediate. Use 0 for no delay.</Text>
-    <Button type="submit" size="2" variant="soft" color="gray" disabled={!available || pending || draft === null || !valid}>{pending ? 'Saving…' : 'Save feed metadata delay'}</Button>
     {notice && <Text as="p" size="2" color="green" role="status">{notice}</Text>}
     {error && <Text as="p" size="2" color="red" role="alert">{error}</Text>}
   </form></Flex>

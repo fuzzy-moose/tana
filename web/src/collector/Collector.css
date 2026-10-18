@@ -1,7 +1,8 @@
-.app-main > .collector-shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: var(--space-6); align-items: start; max-width: none; }
+/* The shell fills the unpadded main area: the sidebar sits flush against the app sidebar and the page pads itself. */
+.app-main > .collector-shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); min-height: 100%; max-width: none; }
 .collector-sidebar {
-  display: flex; flex-direction: column; gap: var(--space-5); box-sizing: border-box;
-  padding: var(--space-5) var(--space-4); border-right: 1px solid var(--gray-5);
+  display: flex; flex-direction: column; gap: var(--space-5); box-sizing: border-box; height: 100%;
+  padding: var(--space-5) var(--space-4); border-right: 1px solid var(--gray-a4);
 }
 .collector-connection { align-self: flex-start; gap: 6px; }
 .collector-connection-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -22,17 +23,25 @@
 .collector-refresh { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
 .collector-nav-toggle { width: 100%; justify-content: space-between; }
 
+/* Beside the vertical app sidebar, main is exactly the viewport, so the collector sidebar can stay in view while the page scrolls. */
 @media (min-width: 641px) {
-  .collector-sidebar { min-height: calc(100dvh - 56px); }
+  .collector-nav-region { position: sticky; top: 0; height: 100dvh; }
+  .collector-sidebar { overflow-y: auto; }
 }
 
 @media (max-width: 519px) {
-  .app-main > .collector-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
-  .collector-sidebar { min-height: 0; padding: var(--space-3) 0 0; border-right: 0; }
+  .app-main > .collector-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .collector-nav-region { padding: var(--space-3) var(--space-3) 0; }
+  .collector-sidebar { height: auto; padding: var(--space-3) 0 0; border-right: 0; }
   .collector-nav-region[data-expanded="false"] .collector-sidebar { display: none; }
 }
 
-.collector-page { min-width: 0; overflow-wrap: anywhere; }
+.collector-page { min-width: 0; box-sizing: border-box; padding: 28px 32px 48px; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .collector-page { padding: 20px 12px 32px; }
+}
+.collector-card-amber::after { box-shadow: inset 0 0 0 1px var(--amber-a7); }
+.collector-row-failed { background: var(--red-a2); }
 .collector-page fieldset { border: 0; padding: 0; min-width: 0; }
 .collector-page legend { padding: 0 0 var(--space-2); }
 .collector-page input[type="file"] { max-width: 100%; }

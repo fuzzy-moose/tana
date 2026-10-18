@@ -65,7 +65,7 @@ function SitemapView({ status, available, onChanged }: {
 
   return <Flex direction="column" gap="4">
     <Grid columns={{ initial: '1', md: '3fr 2fr' }} gap="3" align="stretch">
-      <Card><Flex direction="column" gap="3" asChild><section aria-labelledby="sitemap-run-title">
+      <Card size="2"><Flex direction="column" gap="3" asChild><section aria-labelledby="sitemap-run-title">
         <Flex align="center" justify="between" wrap="wrap" gap="3">
           <Flex align="center" gap="2" wrap="wrap">
             <Heading as="h2" size="4" id="sitemap-run-title">Current collection</Heading>
@@ -84,7 +84,7 @@ function SitemapView({ status, available, onChanged }: {
           {running && status.retry_at && <Text size="1" color="gray">Continue after {formatDate(status.retry_at)}.</Text>}
         </>}
       </section></Flex></Card>
-      <Card><Flex direction="column" gap="2" asChild><form onSubmit={(event) => { event.preventDefault(); if (!disabled && !running) request('start') }}>
+      <Card size="2"><Flex direction="column" gap="2" asChild><form onSubmit={(event) => { event.preventDefault(); if (!disabled && !running) request('start') }}>
         <Text as="label" weight="medium" id="sitemap-mode-label">Start a collection</Text>
         <Flex gap="2" wrap="wrap">
           <Select.Root value={force ? 'force' : 'conditional'} onValueChange={(value) => setForce(value === 'force')} disabled={disabled || running}>
@@ -102,7 +102,7 @@ function SitemapView({ status, available, onChanged }: {
       </form></Flex></Card>
     </Grid>
 
-    <Card><Flex direction="column" gap="4" asChild><section aria-labelledby="sitemap-results-title">
+    <Card size="2"><Flex direction="column" gap="4" asChild><section aria-labelledby="sitemap-results-title">
       <Heading as="h2" size="4" id="sitemap-results-title">Results so far</Heading>
       <Grid columns={{ initial: '1', md: '2' }} gap="6">
         <Flex direction="column" gap="3">

@@ -9,7 +9,7 @@ export default function LibraryDeliveries({ deliveries, libraryID, onLibraryChan
   canStart: boolean
   completedCount: number
 }) {
-  return <Card><Flex direction="column" gap="2" minWidth="0" asChild><section aria-labelledby="library-delivery-title">
+  return <Card size="2"><Flex direction="column" gap="2" minWidth="0" asChild><section aria-labelledby="library-delivery-title">
     <Heading as="h2" size="3" id="library-delivery-title">Deliver to library</Heading>
     <Flex align="center" wrap="wrap" gap="2">
       <Flex flexGrow="1" minWidth="160px">

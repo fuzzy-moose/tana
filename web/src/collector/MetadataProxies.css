@@ -7,4 +7,3 @@
 @media (max-width: 799px) {
   .metadata-proxies-settings, .metadata-proxies-status { grid-column: 1 / -1; }
 }
-.metadata-proxies-attention { background: var(--red-a2); }

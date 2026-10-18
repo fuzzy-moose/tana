@@ -27,7 +27,7 @@ function App() {
   return <Theme appearance="dark" accentColor="green" grayColor="sage" radius="medium" panelBackground="solid">
     {route.kind === 'reader'
       ? <Reader key={`${route.id}:${route.page}:${route.lastPage ?? ''}`} id={route.id} initialPage={route.page} initialLastPage={route.lastPage} />
-      : <div className={`app-shell${catalog ? ' app-shell-catalog' : ''}`}>
+      : <div className={`app-shell${catalog ? ' app-shell-catalog' : ''}${route.kind === 'collector' ? ' app-shell-collector' : ''}`}>
         <a className="skip-link" href="#main-content" onClick={(event) => {
           event.preventDefault()
           document.getElementById('main-content')?.focus()
