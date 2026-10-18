@@ -1,0 +1,9 @@
+.cleanup-candidates {
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.cleanup-path {
+  overflow-wrap: anywhere;
+  font-family: var(--code-font-family);
+}

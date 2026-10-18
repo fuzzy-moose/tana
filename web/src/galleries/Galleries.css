@@ -1,0 +1,143 @@
+.gallery-listing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+}
+
+.gallery-listing > :not(.gallery-viewport) { flex-shrink: 0; }
+
+.gallery-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.gallery-toolbar > :not(.gallery-search) { flex-shrink: 0; }
+.gallery-toolbar > .rt-Button { margin: 0; }
+.gallery-search { flex: 1 1 200px; min-width: 200px; max-width: 480px; margin-left: auto; }
+.gallery-search-input { position: relative; flex: 1; min-width: 0; }
+
+.gallery-tag-suggestions {
+  position: absolute;
+  inset: calc(100% + var(--space-1)) 0 auto;
+  z-index: 5;
+  max-height: min(360px, 50dvh);
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--gray-a6);
+  border-radius: var(--radius-3);
+  background: var(--color-panel-solid);
+  box-shadow: var(--shadow-4);
+}
+
+.gallery-tag-suggestions li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-2);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.gallery-tag-suggestions li[aria-selected="true"] { background: var(--accent-a4); }
+.gallery-tag-suggestions .rt-Badge { flex-shrink: 0; }
+
+.gallery-viewport {
+  position: relative;
+  flex: 1 0 var(--gallery-card-height);
+  min-height: var(--gallery-card-height);
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Measure the rendered card geometry before results arrive, including empty catalogs. */
+.gallery-sizing {
+  position: absolute;
+  inset: 0 0 auto;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.gallery-grid > li { min-width: 0; }
+
+.gallery-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  /* Reserve one compact footer so loaded pagination cannot change page capacity. */
+  min-height: 32px;
+}
+
+.gallery-sort { position: absolute; left: 0; }
+.gallery-pagination .pagination { margin: 0; }
+.gallery-empty { min-height: 100%; text-align: center; padding: var(--space-4); }
+
+.gallery-card {
+  display: block;
+  min-width: 0;
+  color: var(--gray-12);
+  text-decoration: none;
+  border-radius: var(--radius-3);
+}
+
+.gallery-card:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 4px; }
+
+.gallery-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  background: var(--gray-a3);
+  border-radius: var(--radius-3);
+}
+
+.gallery-cover img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.gallery-card:hover .gallery-cover { outline: 1px solid var(--accent-8); }
+.gallery-title { margin: var(--space-1) 0 2px; }
+
+.gallery-card h2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  height: 32px;
+  margin: 0;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.gallery-card p { margin: 0; }
+.image-placeholder { padding: var(--space-4); text-align: center; color: var(--gray-10); font-size: var(--font-size-1); }
+
+@media (max-width: 900px) {
+  .gallery-sort { display: none; }
+  .gallery-toolbar .gallery-search { order: 1; flex-basis: 100%; min-width: 0; max-width: none; }
+  .gallery-toolbar > :last-child:not(.gallery-search) { margin-left: auto; }
+}
+
+@media (max-width: 640px) {
+  .gallery-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(110px, 100%), 1fr));
+    gap: var(--space-2);
+  }
+}
+
+@media (pointer: coarse) {
+  .gallery-pagination { min-height: 44px; }
+}

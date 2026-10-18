@@ -1,0 +1,60 @@
+package collector
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	env := map[string]string{
+		"TANA_COLLECTOR_DATA_DIR":     dir,
+		"TANA_COLLECTOR_API_TOKEN":    "test-token",
+		"TANA_COLLECTOR_DATABASE_URL": "postgres://collector@db.test/collector",
+		"TANA_COLLECTOR_SITEMAP_URL":  "https://panda.test/custom/index.xml?version=2",
+		"PANDA_FEED_URL":              "https://panda.test/feed",
+		"PANDA_API_URL":               "https://panda.test/api",
+		"PANDA_ARCHIVER_URL":          "https://panda.test/account/prepare-archive",
+		"PANDA_FAVORITES_URL":         "https://panda.test/favorites",
+		"PANDA_FAVORITES_COOKIES":     `{"ipb_member_id":"1"}`,
+	}
+	getenv := func(key string) string { return env[key] }
+	cfg, err := LoadConfig(getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Addr != "127.0.0.1:8081" || cfg.DataDir != dir || cfg.DownloadDir != filepath.Join(dir, "downloads") ||
+		cfg.DownloadStorage.PauseBelowBytes != 5<<30 || cfg.DownloadStorage.ResumeAtBytes != 10<<30 ||
+		cfg.APIToken != "test-token" || cfg.DatabaseURL != env["TANA_COLLECTOR_DATABASE_URL"] || cfg.DatabasePoolSize != 8 || cfg.Feed.URL != env["PANDA_FEED_URL"] || cfg.Panda.APIURL != env["PANDA_API_URL"] ||
+		cfg.Sitemap.URL != env["TANA_COLLECTOR_SITEMAP_URL"] ||
+		cfg.AuthenticatedPanda.FavoritesURL != env["PANDA_FAVORITES_URL"] || cfg.AuthenticatedPanda.ArchiverURL != env["PANDA_ARCHIVER_URL"] {
+		t.Fatal("collector configuration did not retain settings or apply defaults")
+	}
+	env["TANA_COLLECTOR_DOWNLOAD_DIR"] = filepath.Join(t.TempDir(), "archives")
+	env["TANA_COLLECTOR_PORT"] = "9001"
+	env["TANA_COLLECTOR_DOWNLOAD_PAUSE_BELOW_BYTES"] = "1024"
+	env["TANA_COLLECTOR_DOWNLOAD_RESUME_AT_BYTES"] = "2048"
+	env["TANA_COLLECTOR_DATABASE_POOL_SIZE"] = "3"
+	cfg, err = LoadConfig(getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DownloadDir != env["TANA_COLLECTOR_DOWNLOAD_DIR"] || cfg.Server.Addr != "127.0.0.1:9001" ||
+		cfg.DownloadStorage.PauseBelowBytes != 1024 || cfg.DownloadStorage.ResumeAtBytes != 2048 || cfg.DatabasePoolSize != 3 {
+		t.Fatal("collector configuration ignored overrides")
+	}
+	for _, key := range []string{"TANA_COLLECTOR_API_TOKEN", "TANA_COLLECTOR_DATABASE_URL", "PANDA_FEED_URL"} {
+		t.Run(key, func(t *testing.T) {
+			_, err := LoadConfig(func(k string) string {
+				if k == key {
+					return ""
+				}
+				return env[k]
+			})
+			if err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("expected error identifying %s, got %v", key, err)
+			}
+		})
+	}
+}

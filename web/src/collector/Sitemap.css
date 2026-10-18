@@ -1,0 +1,16 @@
+.sitemap-results-divider {
+  border-left: 1px solid var(--gray-a4);
+  padding-left: var(--space-6);
+}
+
+@media (max-width: 1023px) {
+  .sitemap-results-divider {
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+
+.sitemap-group-title {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

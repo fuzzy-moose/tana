@@ -1,0 +1,11 @@
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-5);
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-item, .pagination-ellipsis { min-width: 28px; padding-inline: var(--space-1); }

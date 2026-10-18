@@ -1,0 +1,56 @@
+.app-main > .collector-shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: var(--space-6); align-items: start; max-width: none; }
+.collector-sidebar {
+  display: flex; flex-direction: column; gap: var(--space-5); box-sizing: border-box;
+  padding: var(--space-5) var(--space-4); border-right: 1px solid var(--gray-5);
+}
+.collector-connection { align-self: flex-start; gap: 6px; }
+.collector-connection-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.collector-sidebar-title { display: flex; flex-direction: column; gap: var(--space-2); }
+.collector-nav-group { display: flex; flex-direction: column; gap: 2px; }
+.collector-nav-group-label { padding: 0 10px 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+.collector-nav-link {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 36px; padding-inline: 10px;
+  border-radius: var(--radius-2); color: var(--gray-11); font-weight: var(--font-weight-regular); text-decoration: none;
+}
+.collector-nav-link[aria-current="page"] { color: var(--accent-12); background: var(--accent-a4); font-weight: var(--font-weight-medium); }
+.collector-nav-link:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 2px; }
+@media (hover: hover) {
+  .collector-nav-link:hover { color: var(--gray-12); background: var(--gray-a4); }
+  .collector-nav-link[aria-current="page"]:hover { color: var(--accent-12); background: var(--accent-a5); }
+}
+.collector-failure-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red-9); }
+.collector-refresh { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+.collector-nav-toggle { width: 100%; justify-content: space-between; }
+
+@media (min-width: 641px) {
+  .collector-sidebar { min-height: calc(100dvh - 56px); }
+}
+
+@media (max-width: 519px) {
+  .app-main > .collector-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+  .collector-sidebar { min-height: 0; padding: var(--space-3) 0 0; border-right: 0; }
+  .collector-nav-region[data-expanded="false"] .collector-sidebar { display: none; }
+}
+
+.collector-page { min-width: 0; overflow-wrap: anywhere; }
+.collector-page fieldset { border: 0; padding: 0; min-width: 0; }
+.collector-page legend { padding: 0 0 var(--space-2); }
+.collector-page input[type="file"] { max-width: 100%; }
+.collector-table-scroll { overflow-x: auto; min-width: 0; }
+.collector-table-scroll table { min-width: var(--table-min-width); }
+.collector-table table { min-width: 680px; }
+.collector-table th, .collector-table td { vertical-align: top; }
+.library-delivery-items summary { cursor: pointer; }
+.library-delivery-items ul { max-height: 360px; overflow-y: auto; margin-top: var(--space-3); }
+
+.collector-table-card-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-3); border-bottom: 1px solid var(--gray-a5); }
+/* TabNav draws its own bottom rule; the card header already has a border and no public prop removes it. */
+.collector-table-card-header .rt-TabNavRoot, .collector-table-card-header .rt-TabNavList { box-shadow: none; }
+.collector-table-card-header-tabs { padding-block: 0; }
+.collector-table-scroll th, .collector-table-scroll td { vertical-align: top; }
+.collector-table-card-footnote { margin: 0; padding: var(--space-3); }
+.collector-table-card-footnote:not(:first-child) { border-top: 1px solid var(--gray-a5); }
+
+@media (max-width: 519px) {
+  .collector-description { display: none; }
+}

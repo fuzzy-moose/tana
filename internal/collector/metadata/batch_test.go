@@ -1,0 +1,104 @@
+package metadata
+
+import (
+	"fmt"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/fuzzy-moose/tana/internal/panda"
+)
+
+func TestBackgroundReservationsShareWorkWithoutChangingMainCooldown(t *testing.T) {
+	db := openDB(t)
+	for id := int64(1); id <= 76; id++ {
+		seedRefs(t, db, id)
+	}
+	s := batchService(t, db, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var entries []panda.Metadata
+		for _, id := range requestedIDs(t, req) {
+			entries = append(entries, panda.Metadata{ID: id, Token: fmt.Sprintf("token%d", id)})
+		}
+		return metadataResponse(t, entries...), nil
+	}))
+	job := fetchJob(t, s, panda.GalleryRef{ID: 1, Token: "token1"})
+	main, err := s.claim(t.Context(), false)
+	if err != nil || main.Size() != 1 || main.refs[0].ID != 1 {
+		t.Fatalf("main reservation: %+v, %v", main, err)
+	}
+	defer main.Close()
+	seen := map[int64]bool{1: true}
+	var batches []*Batch
+	for range 3 {
+		batch, err := s.ClaimBackground(t.Context())
+		if err != nil || batch == nil || batch.Size() != 25 {
+			t.Fatalf("background reservation: %+v, %v", batch, err)
+		}
+		defer batch.Close()
+		batches = append(batches, batch)
+		for _, ref := range batch.refs {
+			if seen[ref.ID] {
+				t.Fatalf("gallery %d reserved twice", ref.ID)
+			}
+			seen[ref.ID] = true
+		}
+	}
+	if extra, err := s.ClaimBackground(t.Context()); err != nil || extra != nil {
+		t.Fatalf("reserved work selected again: %+v, %v", extra, err)
+	}
+	until := time.Now().Add(time.Hour).Truncate(time.Microsecond)
+	if _, err := db.Exec(t.Context(), `UPDATE metadata_retry SET failures = 3, next_attempt_at = $1`, until); err != nil {
+		t.Fatal(err)
+	}
+	// A new explicit owner can share a proxy batch already in flight.
+	shared := fetchJob(t, s, batches[0].refs[0])
+	for _, batch := range batches {
+		if err := batch.Fetch(t.Context(), s.client); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var failures int64
+	var deadline time.Time
+	if err := db.QueryRow(t.Context(), `SELECT failures, next_attempt_at FROM metadata_retry`).Scan(&failures, &deadline); err != nil || failures != 3 || !deadline.Equal(until) {
+		t.Fatalf("proxy completion changed main cooldown: %d/%v, %v", failures, deadline, err)
+	}
+	if got := readFetchJob(t, s, shared.ID); got.Status != "completed" || got.Entries[0].Status != "successful" {
+		t.Fatalf("shared job: %+v", got)
+	}
+	if got := readFetchJob(t, s, job.ID); got.Status != "pending" {
+		t.Fatalf("reserved main job: %+v", got)
+	}
+}
+
+func TestBackgroundImportsUseSpareCapacityAfterInventoryReservations(t *testing.T) {
+	db := openDB(t)
+	s := batchService(t, db, nil)
+	imports := batchImports(t, db, t.TempDir())
+	acceptImport(t, imports, "99,token99\n100,token100")
+	parseImports(t, imports)
+	seedRefs(t, db, 1)
+	fetchJob(t, s, panda.GalleryRef{ID: 88, Token: "explicit88"})
+	inventory, err := s.ClaimBackground(t.Context())
+	if err != nil || inventory == nil || inventory.Size() != 1 || inventory.refs[0].ID != 1 {
+		t.Fatalf("inventory: %+v, %v", inventory, err)
+	}
+	defer inventory.Close()
+	// Reserve one imported gallery through the main explicit queue as well.
+	fetchJob(t, s, panda.GalleryRef{ID: 99, Token: "other99"})
+	main, err := s.claim(t.Context(), false)
+	if err != nil || main == nil || main.Size() != 2 || main.refs[0].ID != 88 || main.refs[1].ID != 99 {
+		t.Fatalf("main explicit reservation: %+v, %v", main, err)
+	}
+	defer main.Close()
+	if batch, err := s.claim(t.Context(), false); err != nil || batch != nil {
+		t.Fatalf("main bypassed explicit jobs: %+v, %v", batch, err)
+	}
+	batch, err := s.ClaimBackground(t.Context())
+	if err != nil || batch == nil || batch.Size() != 1 || batch.refs[0].ID != 100 {
+		t.Fatalf("independent import reservation: %+v, %v", batch, err)
+	}
+	defer batch.Close()
+	if extra, err := s.ClaimBackground(t.Context()); err != nil || extra != nil {
+		t.Fatalf("reserved work selected again: %+v, %v", extra, err)
+	}
+}

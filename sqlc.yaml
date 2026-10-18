@@ -1,0 +1,175 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: internal/local/storage/migrations
+    queries: internal/local/refresh/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/local/refresh/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: &overrides
+          # Zero and nil times mean NULL at the Go boundary of nullable columns.
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - db_type: "pg_catalog.int4"
+            go_type: "int64"
+          # LIMIT and OFFSET arguments.
+          - db_type: "integer"
+            go_type: "int64"
+          - db_type: "pg_catalog.int4"
+            nullable: true
+            go_type:
+              type: "int64"
+              pointer: true
+  - engine: postgresql
+    schema: internal/local/storage/migrations
+    queries: internal/local/cleanup/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/local/cleanup/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/sitemap/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/collector/sitemap/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/downloads/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/collector/downloads/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/status/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/collector/status/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/favorites/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/collector/favorites/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/pandaban/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/collector/pandaban/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/local/storage/migrations
+    queries: internal/local/enrichment/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/local/enrichment/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/metadata/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/collector/metadata/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/collector/storage/migrations
+    queries: internal/collector/feed/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/collector/feed/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/local/storage/migrations
+    queries: internal/local/tag/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/local/tag/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/local/storage/migrations
+    queries: internal/local/library/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/local/library/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/local/storage/migrations
+    queries: internal/local/source/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/local/source/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides
+  - engine: postgresql
+    schema: internal/local/storage/migrations
+    queries: internal/local/gallery/queries.sql
+    gen:
+      go:
+        package: dbgen
+        sql_package: "pgx/v5"
+        out: internal/local/gallery/dbgen
+        emit_empty_slices: true
+        omit_unused_structs: true
+        overrides: *overrides

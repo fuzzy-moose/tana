@@ -1,0 +1,62 @@
+-- name: InventoryStatistics :one
+WITH counts AS (
+    SELECT
+        (SELECT count(*) FROM gallery_refs) AS gallery_references,
+        (SELECT count(*) FROM gallery_metadata) AS metadata_available,
+        (SELECT count(*) FROM gallery_refs r
+         WHERE r.metadata_attempted_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM gallery_metadata m WHERE m.gallery_id = r.gallery_id))
+        + (SELECT count(*) FROM metadata_fetches f JOIN gallery_refs r ON r.gallery_id = f.gallery_id AND r.token = f.token
+           WHERE f.status = 'pending' AND r.metadata_attempted_at IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM gallery_metadata m WHERE m.gallery_id = r.gallery_id)) AS metadata_pending
+)
+SELECT gallery_references, metadata_available, metadata_pending::bigint AS metadata_pending,
+    (gallery_references - metadata_available - metadata_pending)::bigint AS metadata_failed,
+    (SELECT count(*) FROM metadata_fetches WHERE status = 'pending') AS fetches_pending,
+    (SELECT count(*) FROM metadata_fetches WHERE status = 'failed') AS fetches_failed
+FROM counts;
+
+-- name: MetadataRetry :one
+SELECT next_attempt_at, last_error,
+    (SELECT main_background_paused FROM metadata_collection_settings WHERE id = 1) AS main_background_paused,
+    (SELECT feed_metadata_delay_hours FROM metadata_collection_settings WHERE id = 1) AS feed_metadata_delay_hours
+FROM metadata_retry WHERE id = 1;
+
+-- name: RecentMetadataErrors :many
+WITH gallery_errors AS (
+    SELECT gallery_id, metadata_error, metadata_attempted_at
+    FROM gallery_refs WHERE metadata_error IS NOT NULL AND metadata_error != ''
+    ORDER BY metadata_attempted_at DESC NULLS LAST, gallery_id LIMIT 10
+), errors AS (
+    SELECT gallery_id, metadata_error, metadata_attempted_at FROM gallery_errors
+    UNION ALL
+    SELECT f.gallery_id, f.error, (
+        SELECT max(coalesce(j.completed_at, j.created_at))
+        FROM metadata_fetch_job_entries e JOIN metadata_fetch_jobs j ON j.id = e.job_id
+        WHERE e.fetch_id = f.id
+    ) AS metadata_attempted_at
+    FROM metadata_fetches f WHERE f.status = 'failed'
+), latest AS (
+    SELECT *, row_number() OVER (PARTITION BY gallery_id ORDER BY metadata_attempted_at DESC NULLS LAST) AS position
+    FROM errors
+)
+SELECT gallery_id, metadata_error, metadata_attempted_at FROM latest WHERE position = 1
+ORDER BY metadata_attempted_at DESC NULLS LAST, gallery_id LIMIT 10;
+
+-- name: LatestDownloadFailure :one
+SELECT last_error FROM panda_downloads WHERE state = 'failed' ORDER BY updated_at DESC, gallery_id DESC LIMIT 1;
+
+-- name: FailedCaptureCount :one
+SELECT count(*) FROM raw_feeds WHERE processed_at IS NULL AND last_error IS NOT NULL;
+
+-- name: LatestCaptureFailure :one
+SELECT coalesce(last_error, '') AS last_error FROM raw_feeds WHERE processed_at IS NULL AND last_error IS NOT NULL
+ORDER BY captured_at DESC, id DESC LIMIT 1;
+
+-- name: ActiveReferenceImports :one
+SELECT count(*) FROM reference_imports WHERE status IN ('processing', 'validating');
+
+-- name: DownloadSummaryCounts :one
+SELECT count(*) FILTER (WHERE state IN ('queued', 'running')) AS active,
+    count(*) FILTER (WHERE state = 'failed') AS failed
+FROM panda_downloads;

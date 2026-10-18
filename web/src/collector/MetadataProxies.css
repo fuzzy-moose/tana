@@ -1,0 +1,10 @@
+.metadata-proxies-top { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
+.metadata-proxies-settings { grid-column: span 3; }
+.metadata-proxies-status { grid-column: span 2; }
+.metadata-proxies-url { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--code-font-family); }
+.metadata-proxies-cooldown { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-3); background: var(--amber-a3); border: 1px solid var(--amber-a6); }
+.metadata-proxies-cooldown > :first-child { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 799px) {
+  .metadata-proxies-settings, .metadata-proxies-status { grid-column: 1 / -1; }
+}
+.metadata-proxies-attention { background: var(--red-a2); }

@@ -1,0 +1,20 @@
+.library-list {
+  list-style: none;
+}
+
+#library {
+  overflow-wrap: anywhere;
+}
+
+/* Keep the live region mounted without reserving an empty row. */
+.library-notice:empty {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.library-path {
+  overflow-wrap: anywhere;
+  font-family: var(--code-font-family);
+}

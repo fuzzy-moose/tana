@@ -1,0 +1,8 @@
+.reference-imports-top { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
+.reference-imports-upload { grid-column: span 3; }
+.reference-imports-format { grid-column: span 2; }
+.reference-imports-file { flex: 1 1 260px; min-width: 0; }
+.reference-imports-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 799px) {
+  .reference-imports-upload, .reference-imports-format { grid-column: 1 / -1; }
+}

@@ -1,0 +1,154 @@
+// Package collector assembles the metadata collector and owns its resources.
+package collector
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"path/filepath"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/fuzzy-moose/tana/internal/collector/catalog"
+	"github.com/fuzzy-moose/tana/internal/collector/downloads"
+	"github.com/fuzzy-moose/tana/internal/collector/favorites"
+	"github.com/fuzzy-moose/tana/internal/collector/feed"
+	"github.com/fuzzy-moose/tana/internal/collector/metadata"
+	"github.com/fuzzy-moose/tana/internal/collector/metadataproxy"
+	"github.com/fuzzy-moose/tana/internal/collector/pandaban"
+	"github.com/fuzzy-moose/tana/internal/collector/sitemap"
+	"github.com/fuzzy-moose/tana/internal/collector/status"
+	"github.com/fuzzy-moose/tana/internal/collector/storage"
+	"github.com/fuzzy-moose/tana/internal/panda"
+)
+
+type App struct {
+	Logger           *slog.Logger
+	Metadata         *metadata.Service
+	MetadataProxies  *metadataproxy.Service
+	Favorites        *favorites.Service
+	Downloads        *downloads.Service
+	Sitemap          *sitemap.Service
+	ReferenceImports *metadata.ReferenceImports
+	Status           *status.Service
+	Ban              *pandaban.State
+	Bans             *Bans
+	Catalog          *catalog.Service
+	Feeds            *feed.Service
+	APIToken         string
+
+	db *pgxpool.Pool
+}
+
+func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
+	// Collection uses sustained pacing even if other Panda consumers allow bursts.
+	limiter, err := panda.NewRateLimiter(cfg.Panda.RateInterval, 1)
+	if err != nil {
+		return nil, err
+	}
+	db, err := storage.Open(ctx, cfg.DatabaseURL, cfg.DatabasePoolSize)
+	if err != nil {
+		return nil, fmt.Errorf("open collector storage: %w", err)
+	}
+	catalogService := catalog.New(db, cfg.AuthenticatedPanda.Origin())
+	if err := catalogService.Backfill(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("prepare Panda catalog: %w", err)
+	}
+	ban := pandaban.New(db)
+	authenticatedBan := pandaban.NewAuthenticated(db)
+	client, err := panda.NewClient(cfg.Panda.APIURL, &http.Client{
+		Timeout: time.Minute, Transport: panda.RateLimitedTransport(limiter, panda.BanTransport(ban, nil, logger)),
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	authLimiter, err := panda.NewRateLimiter(panda.AuthenticatedRateInterval, 1)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	authClient, err := panda.NewAuthenticatedClient(cfg.AuthenticatedPanda, &http.Client{
+		Timeout: time.Minute, Transport: panda.RateLimitedTransport(authLimiter, panda.BanTransport(authenticatedBan, nil, logger)),
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	downloadService, err := downloads.New(ctx, db, cfg.DownloadDir, authClient,
+		downloads.NewHTTPTransfer(nil), logger, cfg.DownloadStorage)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	favoritesService := favorites.New(ctx, db, cfg.AuthenticatedPanda, authClient, logger)
+	sitemapLimiter, err := panda.NewRateLimiter(10*time.Second, 1)
+	if err != nil {
+		favoritesService.Close()
+		downloadService.Close()
+		db.Close()
+		return nil, err
+	}
+	sitemapService, err := sitemap.New(ctx, db, cfg.Sitemap, &http.Client{
+		// Redirects count as requests too; index children currently redirect hosts.
+		Timeout: 5 * time.Minute, Transport: panda.RateLimitedTransport(sitemapLimiter, panda.BanTransport(ban, nil, logger)),
+	}, logger)
+	if err != nil {
+		favoritesService.Close()
+		downloadService.Close()
+		db.Close()
+		return nil, err
+	}
+	imports, err := metadata.NewReferenceImports(ctx, db, filepath.Join(cfg.DataDir, "reference-imports"), logger)
+	if err != nil {
+		sitemapService.Close()
+		favoritesService.Close()
+		downloadService.Close()
+		db.Close()
+		return nil, err
+	}
+	metadataService := metadata.New(ctx, db, client, logger)
+	proxies, err := metadataproxy.New(ctx, db, metadataService, cfg.Panda, logger)
+	if err != nil {
+		metadataService.Close()
+		imports.Close()
+		sitemapService.Close()
+		favoritesService.Close()
+		downloadService.Close()
+		db.Close()
+		return nil, err
+	}
+	return &App{
+		Logger:           logger,
+		APIToken:         cfg.APIToken,
+		db:               db,
+		Feeds:            feed.New(ctx, db, cfg.Feed, nil, logger),
+		Catalog:          catalogService,
+		Metadata:         metadataService,
+		MetadataProxies:  proxies,
+		Favorites:        favoritesService,
+		Downloads:        downloadService,
+		Sitemap:          sitemapService,
+		ReferenceImports: imports,
+		Status:           status.New(db, favoritesService, ban, authenticatedBan, downloadService, sitemapService, proxies),
+		Ban:              ban,
+		Bans: &Bans{main: ban, authenticated: authenticatedBan, metadata: metadataService, sitemap: sitemapService,
+			proxies: proxies, favorites: favoritesService, downloads: downloadService},
+	}, nil
+}
+
+// Close stops background work before releasing its database.
+func (a *App) Close() error {
+	a.ReferenceImports.Close()
+	a.Sitemap.Close()
+	a.Downloads.Close()
+	a.Favorites.Close()
+	a.Feeds.Close()
+	a.MetadataProxies.Close()
+	a.Metadata.Close()
+	a.db.Close()
+	return nil
+}

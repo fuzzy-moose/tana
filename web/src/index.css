@@ -1,0 +1,28 @@
+:root {
+  color-scheme: dark;
+  background: #111413;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 280px; }
+button, input, select, textarea { font: inherit; }
+svg { flex-shrink: 0; }
+img { max-width: 100%; }
+
+.radix-themes {
+  --cursor-button: pointer;
+  --cursor-checkbox: pointer;
+  --cursor-menu-item: pointer;
+  --cursor-switch: pointer;
+}
+
+/* Keep compact desktop controls comfortably tappable on touch screens. */
+@media (pointer: coarse) {
+  .rt-Button, .rt-IconButton, .rt-SelectTrigger, .rt-TextFieldRoot, .rt-TabNavLink {
+    min-height: 44px;
+  }
+}

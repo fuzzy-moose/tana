@@ -1,0 +1,99 @@
+package library
+
+import (
+	"context"
+	"errors"
+	"io/fs"
+	"path/filepath"
+	"sync"
+)
+
+const maxFilesystemProbes = 4
+
+var errProbeNotAdmitted = errors.New("filesystem probe was not admitted")
+
+type probeCall struct {
+	done chan struct{}
+	err  error
+}
+
+// DirectoryProbe bounds and shares concurrent directory checks.
+// Filesystem calls cannot reliably be canceled on a stalled NAS. Retain their
+// slots until they actually return, and share in-flight work for the same root.
+// Callers can stop waiting without spawning more work beyond this fixed bound.
+type DirectoryProbe struct {
+	mu      sync.Mutex
+	active  map[string]*probeCall
+	changed chan struct{}
+	inspect func(string) error
+}
+
+// NewDirectoryProbe uses dirFS to inspect native paths (os.DirFS in production).
+func NewDirectoryProbe(dirFS func(string) fs.FS) *DirectoryProbe {
+	return &DirectoryProbe{
+		active: make(map[string]*probeCall), changed: make(chan struct{}),
+		inspect: func(path string) error {
+			return inspectDirectory(dirFS, path)
+		},
+	}
+}
+
+func inspectDirectory(dirFS func(string) fs.FS, path string) error {
+	// Stat from the parent so inspecting the root does not require search
+	// permission inside it.
+	clean := filepath.Clean(path)
+	parent, name := filepath.Dir(clean), filepath.Base(clean)
+	if parent == clean {
+		name = "."
+	}
+	info, err := fs.Stat(dirFS(parent), name)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("root is not a directory")
+	}
+	return nil
+}
+
+// Check waits for a directory observation until ctx expires.
+func (p *DirectoryProbe) Check(ctx context.Context, path string) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(errProbeNotAdmitted, err)
+		}
+		p.mu.Lock()
+		call := p.active[path]
+		if call == nil && len(p.active) < maxFilesystemProbes {
+			call = &probeCall{done: make(chan struct{})}
+			p.active[path] = call
+			go func() {
+				call.err = p.inspect(path)
+				p.mu.Lock()
+				delete(p.active, path)
+				close(call.done)
+				close(p.changed)
+				p.changed = make(chan struct{})
+				p.mu.Unlock()
+			}()
+		}
+		changed := p.changed
+		p.mu.Unlock()
+		if call != nil {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-call.done:
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return call.err
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(errProbeNotAdmitted, ctx.Err())
+		case <-changed:
+		}
+	}
+}
