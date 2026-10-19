@@ -30,6 +30,9 @@ func TestCatalogCategoryAndDefaultFilters(t *testing.T) {
 		{"independent category groups", collectorapi.CatalogOptions{Categories: []string{"manga", "doujinshi"}, DefaultCategories: []string{"manga", "artist cg"}}, []int64{4, 1}},
 		{"independent search alternatives", collectorapi.CatalogOptions{Query: "~red ~blue", DefaultQuery: "~green ~yellow"}, []int64{5, 3, 2, 1}},
 		{"categories search and exclusions", collectorapi.CatalogOptions{Query: "~red ~blue", Categories: []string{"manga", "doujinshi"}, DefaultQuery: "-l:japanese$ ~green ~yellow"}, []int64{1}},
+		{"unknown excluded tag", collectorapi.CatalogOptions{Query: "-l:unknown$"}, []int64{5, 4, 3, 2, 1}},
+		{"unknown required tag", collectorapi.CatalogOptions{Query: "l:unknown$"}, []int64{}},
+		{"unknown tag or title", collectorapi.CatalogOptions{Query: "yellow -unknown"}, []int64{2}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.options.PageSize = 100

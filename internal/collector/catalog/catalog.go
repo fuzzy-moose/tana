@@ -48,13 +48,17 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		return result, err
 	}
 	var args pgdb.Args
-	predicate, err := gallerysearch.Predicate(options.Query, namespaces, &args, catalogMatch)
+	matcher := &tagMatcher{ctx: ctx, tx: tx}
+	predicate, err := gallerysearch.Predicate(options.Query, namespaces, &args, matcher.match)
 	if err != nil {
 		return result, err
 	}
-	defaultPredicate, err := gallerysearch.Predicate(options.DefaultQuery, namespaces, &args, catalogMatch)
+	defaultPredicate, err := gallerysearch.Predicate(options.DefaultQuery, namespaces, &args, matcher.match)
 	if err != nil {
 		return result, err
+	}
+	if matcher.err != nil {
+		return result, matcher.err
 	}
 	predicate = "(" + predicate + ") AND (" + defaultPredicate + ")"
 	var pageCategories []string
@@ -162,42 +166,66 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 }
 
 func catalogPageQuery(predicate string, args *pgdb.Args, categories []string, before bool, limit int) string {
-	query := "SELECT g.gallery_id, g.ordered_at FROM catalog_galleries g WHERE " + predicate
-	if len(categories) > 1 {
-		// Merge ordered category scans so LIMIT can stop them before reading every match.
-		branches := make([]string, 0, len(categories))
-		for _, category := range categories {
-			branches = append(branches, query+" AND g.category = "+args.Add(category))
-		}
-		query = strings.Join(branches, " UNION ALL ")
-	}
 	order := "DESC"
 	if before {
 		order = "ASC"
 	}
-	return query + " ORDER BY ordered_at " + order + ", gallery_id " + order + " LIMIT " + args.Add(limit)
+	orderLimit := " ORDER BY ordered_at " + order + ", gallery_id " + order + " LIMIT " + args.Add(limit)
+	query := "SELECT g.gallery_id, g.ordered_at FROM catalog_galleries g WHERE " + predicate
+	if len(categories) > 1 {
+		// Merge ordered category scans that each stop at their own LIMIT; with only
+		// the outer LIMIT, the planner reads and sorts every match.
+		branches := make([]string, 0, len(categories))
+		for _, category := range categories {
+			branches = append(branches, "("+query+" AND g.category = "+args.Add(category)+orderLimit+")")
+		}
+		query = strings.Join(branches, " UNION ALL ")
+	}
+	return query + orderLimit
 }
 
-func catalogMatch(term gallerysearch.Term, args *pgdb.Args) string {
+// tagMatcher resolves tag terms to IDs before the page query is planned. The
+// planner cannot probe assignments by primary key for a tag ID it only learns
+// from a subquery, so it materializes every gallery carrying that tag instead.
+type tagMatcher struct {
+	ctx context.Context
+	tx  pgx.Tx
+	err error
+}
+
+func (m *tagMatcher) match(term gallerysearch.Term, args *pgdb.Args) string {
 	var fields []string
 	if term.Field != "tag" {
 		value := args.Add(term.Value)
 		fields = append(fields, "strpos(g.title_lower, "+value+") > 0", "strpos(g.title_japanese_lower, "+value+") > 0")
 	}
 	if term.Field != "title" {
-		match := gallerysearch.TagPredicate(term, "t.value_lower", "t.namespace", args)
-		if term.Prefix == "-" {
+		ids := m.tagIDs(term)
+		switch {
+		case len(ids) == 0:
+			fields = append(fields, "false")
+		case term.Prefix == "-":
 			// Probe the candidate's assignments; even a common excluded tag must not
 			// enumerate all of its galleries before the first page can be returned.
 			fields = append(fields, `EXISTS (SELECT 1 FROM catalog_gallery_tags gt
-				WHERE gt.gallery_id = g.gallery_id AND gt.tag_id IN
-				(SELECT t.id FROM catalog_tags t WHERE `+match+"))")
-		} else {
-			fields = append(fields, `g.gallery_id IN (SELECT gt.gallery_id FROM catalog_tags t
-				JOIN catalog_gallery_tags gt ON gt.tag_id = t.id WHERE `+match+")")
+				WHERE gt.gallery_id = g.gallery_id AND gt.tag_id = ANY(`+args.Add(ids)+"))")
+		default:
+			fields = append(fields, `g.gallery_id IN (SELECT gt.gallery_id FROM catalog_gallery_tags gt
+				WHERE gt.tag_id = ANY(`+args.Add(ids)+"))")
 		}
 	}
 	return strings.Join(fields, " OR ")
+}
+
+func (m *tagMatcher) tagIDs(term gallerysearch.Term) []int64 {
+	if m.err != nil {
+		return nil
+	}
+	var args pgdb.Args
+	predicate := gallerysearch.TagPredicate(term, "t.value_lower", "t.namespace", &args)
+	ids := []int64{}
+	m.err = m.tx.QueryRow(m.ctx, "SELECT COALESCE(array_agg(t.id), '{}') FROM catalog_tags t WHERE "+predicate, args...).Scan(&ids)
+	return ids
 }
 
 func searchNamespaces(ctx context.Context, tx pgx.Tx) (map[string]bool, error) {
@@ -205,7 +233,13 @@ func searchNamespaces(ctx context.Context, tx pgx.Tx) (map[string]bool, error) {
 	for _, name := range gallerysearch.NamespaceShortForms {
 		names[name] = true
 	}
-	rows, err := tx.Query(ctx, "SELECT DISTINCT namespace FROM catalog_tags")
+	// Skip between the few namespaces through the (namespace, value_lower) index;
+	// DISTINCT reads the whole tag vocabulary on every search.
+	rows, err := tx.Query(ctx, `WITH RECURSIVE ns (namespace) AS (
+		SELECT min(namespace) FROM catalog_tags
+		UNION ALL
+		SELECT (SELECT min(t.namespace) FROM catalog_tags t WHERE t.namespace > ns.namespace) FROM ns WHERE ns.namespace IS NOT NULL
+	) SELECT namespace FROM ns WHERE namespace IS NOT NULL`)
 	if err != nil {
 		return nil, err
 	}
