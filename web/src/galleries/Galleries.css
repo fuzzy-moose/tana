@@ -115,6 +115,7 @@
 .gallery-cover-frame.gallery-cover-wide { height: auto; }
 .gallery-cover-frame.gallery-cover-tall { width: auto; }
 .gallery-page-count { position: absolute; right: var(--space-2); bottom: var(--space-2); }
+.gallery-cover-status { position: absolute; left: var(--space-2); bottom: var(--space-2); }
 
 .gallery-box h2 {
   display: -webkit-box;

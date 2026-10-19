@@ -59,7 +59,6 @@ test('browses collected covers with local search, expunged filter, and cursor pa
   expect(gallery.getAttribute('href')).toBe('https://panda.example/g/1/token/')
   expect(gallery.getAttribute('target')).toBe('_blank')
   expect(gallery.querySelector('img')?.getAttribute('src')).toBe('https://covers.example/cover.jpg')
-  expect(gallery.querySelector('time')?.getAttribute('datetime')).toBe('2026-09-12T10:00:00Z')
   expect(screen.getByRole('button', { name: 'Previous' }).hasAttribute('disabled')).toBe(true)
   expect(catalogRequests()[0][0]).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false')
 

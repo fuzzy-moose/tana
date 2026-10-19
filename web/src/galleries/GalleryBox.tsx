@@ -34,28 +34,31 @@ interface GalleryBoxProps extends Pick<ComponentProps<'a'>, 'href' | 'target' | 
   cover: (image: CoverImageProps) => ReactNode
   pageCount: number | null
   tags: TagSuggestion[]
-  children?: ReactNode
+  /** Hover details; the title alone by default. */
+  tooltip?: ReactNode
+  /** Small badges pinned to the cover's bottom-left corner. */
+  status?: ReactNode
 }
 
-/** One cell of a gallery grid: title, cover with its page count, and the tags that fit. */
-export default function GalleryBox({ title, cover, pageCount, tags, children, ...link }: GalleryBoxProps) {
+/** One cell of a gallery grid: title, cover with its page count and status, and the tags that fit. */
+export default function GalleryBox({ title, cover, pageCount, tags, tooltip = title, status, ...link }: GalleryBoxProps) {
   const [coverRatio, setCoverRatio] = useState<number>()
   // A loaded cover shapes its frame inside the 2:3 slot, so the border and page count follow the image.
   const onCoverLoad: ReactEventHandler<HTMLImageElement> = ({ currentTarget: image }) => {
     setCoverRatio(image.naturalWidth / image.naturalHeight)
   }
   const coverShape = coverRatio === undefined ? '' : coverRatio > 2 / 3 ? ' gallery-cover-wide' : ' gallery-cover-tall'
-  return <Tooltip content={title}><Box asChild p="3"><a className="gallery-box" {...link}>
+  return <Tooltip content={tooltip}><Box asChild p="3"><a className="gallery-box" {...link}>
     <Flex direction="column" gap="2">
       <Text asChild size="1" weight="medium"><h2>{title}</h2></Text>
       <div className="gallery-cover"><div className={`gallery-cover-frame${coverShape}`} style={{ aspectRatio: coverRatio }}>
         {cover({ onLoad: onCoverLoad })}
+        {status && <Flex className="gallery-cover-status" gap="1">{status}</Flex>}
         {pageCount !== null && pageCount > 0 && <Badge className="gallery-page-count" variant="solid" color="gray">
           {pageCount}<VisuallyHidden>{pageCount === 1 ? ' page' : ' pages'}</VisuallyHidden>
         </Badge>}
       </div></div>
       <SummaryTags key={tags.map((tag) => tag.term).join(' ')} tags={tags} />
-      {children}
     </Flex>
   </a></Box></Tooltip>
 }
