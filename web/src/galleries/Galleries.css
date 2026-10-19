@@ -93,7 +93,6 @@
   justify-content: center;
   aspect-ratio: 2 / 3;
   overflow: hidden;
-  background: var(--gray-a3);
   border-radius: var(--radius-3);
 }
 
@@ -112,7 +111,7 @@
 .gallery-box:hover { background: var(--gray-a3); }
 .gallery-box:focus-visible { outline: 2px solid var(--focus-8); outline-offset: -2px; }
 .gallery-box .gallery-cover { position: relative; }
-.gallery-cover img:is(.gallery-cover-wide, .gallery-cover-tall) { box-sizing: border-box; border: 1px solid var(--gray-a4); }
+.gallery-cover img:is(.gallery-cover-wide, .gallery-cover-tall) { outline: 1px solid var(--gray-a7); outline-offset: -1px; }
 .gallery-cover img.gallery-cover-wide { height: auto; }
 .gallery-cover img.gallery-cover-tall { width: auto; }
 .gallery-page-count { position: absolute; right: var(--space-2); bottom: var(--space-2); }
