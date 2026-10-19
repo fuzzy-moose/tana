@@ -12,8 +12,12 @@ export interface GalleryDetails extends Gallery {
   panda_candidate_id?: number
 }
 
+export interface ListedGallery extends Gallery {
+  summary_tags: TagSuggestion[]
+}
+
 export interface GalleryListing {
-  items: Gallery[]
+  items: ListedGallery[]
   total: number
   page: number
   page_size: number

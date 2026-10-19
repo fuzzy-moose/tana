@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Badge, Button, Callout, DropdownMenu, Flex, Heading, Text } from '@radix-ui/themes'
+import { Badge, Button, Callout, DropdownMenu, Flex, Heading, Text, Theme } from '@radix-ui/themes'
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons'
 import { listingLink } from '../navigation'
 import type { GallerySort } from '../navigation'
 import Pagination from '../pagination/Pagination'
 import PandaCategoryFilter from '../panda/PandaCategoryFilter'
 import { listGalleries } from './api'
-import type { GalleryListing } from './api'
+import type { GalleryListing, ListedGallery } from './api'
 import GalleryCard from './GalleryCard'
 import GallerySearch from './GallerySearch'
 import { replaceListingPage, useGalleryLayout } from './useGalleryLayout'
 import './Galleries.css'
+
+const sizingGallery: ListedGallery = { id: 0, title: '', page_count: 0, summary_tags: [] }
 
 const sortLabels: Record<GallerySort, string> = {
   title: 'Title · A–Z',
@@ -70,7 +72,7 @@ export default function Galleries({ search, page, categories, sort }: { search: 
   }, [current, search, pageHref])
 
   return (
-    <section className="gallery-listing" aria-labelledby="galleries-title" style={{ '--gallery-card-height': `${cardHeight}px` } as CSSProperties}>
+    <section className="gallery-listing gallery-boxes" aria-labelledby="galleries-title" style={{ '--gallery-card-height': `${cardHeight}px` } as CSSProperties}>
       <div className="gallery-toolbar">
         <Flex align="center" gap="3">
           <Heading as="h1" size="5" id="galleries-title">Galleries</Heading>
@@ -96,17 +98,17 @@ export default function Galleries({ search, page, categories, sort }: { search: 
         </Flex>
       </Callout.Root>}
       <div className="gallery-viewport" ref={viewportRef} aria-busy={!current && !error}>
-        <div className="gallery-grid gallery-sizing" aria-hidden="true">
-          <div className="gallery-card" ref={cardRef}><div className="gallery-cover" /><div className="gallery-title"><Text asChild size="1" weight="medium"><h2 /></Text></div><Text as="p" size="1">0 pages</Text></div>
-        </div>
+        <Theme asChild radius="none"><div className="gallery-grid gallery-sizing" aria-hidden="true">
+          <div ref={cardRef} inert><GalleryCard gallery={sizingGallery} /></div>
+        </div></Theme>
         {!current && !error && <Text as="p" size="2" color="gray" role="status">Loading galleries…</Text>}
         {current && (current.items.length === 0 ? <Flex className="gallery-empty" direction="column" align="center" justify="center" gap="3">
           <Heading as="h2" size="4">{search || categories.length ? 'No matching galleries.' : 'Your next read starts here.'}</Heading>
           <Text as="p" size="2" color="gray">{search || categories.length ? 'Try different titles, tags, or categories.' : 'Add a library and scan it to discover your comics and manga.'}</Text>
           <Button asChild variant="soft"><a href={search || categories.length ? listingLink('', 1, [], sort) : '#/libraries'}>{search || categories.length ? 'Show all galleries' : 'Manage libraries'}</a></Button>
-        </Flex> : <ul className="gallery-grid" aria-label="Galleries">
+        </Flex> : <Theme asChild radius="none"><ul className="gallery-grid" aria-label="Galleries">
           {current.items.map((gallery) => <li key={gallery.id}><GalleryCard gallery={gallery} /></li>)}
-        </ul>)}
+        </ul></Theme>)}
       </div>
       <div className="gallery-pagination">
         {result && <Pagination page={current?.page ?? page} totalPages={Math.ceil(result.total / (pageSize || 1))} pageHref={(number) => pageHref(search, number)} adjacentCount={1} label="Gallery pages" />}

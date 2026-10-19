@@ -180,6 +180,11 @@ func TagPredicate(term Term, valueColumn, namespaceColumn string, args *pgdb.Arg
 	return predicate
 }
 
+// SummaryTagLimit bounds the tags offered to a listing card, which shows
+// those that fit. Until tags of interest are ranked, the first tags in
+// namespace order apply.
+const SummaryTagLimit = 6
+
 type TagSuggestion struct {
 	Namespace string `json:"namespace"`
 	Value     string `json:"value"`

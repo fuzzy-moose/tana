@@ -24,16 +24,17 @@ type CatalogOptions struct {
 }
 
 type CatalogItem struct {
-	GalleryID       int64      `json:"gallery_id"`
-	Title           string     `json:"title"`
-	ThumbnailURL    string     `json:"thumbnail_url"`
-	PageCount       *int64     `json:"page_count"`
-	PostedAt        *time.Time `json:"posted_at"`
-	URL             string     `json:"url"`
-	MetadataSource  string     `json:"metadata_source"`
-	MetadataState   string     `json:"metadata_state,omitempty"`
-	FetchEligibleAt *time.Time `json:"fetch_eligible_at,omitempty"`
-	FirstSeenAt     *time.Time `json:"first_seen_at,omitempty"`
+	GalleryID       int64                         `json:"gallery_id"`
+	Title           string                        `json:"title"`
+	ThumbnailURL    string                        `json:"thumbnail_url"`
+	PageCount       *int64                        `json:"page_count"`
+	PostedAt        *time.Time                    `json:"posted_at"`
+	URL             string                        `json:"url"`
+	MetadataSource  string                        `json:"metadata_source"`
+	MetadataState   string                        `json:"metadata_state,omitempty"`
+	FetchEligibleAt *time.Time                    `json:"fetch_eligible_at,omitempty"`
+	FirstSeenAt     *time.Time                    `json:"first_seen_at,omitempty"`
+	SummaryTags     []gallerysearch.TagSuggestion `json:"summary_tags"`
 }
 
 type CatalogResult struct {

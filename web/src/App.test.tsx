@@ -29,13 +29,18 @@ test('defaults to galleries, searches and paginates, then opens gallery details 
     const url = new URL(String(input), 'http://localhost')
     if (url.pathname === '/api/galleries/1') return Response.json({ id: 1, title: 'Manga', page_count: 3 })
     const page = Number(url.searchParams.get('page'))
-    return Response.json({ items: [{ id: 1, title: page === 2 ? 'Manga Two' : 'Manga', page_count: 3 }], total: 25, page, page_size: 24 })
+    return Response.json({ items: [{
+      id: 1, title: page === 2 ? 'Manga Two' : 'Manga', page_count: 3,
+      summary_tags: [{ namespace: 'artist', value: 'alpha', term: 'artist:alpha$' }],
+    }], total: 25, page, page_size: 24 })
   })
   vi.stubGlobal('fetch', fetchMock)
   const user = userEvent.setup()
   render(<App />)
   expect(await screen.findByRole('heading', { name: 'Galleries' })).toBeTruthy()
   expect(await screen.findByRole('heading', { name: 'Manga' })).toBeTruthy()
+  const card = within(screen.getByRole('list', { name: 'Galleries' }))
+  expect(within(card.getByRole('list', { name: 'Tags' })).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['alpha'])
   expect(screen.queryByRole('button', { name: 'Scan all' })).toBeNull()
   await user.type(screen.getByLabelText('Search titles and tags'), 'Manga')
   await user.click(screen.getByRole('button', { name: 'Search' }))
@@ -52,11 +57,11 @@ test('defaults to galleries, searches and paginates, then opens gallery details 
 
 test('keeps empty galleries visible and disables reading in their detail view', async () => {
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => Response.json(String(input).includes('?')
-    ? { items: [{ id: 1, title: 'Empty gallery', page_count: 0 }], total: 1, page: 1, page_size: 24 }
+    ? { items: [{ id: 1, title: 'Empty gallery', page_count: 0, summary_tags: [] }], total: 1, page: 1, page_size: 24 }
     : { id: 1, title: 'Empty gallery', page_count: 0 })))
   const user = userEvent.setup()
   render(<App />)
-  await screen.findByText('No pages')
+  await within(await screen.findByRole('list', { name: 'Galleries' })).findByText('No pages')
   await user.click(within(screen.getByRole('list', { name: 'Galleries' })).getByRole('link'))
   await screen.findByText('This gallery has no pages to read.')
   expect(screen.queryByRole('link', { name: 'Read gallery' })).toBeNull()

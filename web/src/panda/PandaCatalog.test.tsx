@@ -42,7 +42,7 @@ beforeEach(() => {
     const query = url.searchParams.get('q')
     if (query === 'title:blue$') return Response.json({ error: 'invalid_query' }, { status: 400 })
     return Response.json({
-      items: [{ gallery_id: page, title: `${query || 'Upload'} ${catalogVersion} page ${page}`, thumbnail_url: 'https://covers.example/cover.jpg', page_count: 20, posted_at: '2026-09-12T10:00:00Z', url: `https://panda.example/g/${page}/token/` }],
+      items: [{ gallery_id: page, title: `${query || 'Upload'} ${catalogVersion} page ${page}`, thumbnail_url: 'https://covers.example/cover.jpg', page_count: 20, posted_at: '2026-09-12T10:00:00Z', url: `https://panda.example/g/${page}/token/`, summary_tags: [] }],
       page_size: 8, next_cursor: page === 1 ? 'next-token' : undefined, previous_cursor: page === 2 ? 'previous-token' : undefined,
     })
   })

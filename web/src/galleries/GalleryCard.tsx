@@ -1,16 +1,10 @@
-import { Text, Tooltip } from '@radix-ui/themes'
+import { Text } from '@radix-ui/themes'
 import { galleryLink } from '../navigation'
-import type { Gallery } from './api'
+import type { ListedGallery } from './api'
+import GalleryBox from './GalleryBox'
 import GalleryImage from './GalleryImage'
 
-export default function GalleryCard({ gallery }: { gallery: Gallery }) {
-  return <Tooltip content={gallery.title}><a className="gallery-card" href={galleryLink(gallery.id)}>
-    <div className="gallery-cover">{gallery.page_count > 0
-      ? <GalleryImage id={gallery.id} page={1} alt="" />
-      : <span className="image-placeholder">No pages</span>}</div>
-    <div className="gallery-title">
-      <Text asChild size="1" weight="medium"><h2>{gallery.title}</h2></Text>
-    </div>
-    <Text as="p" size="1" color="gray">{gallery.page_count} {gallery.page_count === 1 ? 'page' : 'pages'}</Text>
-  </a></Tooltip>
+export default function GalleryCard({ gallery }: { gallery: ListedGallery }) {
+  return <GalleryBox href={galleryLink(gallery.id)} title={gallery.title} pageCount={gallery.page_count} tags={gallery.summary_tags}
+    cover={(image) => gallery.page_count > 0 ? <GalleryImage id={gallery.id} page={1} alt="" {...image} /> : <Text size="1" color="gray">No pages</Text>} />
 }

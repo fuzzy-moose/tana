@@ -4,15 +4,24 @@ import (
 	"context"
 	"slices"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/fuzzy-moose/tana/internal/gallerysearch"
 	"github.com/fuzzy-moose/tana/internal/panda"
 	"github.com/fuzzy-moose/tana/internal/pgdb"
 )
 
 type Listing struct {
-	Items    []Summary `json:"items"`
-	Total    int64     `json:"total"`
-	Page     int64     `json:"page"`
-	PageSize int64     `json:"page_size"`
+	Items    []ListedGallery `json:"items"`
+	Total    int64           `json:"total"`
+	Page     int64           `json:"page"`
+	PageSize int64           `json:"page_size"`
+}
+
+// ListedGallery summarizes a gallery for its listing card.
+type ListedGallery struct {
+	Summary
+	SummaryTags []DetailTag `json:"summary_tags"`
 }
 
 func (r *Store) Browse(ctx context.Context, search string, page, pageSize int64) (Listing, error) {
@@ -20,7 +29,7 @@ func (r *Store) Browse(ctx context.Context, search string, page, pageSize int64)
 }
 
 func (r *Store) BrowseFiltered(ctx context.Context, search string, page, pageSize int64, options BrowseOptions) (Listing, error) {
-	result := Listing{Items: []Summary{}, Page: page, PageSize: pageSize}
+	result := Listing{Items: []ListedGallery{}, Page: page, PageSize: pageSize}
 	categories, err := panda.NormalizeCategories(options.Categories)
 	if err != nil || !options.Sort.Valid() {
 		return result, ErrInvalidQuery
@@ -55,16 +64,50 @@ func (r *Store) BrowseFiltered(ctx context.Context, search string, page, pageSiz
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var summary Summary
-		if err := rows.Scan(&summary.ID, &summary.Title, &summary.PageCount); err != nil {
+		item := ListedGallery{SummaryTags: []DetailTag{}}
+		if err := rows.Scan(&item.ID, &item.Title, &item.PageCount); err != nil {
 			return result, err
 		}
-		result.Items = append(result.Items, summary)
+		result.Items = append(result.Items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
+	if err := summarizeTags(ctx, tx, result.Items); err != nil {
+		return result, err
+	}
 	return result, tx.Commit(ctx)
+}
+
+func summarizeTags(ctx context.Context, tx pgx.Tx, items []ListedGallery) error {
+	byID := make(map[int64]*ListedGallery, len(items))
+	ids := make([]int64, 0, len(items))
+	for i := range items {
+		byID[items[i].ID] = &items[i]
+		ids = append(ids, items[i].ID)
+	}
+	rows, err := tx.Query(ctx, `SELECT gt.gallery_id, n.name, t.value
+		FROM gallery_tags gt JOIN tags t ON t.id = gt.tag_id
+		JOIN namespaces n ON n.id = t.namespace_id
+		WHERE gt.gallery_id = ANY($1::bigint[]) ORDER BY n.name, t.value`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var namespace, value string
+		if err := rows.Scan(&id, &namespace, &value); err != nil {
+			return err
+		}
+		if item := byID[id]; len(item.SummaryTags) < gallerysearch.SummaryTagLimit {
+			item.SummaryTags = append(item.SummaryTags, DetailTag{
+				Namespace: namespace, Value: value,
+				Term: gallerysearch.SuggestionTerm("", namespace, value),
+			})
+		}
+	}
+	return rows.Err()
 }
 
 type browseSQL struct {

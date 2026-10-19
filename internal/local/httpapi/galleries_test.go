@@ -21,17 +21,33 @@ func TestGalleryDetailTags(t *testing.T) {
 		name     string
 		metadata string
 		want     []gallery.DetailTag
+		listed   gallery.ListedGallery
 	}{
-		{name: "no tags", want: []gallery.DetailTag{}},
+		{name: "no tags", want: []gallery.DetailTag{}, listed: gallery.ListedGallery{SummaryTags: []gallery.DetailTag{}}},
 		{
 			name:     "grouped alphabetical tags",
-			metadata: "Tags: language:japanese, artist:zeta, all ages, artist:alpha, custom:example\nAttribution\n",
+			metadata: "Tags: language:japanese, artist:zeta, all ages, artist:alpha, custom:example, group:circle, parody:original, misc:one, misc:two, misc:three\nAttribution\n",
 			want: []gallery.DetailTag{
 				{Namespace: "artist", Value: "alpha", Term: "artist:alpha$"},
 				{Namespace: "artist", Value: "zeta", Term: "artist:zeta$"},
 				{Namespace: "custom", Value: "example", Term: "custom:example$"},
+				{Namespace: "group", Value: "circle", Term: "group:circle$"},
 				{Namespace: "language", Value: "japanese", Term: "language:japanese$"},
+				{Namespace: "misc", Value: "one", Term: "misc:one$"},
+				{Namespace: "misc", Value: "three", Term: "misc:three$"},
+				{Namespace: "misc", Value: "two", Term: "misc:two$"},
 				{Namespace: "other", Value: "all ages", Term: `other:"all ages$"`},
+				{Namespace: "parody", Value: "original", Term: "parody:original$"},
+			},
+			listed: gallery.ListedGallery{
+				SummaryTags: []gallery.DetailTag{
+					{Namespace: "artist", Value: "alpha", Term: "artist:alpha$"},
+					{Namespace: "artist", Value: "zeta", Term: "artist:zeta$"},
+					{Namespace: "custom", Value: "example", Term: "custom:example$"},
+					{Namespace: "group", Value: "circle", Term: "group:circle$"},
+					{Namespace: "language", Value: "japanese", Term: "language:japanese$"},
+					{Namespace: "misc", Value: "one", Term: "misc:one$"},
+				},
 			},
 		},
 	} {
@@ -60,8 +76,12 @@ func TestGalleryDetailTags(t *testing.T) {
 			if err := json.Unmarshal(request(t, h, "GET", "/api/galleries/"+strconv.FormatInt(listing.Items[0].ID, 10), "", 200).Body.Bytes(), &detail); err != nil {
 				t.Fatal(err)
 			}
-			if detail.Summary != listing.Items[0] || !reflect.DeepEqual(detail.Tags, tc.want) {
+			if detail.Summary != listing.Items[0].Summary || !reflect.DeepEqual(detail.Tags, tc.want) {
 				t.Fatalf("unexpected gallery detail: %+v; want tags %+v", detail, tc.want)
+			}
+			tc.listed.Summary = detail.Summary
+			if !reflect.DeepEqual(listing.Items[0], tc.listed) {
+				t.Fatalf("listed gallery: %+v; want %+v", listing.Items[0], tc.listed)
 			}
 			if len(tc.want) > 0 {
 				var filtered gallery.Listing
@@ -143,7 +163,7 @@ func TestGalleryAPIReadsDirectoryAndArchiveImages(t *testing.T) {
 		var g gallery.Summary
 		for _, item := range listing.Items {
 			if (archive && item.Title == "Story") || (!archive && item.Title == filepath.Base(root)) {
-				g = item
+				g = item.Summary
 			}
 		}
 		if g.ID == 0 || g.PageCount != 1 {

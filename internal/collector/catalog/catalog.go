@@ -111,7 +111,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var item collectorapi.CatalogItem
+		item := collectorapi.CatalogItem{SummaryTags: []gallerysearch.TagSuggestion{}}
 		var firstSeen, eligible *time.Time
 		var metadataError *string
 		var explicitPending bool
@@ -144,6 +144,9 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if cursor.Before {
 		slices.Reverse(result.Items)
 	}
+	if err := summarizeTags(ctx, tx, result.Items); err != nil {
+		return result, err
+	}
 	hasOpposite := options.Cursor != "" && !cursor.Inclusive
 	if len(result.Items) > 0 {
 		if (!cursor.Before && more) || (cursor.Before && hasOpposite) {
@@ -163,6 +166,35 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		}
 	}
 	return result, tx.Commit(ctx)
+}
+
+func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogItem) error {
+	byID := make(map[int64]*collectorapi.CatalogItem, len(items))
+	ids := make([]int64, 0, len(items))
+	for i := range items {
+		byID[items[i].GalleryID] = &items[i]
+		ids = append(ids, items[i].GalleryID)
+	}
+	rows, err := tx.Query(ctx, `SELECT gt.gallery_id, t.namespace, t.value
+		FROM catalog_gallery_tags gt JOIN catalog_tags t ON t.id = gt.tag_id
+		WHERE gt.gallery_id = ANY($1::bigint[]) ORDER BY t.namespace, t.value_lower`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var namespace, value string
+		if err := rows.Scan(&id, &namespace, &value); err != nil {
+			return err
+		}
+		if item := byID[id]; len(item.SummaryTags) < gallerysearch.SummaryTagLimit {
+			item.SummaryTags = append(item.SummaryTags, gallerysearch.TagSuggestion{
+				Namespace: namespace, Value: value, Term: gallerysearch.SuggestionTerm("", namespace, value),
+			})
+		}
+	}
+	return rows.Err()
 }
 
 func catalogPageQuery(predicate string, args *pgdb.Args, categories []string, before bool, limit int) string {

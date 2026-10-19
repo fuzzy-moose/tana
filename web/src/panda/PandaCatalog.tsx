@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Button, Callout, DropdownMenu, Flex, Heading, Spinner, Text } from '@radix-ui/themes'
+import { Button, Callout, DropdownMenu, Flex, Heading, Spinner, Text, Theme } from '@radix-ui/themes'
 import { DotsHorizontalIcon, ExclamationTriangleIcon, ReloadIcon } from '@radix-ui/react-icons'
 import GallerySearch from '../galleries/GallerySearch'
 import { useGalleryGrid } from '../galleries/useGalleryLayout'
 import { pandaListingLink } from '../navigation'
 import '../pagination/Pagination.css'
 import { completePandaSearch, getPandaDefaultFilter, hasDefaultFilter, listPandaCatalog } from './api'
-import type { PandaCatalogResult, PandaDefaultFilter as DefaultFilter } from './api'
+import type { PandaCatalogResult, PandaDefaultFilter as DefaultFilter, PandaGallery } from './api'
 import PandaCard from './PandaCard'
 import PandaCategoryFilter from './PandaCategoryFilter'
 import PandaDefaultFilter from './PandaDefaultFilter'
 import '../galleries/Galleries.css'
 import './PandaCatalog.css'
+
+const sizingGallery: PandaGallery = {
+  gallery_id: 0, title: '', thumbnail_url: '', page_count: null, posted_at: null, metadata_source: 'collected', url: '', summary_tags: [],
+}
 
 interface PandaCatalogProps {
   search: string
@@ -77,7 +81,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
     return () => window.removeEventListener('keydown', navigate)
   }, [result, loading, error, pageHref, search])
 
-  return <section className="gallery-listing panda-catalog" aria-labelledby="panda-title" style={{ '--gallery-card-height': `${cardHeight}px` } as CSSProperties}>
+  return <section className="gallery-listing gallery-boxes panda-catalog" aria-labelledby="panda-title" style={{ '--gallery-card-height': `${cardHeight}px` } as CSSProperties}>
     <div className="gallery-toolbar">
       <Flex align="center" gap="3">
         <Heading as="h1" size="5" id="panda-title">Panda</Heading>
@@ -116,13 +120,17 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
     </Callout.Root>}
 
     <div className="gallery-viewport" ref={viewportRef} aria-busy={loading}>
-      <div className="gallery-grid gallery-sizing" aria-hidden="true"><div className="gallery-card panda-card" ref={cardRef}><div className="gallery-cover" /><div className="gallery-title"><Text asChild size="1" weight="medium"><h2 /></Text></div><Text as="p" size="1">0 pages · 12/12/2026</Text><div className="panda-feed-status" /></div></div>
+      <Theme asChild radius="none"><div className="gallery-grid gallery-sizing" aria-hidden="true">
+        <div ref={cardRef} inert><PandaCard gallery={sizingGallery} /></div>
+      </div></Theme>
       {!result && loading && !error && <Text as="p" size="2" color="gray" role="status">Loading Panda galleries…</Text>}
       {result && (result.items.length === 0 ? <Flex className="gallery-empty" direction="column" align="center" justify="center" gap="3">
         <Heading as="h2" size="4">{cursor ? 'No more matching Panda galleries.' : filtered ? 'No matching Panda galleries.' : 'No Panda galleries yet.'}</Heading>
         <Text as="p" size="2" color="gray">{cursor ? 'Browse back or return to the newest galleries.' : filtered ? 'Try different titles, tags, or categories, or bypass the default filter.' : 'Collect a feed to discover galleries and browse their feed metadata.'}</Text>
         <Button asChild variant="soft"><a href={cursor ? pageHref(search) : filtered ? clearHref : '#/collector/feeds'}>{cursor ? 'Newest galleries' : filtered ? 'Show all Panda galleries' : 'Collect feeds'}</a></Button>
-      </Flex> : <ul className="gallery-grid" aria-label="Panda galleries">{result.items.map((gallery) => <li key={gallery.gallery_id}><PandaCard gallery={gallery} /></li>)}</ul>)}
+      </Flex> : <Theme asChild radius="none"><ul className="gallery-grid" aria-label="Panda galleries">
+        {result.items.map((gallery) => <li key={gallery.gallery_id}><PandaCard gallery={gallery} /></li>)}
+      </ul></Theme>)}
     </div>
     <div className="gallery-pagination">
       <Text size="1" color="gray" className="gallery-sort">Upload date (first seen if unknown) · Newest first</Text>

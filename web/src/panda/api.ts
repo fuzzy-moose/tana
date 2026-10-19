@@ -1,6 +1,6 @@
 import { request } from '../api'
 import { collectorMessages } from '../collector/api'
-import type { SearchCompletion } from '../galleries/api'
+import type { SearchCompletion, TagSuggestion } from '../galleries/api'
 
 export interface PandaGallery {
   gallery_id: number
@@ -13,6 +13,7 @@ export interface PandaGallery {
   fetch_eligible_at?: string
   first_seen_at?: string
   url: string
+  summary_tags: TagSuggestion[]
 }
 
 export interface PandaCatalogResult {

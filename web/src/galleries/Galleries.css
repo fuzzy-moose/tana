@@ -87,16 +87,6 @@
 .gallery-pagination .pagination { margin: 0; }
 .gallery-empty { min-height: 100%; text-align: center; padding: var(--space-4); }
 
-.gallery-card {
-  display: block;
-  min-width: 0;
-  color: var(--gray-12);
-  text-decoration: none;
-  border-radius: var(--radius-3);
-}
-
-.gallery-card:focus-visible { outline: 2px solid var(--accent-8); outline-offset: 4px; }
-
 .gallery-cover {
   display: flex;
   align-items: center;
@@ -108,21 +98,45 @@
 }
 
 .gallery-cover img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.gallery-card:hover .gallery-cover { outline: 1px solid var(--accent-8); }
-.gallery-title { margin: var(--space-1) 0 2px; }
 
-.gallery-card h2 {
+/* Cells draw only their right and bottom edges, so neighbors share one line. */
+.gallery-boxes .gallery-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
+  gap: 0;
+  border-top: 1px solid var(--gray-a5);
+  border-left: 1px solid var(--gray-a5);
+}
+
+.gallery-boxes .gallery-grid > * { border-right: 1px solid var(--gray-a5); border-bottom: 1px solid var(--gray-a5); }
+.gallery-box { display: block; height: 100%; color: var(--gray-12); text-decoration: none; background: var(--color-surface); }
+.gallery-box:hover { background: var(--gray-a3); }
+.gallery-box:focus-visible { outline: 2px solid var(--focus-8); outline-offset: -2px; }
+.gallery-box .gallery-cover { position: relative; }
+.gallery-cover img:is(.gallery-cover-wide, .gallery-cover-tall) { box-sizing: border-box; border: 1px solid var(--gray-a4); }
+.gallery-cover img.gallery-cover-wide { height: auto; }
+.gallery-cover img.gallery-cover-tall { width: auto; }
+.gallery-page-count { position: absolute; right: var(--space-2); bottom: var(--space-2); }
+
+.gallery-box h2 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  height: 32px;
+  height: calc(2 * var(--line-height-1));
   margin: 0;
-  line-height: 16px;
   overflow-wrap: anywhere;
 }
 
-.gallery-card p { margin: 0; }
+/* Two rows of size-1 badges keep every card, and so the page capacity, equal. */
+.gallery-summary-tags {
+  align-content: flex-start;
+  height: calc(2 * (var(--line-height-1) + var(--space-1)) + var(--space-1));
+  overflow: hidden;
+  list-style: none;
+}
+
+.gallery-summary-tags > li { display: flex; align-items: center; min-width: 0; max-width: 100%; }
+.gallery-summary-tags .rt-Badge { max-width: 100%; }
 .image-placeholder { padding: var(--space-4); text-align: center; color: var(--gray-10); font-size: var(--font-size-1); }
 
 @media (max-width: 900px) {
@@ -136,6 +150,7 @@
     grid-template-columns: repeat(auto-fill, minmax(min(110px, 100%), 1fr));
     gap: var(--space-2);
   }
+  .gallery-boxes .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr)); }
 }
 
 @media (pointer: coarse) {

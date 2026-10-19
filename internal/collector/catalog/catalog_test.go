@@ -11,6 +11,7 @@ import (
 
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
+	"github.com/fuzzy-moose/tana/internal/gallerysearch"
 	"github.com/fuzzy-moose/tana/internal/panda"
 	"github.com/fuzzy-moose/tana/internal/pgdb/pgtest"
 )
@@ -122,6 +123,14 @@ func TestCatalogProjectionUpdatesAndRawTagCompletions(t *testing.T) {
 	raw := `Odd: comma, "quote" \slash $dollar`
 	entry := panda.Metadata{ID: 1, Title: "Original", Posted: 10, Tags: []string{"artist:" + raw, "other:under_score", "other:旧作"}}
 	retain(t, db, entry, true)
+	listed, err := s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 24})
+	if want := []gallerysearch.TagSuggestion{
+		{Namespace: "artist", Value: raw, Term: gallerysearch.SuggestionTerm("", "artist", raw)},
+		{Namespace: "other", Value: "under_score", Term: "other:under_score$"},
+		{Namespace: "other", Value: "旧作", Term: "other:旧作$"},
+	}; err != nil || len(listed.Items) != 1 || !reflect.DeepEqual(listed.Items[0].SummaryTags, want) {
+		t.Fatalf("summary tags: %+v, %v", listed, err)
+	}
 	for _, query := range []string{"a:odd", "tag:under", "旧"} {
 		completion, err := s.Complete(t.Context(), "title:missing ~"+query, len("title:missing ~")+len([]rune(query)))
 		if err != nil || len(completion.Items) != 1 {

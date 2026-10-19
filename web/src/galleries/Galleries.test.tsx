@@ -36,7 +36,7 @@ beforeEach(() => {
     const page = Math.min(Number(url.searchParams.get('page')), Math.max(1, Math.ceil(total / pageSize)))
     const first = (page - 1) * pageSize
     return Response.json({
-      items: Array.from({ length: Math.min(pageSize, total - first) }, (_, index) => ({ id: first + index + 1, title: `Gallery ${first + index}`, page_count: 0 })),
+      items: Array.from({ length: Math.min(pageSize, total - first) }, (_, index) => ({ id: first + index + 1, title: `Gallery ${first + index}`, page_count: 0, summary_tags: [] })),
       total, page, page_size: pageSize,
     })
   })
@@ -141,7 +141,7 @@ test('fits Panda pages to the viewport while keeping the cursor and filters', as
     if (url.pathname === '/api/panda/default-filter') return Response.json({ query: '-l:japanese$', categories: [] })
     expect(url.searchParams.get('cursor')).toBe('saved-anchor')
     const pageSize = Number(url.searchParams.get('page_size'))
-    return Response.json({ items: Array.from({ length: pageSize }, (_, index) => ({ gallery_id: 16 + index, title: `Panda ${16 + index}`, page_count: 20, posted_at: '2026-09-12T10:00:00Z', url: 'https://panda.example/g/1/token/' })), page_size: pageSize, next_cursor: 'next', previous_cursor: 'previous' })
+    return Response.json({ items: Array.from({ length: pageSize }, (_, index) => ({ gallery_id: 16 + index, title: `Panda ${16 + index}`, page_count: 20, posted_at: '2026-09-12T10:00:00Z', url: 'https://panda.example/g/1/token/', summary_tags: [] })), page_size: pageSize, next_cursor: 'next', previous_cursor: 'previous' })
   })
   render(<App />)
   await screen.findByRole('heading', { name: 'Panda 16' })
