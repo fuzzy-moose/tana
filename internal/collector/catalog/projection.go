@@ -55,18 +55,19 @@ func ProjectFeed(ctx context.Context, tx pgx.Tx, entry panda.FeedEntry, captureI
 	title := strings.TrimSpace(entry.Title)
 	result, err := tx.Exec(ctx, `INSERT INTO catalog_galleries
 		(gallery_id, title, title_lower, title_japanese_lower, thumbnail_url, posted, ordered_at,
-		metadata_source, first_seen_at, feed_captured_at, feed_capture_id, uploader, description)
+		metadata_source, first_seen_at, feed_captured_at, feed_capture_id, uploader, description, category)
 		SELECT $1::bigint, $2::text, $3::text, '', $4::text, $5::timestamptz, $6::timestamptz, 'feed',
-		$7::timestamptz, $8::timestamptz, $9::bigint, $10::text, $11::text
+		$7::timestamptz, $8::timestamptz, $9::bigint, $10::text, $11::text, $12::text
 		WHERE NOT EXISTS (SELECT 1 FROM gallery_metadata WHERE gallery_id = $1)
 		ON CONFLICT (gallery_id) DO UPDATE SET title = excluded.title, title_lower = excluded.title_lower,
 		thumbnail_url = excluded.thumbnail_url, posted = excluded.posted, ordered_at = excluded.ordered_at,
 		first_seen_at = excluded.first_seen_at, feed_captured_at = excluded.feed_captured_at,
-		feed_capture_id = excluded.feed_capture_id, uploader = excluded.uploader, description = excluded.description
+		feed_capture_id = excluded.feed_capture_id, uploader = excluded.uploader, description = excluded.description,
+		category = excluded.category
 		WHERE catalog_galleries.metadata_source = 'feed'
 		AND (excluded.feed_captured_at, excluded.feed_capture_id) > (catalog_galleries.feed_captured_at, catalog_galleries.feed_capture_id)`,
 		entry.GalleryRef.ID, title, strings.ToLower(title), entry.ThumbnailURL, posted, orderedAt,
-		firstSeenAt, capturedAt, captureID, entry.Uploader, entry.Description)
+		firstSeenAt, capturedAt, captureID, entry.Uploader, entry.Description, entry.Category)
 	if err != nil {
 		return err
 	}

@@ -60,6 +60,12 @@ func TestProvisionalUnknownsUseFirstSightingForPagination(t *testing.T) {
 	if err != nil || len(filtered.Items) != 0 {
 		t.Fatalf("unknown category matched a category filter: %+v, %v", filtered, err)
 	}
+	projectFeed(t, db, panda.FeedEntry{GalleryRef: panda.GalleryRef{ID: 5, Token: "token"}, Title: "Feed manga", Category: "manga"}, time.Unix(20, 0))
+	filtered, err = service.List(t.Context(), collectorapi.CatalogOptions{PageSize: 10, Categories: []string{"manga"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCatalogIDs(t, filtered, []int64{5})
 }
 
 func TestCollectedMetadataReplacesProvisionalAndPendingRetryState(t *testing.T) {

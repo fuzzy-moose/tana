@@ -18,6 +18,8 @@ type FeedEntry struct {
 	Uploader     string
 	Description  string
 	Tags         []string
+	// Category is normalized like collected metadata, or empty when the title has no known prefix.
+	Category string
 }
 
 type feedEntry struct {
@@ -78,6 +80,7 @@ func ParseFeed(r io.Reader) ([]FeedEntry, error) {
 			return nil, fmt.Errorf("panda: feed entry %d: %w", i+1, err)
 		}
 		parsed := FeedEntry{GalleryRef: ref, Title: entry.Title, Uploader: entry.Author.Name, Description: entry.Summary}
+		parsed.Category, parsed.Title = splitFeedCategory(entry.Title)
 		// Panda uses Atom updated as the gallery's upload/publication time.
 		if posted, err := time.Parse(time.RFC3339, strings.TrimSpace(entry.Updated)); err == nil {
 			posted = posted.UTC()
@@ -104,6 +107,21 @@ func ParseFeed(r io.Reader) ([]FeedEntry, error) {
 		entries = append(entries, parsed)
 	}
 	return entries, nil
+}
+
+// Panda prefixes feed titles with the gallery category in brackets; any later
+// bracketed text belongs to the uploader's title. An unknown prefix stays in the title.
+func splitFeedCategory(title string) (string, string) {
+	inner, rest, found := strings.Cut(strings.TrimSpace(title), "]")
+	inner, prefixed := strings.CutPrefix(inner, "[")
+	if !found || !prefixed {
+		return "", title
+	}
+	categories, err := NormalizeCategories([]string{inner})
+	if err != nil {
+		return "", title
+	}
+	return categories[0], strings.TrimSpace(rest)
 }
 
 // Keep XHTML line breaks so description text cannot become part of a tag.

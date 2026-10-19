@@ -50,6 +50,7 @@ func TestParseFeed(t *testing.T) {
 		Uploader:     "example_uploader",
 		Description:  "An illustrated afternoon of tea and sketching.",
 		Tags:         []string{"language:english", "artist:example artist"},
+		Category:     "doujinshi",
 	}
 	want := []panda.FeedEntry{preview, {GalleryRef: panda.GalleryRef{ID: 42, Token: "next"}}, preview}
 	if !reflect.DeepEqual(got, want) {
@@ -99,6 +100,22 @@ func TestParseFeedLinkAndPreviewExtraction(t *testing.T) {
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries = %+v, want %+v", got, want)
+	}
+}
+
+func TestParseFeedSplitsOnlyKnownCategoryPrefix(t *testing.T) {
+	for title, want := range map[string][2]string{
+		" [Non-H] [Circle] Title ": {"non-h", "[Circle] Title"},
+		"[Circle] Title":           {"", "[Circle] Title"},
+		"Title [Misc]":             {"", "Title [Misc]"},
+	} {
+		entries, err := panda.ParseFeed(strings.NewReader(atomFeed("<entry><title>" + title + `</title><link href="/g/7/token/" /></entry>`)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := [2]string{entries[0].Category, entries[0].Title}; got != want {
+			t.Fatalf("%q split into %q, want %q", title, got, want)
+		}
 	}
 }
 
