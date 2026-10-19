@@ -26,7 +26,6 @@ function SummaryTags({ tags }: { tags: TagSuggestion[] }) {
 }
 
 export interface CoverImageProps {
-  className?: string
   onLoad: ReactEventHandler<HTMLImageElement>
 }
 
@@ -40,20 +39,21 @@ interface GalleryBoxProps extends Pick<ComponentProps<'a'>, 'href' | 'target' | 
 
 /** One cell of a gallery grid: title, cover with its page count, and the tags that fit. */
 export default function GalleryBox({ title, cover, pageCount, tags, children, ...link }: GalleryBoxProps) {
-  const [coverClass, setCoverClass] = useState<string>()
-  // A loaded cover takes its own shape inside the 2:3 slot, so its border follows the image.
+  const [coverRatio, setCoverRatio] = useState<number>()
+  // A loaded cover shapes its frame inside the 2:3 slot, so the border and page count follow the image.
   const onCoverLoad: ReactEventHandler<HTMLImageElement> = ({ currentTarget: image }) => {
-    setCoverClass(image.naturalWidth * 3 > image.naturalHeight * 2 ? 'gallery-cover-wide' : 'gallery-cover-tall')
+    setCoverRatio(image.naturalWidth / image.naturalHeight)
   }
+  const coverShape = coverRatio === undefined ? '' : coverRatio > 2 / 3 ? ' gallery-cover-wide' : ' gallery-cover-tall'
   return <Tooltip content={title}><Box asChild p="3"><a className="gallery-box" {...link}>
     <Flex direction="column" gap="2">
       <Text asChild size="1" weight="medium"><h2>{title}</h2></Text>
-      <div className="gallery-cover">
-        {cover({ className: coverClass, onLoad: onCoverLoad })}
+      <div className="gallery-cover"><div className={`gallery-cover-frame${coverShape}`} style={{ aspectRatio: coverRatio }}>
+        {cover({ onLoad: onCoverLoad })}
         {pageCount !== null && pageCount > 0 && <Badge className="gallery-page-count" variant="solid" color="gray">
           {pageCount}<VisuallyHidden>{pageCount === 1 ? ' page' : ' pages'}</VisuallyHidden>
         </Badge>}
-      </div>
+      </div></div>
       <SummaryTags key={tags.map((tag) => tag.term).join(' ')} tags={tags} />
       {children}
     </Flex>

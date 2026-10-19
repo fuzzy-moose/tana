@@ -110,10 +110,10 @@
 .gallery-box { display: block; height: 100%; color: var(--gray-12); text-decoration: none; background: var(--color-surface); }
 .gallery-box:hover { background: var(--gray-a3); }
 .gallery-box:focus-visible { outline: 2px solid var(--focus-8); outline-offset: -2px; }
-.gallery-box .gallery-cover { position: relative; }
-.gallery-cover img:is(.gallery-cover-wide, .gallery-cover-tall) { outline: 1px solid var(--gray-a7); outline-offset: -1px; }
-.gallery-cover img.gallery-cover-wide { height: auto; }
-.gallery-cover img.gallery-cover-tall { width: auto; }
+.gallery-cover-frame { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+.gallery-cover-frame:is(.gallery-cover-wide, .gallery-cover-tall) img { outline: 1px solid var(--gray-a7); outline-offset: -1px; }
+.gallery-cover-frame.gallery-cover-wide { height: auto; }
+.gallery-cover-frame.gallery-cover-tall { width: auto; }
 .gallery-page-count { position: absolute; right: var(--space-2); bottom: var(--space-2); }
 
 .gallery-box h2 {
