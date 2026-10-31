@@ -6,7 +6,7 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD for the postgres superuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       # Postgres 18 images keep PGDATA in a versioned subdirectory of this path.
       - postgres-data:/var/lib/postgresql
@@ -19,13 +19,19 @@ services:
   tana:
     image: ghcr.io/fuzzy-moose/tana:main
     environment:
-      TANA_DATABASE_URL: ${TANA_DATABASE_URL:?Set TANA_DATABASE_URL to postgres://tana:<password>@postgres:5432/tana?sslmode=disable}
+      TANA_DATABASE_URL: ${TANA_DATABASE_URL}
     ports:
       - "8080:8080"
     volumes:
       - tana-data:/data
       # Register /library in Tana; files must be readable by UID/GID 65532.
-      - ${TANA_LIBRARY_DIR:?Set TANA_LIBRARY_DIR to your comic directory}:/library:ro
+      # rslave shows mounts made under this path after start, such as a NAS share.
+      - type: bind
+        source: ${TANA_LIBRARY_DIR}
+        target: /library
+        read_only: true
+        bind:
+          propagation: rslave
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,14 +39,13 @@ services:
   collector:
     image: ghcr.io/fuzzy-moose/tana-collector:main
     environment:
-      TANA_COLLECTOR_DATABASE_URL: ${TANA_COLLECTOR_DATABASE_URL:?Set TANA_COLLECTOR_DATABASE_URL to postgres://tana_collector:<password>@postgres:5432/tana_collector?sslmode=disable}
-      PANDA_FEED_URL: ${PANDA_FEED_URL:?Set PANDA_FEED_URL to your upstream feed URL}
-      PANDA_API_URL: ${PANDA_API_URL:?Set PANDA_API_URL to your upstream metadata API URL}
-      PANDA_FAVORITES_URL: ${PANDA_FAVORITES_URL:?Set PANDA_FAVORITES_URL to your upstream favorites URL}
-      PANDA_FAVORITES_COOKIES: ${PANDA_FAVORITES_COOKIES:?Set PANDA_FAVORITES_COOKIES to your account cookies as JSON}
-      PANDA_FAVORITES_ACCOUNT_KEY: ${PANDA_FAVORITES_ACCOUNT_KEY:-}
-      PANDA_ARCHIVER_URL: ${PANDA_ARCHIVER_URL:?Set PANDA_ARCHIVER_URL to your complete upstream archive preparation URL}
-      TANA_COLLECTOR_API_TOKEN: ${TANA_COLLECTOR_API_TOKEN:?Set TANA_COLLECTOR_API_TOKEN for collector API authentication}
+      TANA_COLLECTOR_DATABASE_URL: ${TANA_COLLECTOR_DATABASE_URL}
+      PANDA_FEED_URL: ${PANDA_FEED_URL}
+      PANDA_API_URL: ${PANDA_API_URL}
+      PANDA_FAVORITES_URL: ${PANDA_FAVORITES_URL}
+      PANDA_FAVORITES_COOKIES: ${PANDA_FAVORITES_COOKIES}
+      PANDA_ARCHIVER_URL: ${PANDA_ARCHIVER_URL}
+      TANA_COLLECTOR_API_TOKEN: ${TANA_COLLECTOR_API_TOKEN}
     ports:
       - "8081:8080"
     volumes:
