@@ -16,9 +16,11 @@ var ErrGalleryNotInCatalog = errors.New("gallery not in catalog")
 // RecordDisplays stores one display per distinct gallery of a listing page, all
 // at the collector's time of the record. A display at the same instant as an
 // existing one adds nothing, so it is dropped. IDs need no catalog row: the seen
-// state outlives every projection change (ADR 0019).
-func (s *Service) RecordDisplays(ctx context.Context, ids []int64) error {
-	if len(ids) == 0 || len(ids) > collectorapi.MaxCatalogDisplays {
+// state outlives every projection change (ADR 0019). scoreFilter is the filter
+// state of the listing: a display in the "hidden only" state is seen but is not
+// evidence for the score model.
+func (s *Service) RecordDisplays(ctx context.Context, ids []int64, scoreFilter string) error {
+	if len(ids) == 0 || len(ids) > collectorapi.MaxCatalogDisplays || !collectorapi.ValidScoreFilter(scoreFilter) {
 		return ErrInvalidDisplays
 	}
 	for _, id := range ids {
@@ -26,9 +28,9 @@ func (s *Service) RecordDisplays(ctx context.Context, ids []int64) error {
 			return ErrInvalidDisplays
 		}
 	}
-	_, err := s.db.Exec(ctx, `INSERT INTO panda_gallery_displays (gallery_id, displayed_at)
-		SELECT DISTINCT id, now() FROM unnest($1::bigint[]) AS ids(id)
-		ON CONFLICT DO NOTHING`, ids)
+	_, err := s.db.Exec(ctx, `INSERT INTO panda_gallery_displays (gallery_id, displayed_at, evidence)
+		SELECT DISTINCT id, now(), $2::boolean FROM unnest($1::bigint[]) AS ids(id)
+		ON CONFLICT DO NOTHING`, ids, scoreFilter != collectorapi.ScoreFilterHidden)
 	return err
 }
 

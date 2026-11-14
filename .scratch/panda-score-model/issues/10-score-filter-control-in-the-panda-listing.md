@@ -1,0 +1,46 @@
+# 10: Score filter control in the Panda listing
+
+What to build: when the score filter is in force, the Panda listing shows a control beside the views with three states: "Filter on", "Filter off" and "Hidden only". The link holds the state, the catalog request and the record of a passed page carry it, and the hover details of each card show its score, its strongest weights and the rule that hides it. The empty unseen view and the catch-up confirmation tell the truth about hidden galleries.
+
+This is spec behaviours 34 to 45, and the web side of behaviour 39. Its parts are specified in spec **Design → Web** (the lines marked ticket 10):
+
+- `web/src/navigation.ts`: `PandaScoreFilter`, `PandaListing.scoreFilter`, the route parsing (`'apply'` for every verdict view), and `pandaListingLink`, which writes `score_filter=all|hidden` before the view parameter and never with a verdict view. `web/src/App.tsx` passes `scoreFilter`.
+- `web/src/panda/api.ts`: `listPandaCatalog` sends `score_filter` for `'all'` and `'hidden'` outside verdict views. `recordPandaDisplays(galleryIDs, scoreFilter)` adds `score_filter: 'hidden'` to the body only in the `'hidden'` state. New optional fields: `PandaCatalogResult.score_filter?: { threshold_tenths?: number, hidden_unseen?: boolean }` and `PandaGallery.score?: { value?: number, weights?: { kind: 'tag' | 'uploader' | 'category', label: string, weight: number }[], rule?: 'never_hide' | 'always_hide' | 'below_threshold', override?: string }`.
+- `web/src/panda/PandaCatalog.tsx`:
+  - The listing object, `pageHref`, the request key, the load effect, `clearHref` and `allHref` carry `scoreFilter`. Choosing a verdict view writes a link without it.
+  - A second `SegmentedControl` with the accessible name "Score filter" and the items "Filter on", "Filter off", "Hidden only" follows the view control in the heading row. It shows when the loaded result has `score_filter` or the state is not `'apply'`, and never in a verdict view. Choosing a state sets the hash to the listing with that state and no cursor.
+  - `goNext` passes the state to `recordPandaDisplays`.
+  - `saveVerdict` stays as it is: it patches the card and loads nothing (behaviour 40).
+  - Catch-up confirmation (behaviour 44). With `result.score_filter` and the state `'apply'`, the sentence reads "…become seen, including galleries that the current search and filters hide and galleries that the score filter hides." In the state `'hidden'` it reads "…including galleries that the current search and filters hide and galleries that the score filter does not hide." Otherwise it is today's text.
+  - Empty unseen view (behaviour 42). Today's empty state of the unseen view has three cases: with a cursor, without a cursor under a search or filters, and without a cursor and unfiltered. Only the two cases without a cursor change, and only in the state `'apply'` when `result.score_filter.hidden_unseen` is true. The heading stays as it is today. The text under it becomes "The score filter hides the unseen galleries that remain." in both cases, and a button "Show hidden only" links to the same listing in the state `'hidden'`. It stands before "Show all galleries", which stays. The case with a cursor keeps today's heading, text and buttons, whatever the page's `score_filter` says.
+  - Empty "Hidden only" listing without a cursor (behaviour 43), in the views "All" and "Unseen": heading "No hidden Panda galleries.", text "The score filter hides no gallery that matches this view, search and filters.", and a button "Filter on" that links to the same listing in the state `'apply'`.
+- `web/src/panda/PandaCard.tsx`: `PandaCard` and `PandaDetails` take the page's `score_filter` as an optional prop. `PandaDetails` shows, after today's lines (behaviour 41):
+  - with `score.value`: "Score <value with two decimals>", and " · Threshold <tenths / 10 with one decimal>" when the page has a threshold; then one line per entry of `score.weights`, with the signed weight (two decimals) and the label, prefixed "Uploader " or "Category " for those kinds;
+  - when the page has `score_filter`, one line for the deciding rule, derived in this order: verdict `not_for_me` → "Hidden by your "Not for me" verdict."; verdict `interesting` → nothing; `score.rule` `never_hide` → "Never hidden: <override>."; `always_hide` → "Hidden by the override for <override>."; `below_threshold` → "Hidden: the score is below the threshold."
+  - Without the prop it renders exactly today's lines, so the sizing card and the existing assertions don't change.
+
+Test seams: a new `web/src/panda/PandaScoreFilter.test.tsx` that renders `<App />` with its own stubbed `fetch` and the `useGalleryGrid` mock, as `PandaVerdicts.test.tsx` does. New cases for `PandaDetails` in `web/src/panda/PandaCard.test.tsx`. Existing assertions stay unchanged; new cases may be added to existing test files. The control's place in the toolbar, its wrapping and the extra load when it appears are manual checks.
+
+Blocked by: 03, 04
+
+Status: resolved
+
+- [x] At `#/panda?score_filter=hidden` the catalog request carries `score_filter=hidden` and the control shows "Hidden only" selected, also when the loaded page has no `score_filter`. At `#/panda` the request has no `score_filter` parameter. At `#/panda?score_filter=all&verdict=interesting` the request carries `verdict=interesting` and no `score_filter`, and no "Score filter" control shows.
+- [x] With a catalog page that has `score_filter`, the "Score filter" control shows in the views "All" and "Unseen" with "Filter on" selected. With a page without it, at `#/panda`, no such control shows.
+- [x] Choosing "Filter off" at `#/panda?q=x&cursor=c&unseen=true` sets the hash to a link with `q=x`, `score_filter=all` and `unseen=true`, and without `cursor`.
+- [x] In the state "Hidden only", a new search, a category change, "Include expunged", the default bypass, "Clear all filters", Next and the switch between "All" and "Unseen" each lead to a link that still carries `score_filter=hidden`. Choosing the view "Not for me" leads to a link without `score_filter`.
+- [x] Next in the state "Hidden only" posts `{"gallery_ids":[...],"score_filter":"hidden"}` to `/api/collector/catalog/displays`. In the other two states the posted body has only `gallery_ids`.
+- [x] After a click on "Not for me" on a card in the state "Filter on", the card stays in its position with the pressed control, and no catalog request follows.
+- [x] `PandaDetails` with a score of 1.374, a page threshold of 5 tenths and two weights shows "Score 1.37", "Threshold 0.5" and one line per weight with its signed value and label. Without `score.value` it shows no score line.
+- [x] `PandaDetails` on a page with `score_filter` shows the verdict line for a gallery with the verdict `not_for_me`, also when `score.rule` is `never_hide`; no "Hidden" line for the verdict `interesting` with `score.rule` `always_hide`; the override line with the override's label for `always_hide` without a verdict; and the threshold line for `below_threshold`. On a page without `score_filter` it shows no "Hidden" line for a `not_for_me` gallery.
+- [x] With no search, category or default filter, an empty unseen page at `#/panda?unseen=true` whose `score_filter` has `hidden_unseen` shows the heading "No unseen Panda galleries.", the text "The score filter hides the unseen galleries that remain." and a link "Show hidden only" to `#/panda?score_filter=hidden&unseen=true`, and does not show "You have seen every Panda gallery." Without `hidden_unseen` today's text shows and no "Show hidden only".
+- [x] The same page under a search (`#/panda?q=x&unseen=true`) shows the heading "No unseen Panda galleries match.", the score filter text in place of "Try different titles, tags, or categories, or show all galleries.", and a "Show hidden only" link that keeps `q=x`.
+- [x] An empty unseen page at a link with a cursor shows "Galleries that arrived during this visit wait with the newest unseen galleries." and the link "Newest unseen galleries", and no "Show hidden only" and no score filter text, also when the page's `score_filter` has `hidden_unseen`.
+- [x] An empty page at `#/panda?score_filter=hidden` shows "No hidden Panda galleries." and a link "Filter on" to the listing without `score_filter`.
+- [x] The catch-up confirmation contains "galleries that the score filter hides" in the unseen view with the filter in force and the state "Filter on", "galleries that the score filter does not hide" in the state "Hidden only", and neither phrase when the page has no `score_filter`.
+- [x] No file of the Panda lookup page (`PandaLookupPage.tsx`, `PandaLookup.tsx`, `lookup.ts`) changes.
+- [x] `npm test`, `npm run lint` and `npm run build` pass in `web/`, with existing assertions unchanged.
+
+## Resolution
+
+`navigation.ts` parses and writes `score_filter` (`PandaScoreFilter`), `api.ts` sends it on catalog requests and display records and types the page's `score_filter` and each item's `score`, `PandaCatalog.tsx` adds the "Score filter" control, carries the state through every link and request, and words the empty unseen, empty "Hidden only" and catch-up texts, and `PandaCard.tsx` shows the score, weights and deciding rule in the hover details; tests in `PandaScoreFilter.test.tsx` and `PandaCard.test.tsx`.

@@ -41,6 +41,7 @@ func HandleCollectorCatalog(client *collectorapi.Client, defaults ...*catalogfil
 		options := collectorapi.CatalogOptions{
 			Query: r.URL.Query().Get("q"), Cursor: r.URL.Query().Get("cursor"), PageSize: int(pageSize), IncludeExpunged: includeExpunged, Unseen: unseen,
 			Categories: r.URL.Query()["category"], Verdict: r.URL.Query().Get("verdict"),
+			ScoreFilter: r.URL.Query().Get("score_filter"),
 		}
 		bypassDefault := false
 		if r.URL.Query().Has("bypass_default") {
@@ -128,11 +129,16 @@ func writeCatalogCollectorError(w http.ResponseWriter, err error) {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			code = "collector_unauthorized"
 		case http.StatusBadRequest:
-			if upstream.Code == "invalid_query" || upstream.Code == "invalid_pagination" || upstream.Code == "invalid_category" {
+			switch upstream.Code {
+			case "invalid_query", "invalid_pagination", "invalid_category", "invalid_override", "invalid_threshold":
 				status, code = http.StatusBadRequest, upstream.Code
 			}
+		case http.StatusConflict:
+			if upstream.Code == "score_candidate_not_found" || upstream.Code == "score_model_not_active" {
+				status, code = http.StatusConflict, upstream.Code
+			}
 		case http.StatusNotFound:
-			if upstream.Code == "gallery_not_found" {
+			if upstream.Code == "gallery_not_found" || upstream.Code == "tag_not_found" {
 				status, code = http.StatusNotFound, upstream.Code
 			}
 		}

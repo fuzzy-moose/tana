@@ -47,3 +47,32 @@ test('cards of displayed galleries look subdued and say they were seen', () => {
     expect(screen.getByRole('link').textContent).not.toContain('Seen')
   }
 })
+
+test('details show the score, the page threshold and the strongest weights', () => {
+  const scored: PandaGallery = { ...collectedGallery, score: { value: 1.374, weights: [
+    { kind: 'tag', label: 'female:glasses', weight: 1.2 },
+    { kind: 'uploader', label: 'Some uploader', weight: -0.456 },
+  ] } }
+  const { rerender } = render(<PandaDetails gallery={scored} scoreFilter={{ threshold_tenths: 5 }} />)
+  expect(screen.getByText(/^Score 1\.37/).textContent).toBe('Score 1.37 · Threshold 0.5')
+  expect(screen.getByText('+1.20 female:glasses')).toBeTruthy()
+  expect(screen.getByText('-0.46 Uploader Some uploader')).toBeTruthy()
+  rerender(<PandaDetails gallery={{ ...scored, score: { rule: 'always_hide', override: 'Some uploader' } }} scoreFilter={{}} />)
+  expect(screen.queryByText(/^Score/)).toBeNull()
+})
+
+test('details name the rule that decides, the verdict first, only on a page with the score filter', () => {
+  const { rerender } = render(<PandaDetails gallery={{ ...collectedGallery, verdict: 'not_for_me', score: { rule: 'never_hide', override: 'female:glasses' } }} scoreFilter={{}} />)
+  expect(screen.getByText('Hidden by your "Not for me" verdict.')).toBeTruthy()
+  expect(screen.queryByText(/Never hidden/)).toBeNull()
+  rerender(<PandaDetails gallery={{ ...collectedGallery, verdict: 'interesting', score: { rule: 'always_hide', override: 'female:glasses' } }} scoreFilter={{}} />)
+  expect(screen.queryByText(/Hidden/)).toBeNull()
+  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'always_hide', override: 'Doujinshi' } }} scoreFilter={{}} />)
+  expect(screen.getByText('Hidden by the override for Doujinshi.')).toBeTruthy()
+  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'never_hide', override: 'female:glasses' } }} scoreFilter={{}} />)
+  expect(screen.getByText('Never hidden: female:glasses.')).toBeTruthy()
+  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { value: -2, rule: 'below_threshold' } }} scoreFilter={{ threshold_tenths: -5 }} />)
+  expect(screen.getByText('Hidden: the score is below the threshold.')).toBeTruthy()
+  rerender(<PandaDetails gallery={{ ...collectedGallery, verdict: 'not_for_me' }} />)
+  expect(screen.queryByText(/Hidden/)).toBeNull()
+})

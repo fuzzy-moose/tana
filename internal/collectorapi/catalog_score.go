@@ -1,0 +1,266 @@
+package collectorapi
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+// The kinds of value a score override names.
+const (
+	ScoreKindTag      = "tag"
+	ScoreKindUploader = "uploader"
+	ScoreKindCategory = "category"
+)
+
+// The two rules of a score override.
+const (
+	ScoreRuleAlwaysHide = "always_hide"
+	ScoreRuleNeverHide  = "never_hide"
+)
+
+// ScoreRuleBelowThreshold is the rule of a catalog item whose score is below
+// the active model's threshold.
+const ScoreRuleBelowThreshold = "below_threshold"
+
+// The states of the score filter beside "" (apply it): all galleries, or
+// only the galleries it hides.
+const (
+	ScoreFilterAll    = "all"
+	ScoreFilterHidden = "hidden"
+)
+
+func ValidScoreFilter(filter string) bool {
+	return filter == "" || filter == ScoreFilterAll || filter == ScoreFilterHidden
+}
+
+// CatalogScoreFilter describes the score filter in force for a catalog page.
+// ThresholdTenths is the active model's threshold, nil without one.
+// HiddenUnseen reports, for an empty first page of the unseen view, that the
+// filter hides unseen galleries that pass the search and filters.
+type CatalogScoreFilter struct {
+	ThresholdTenths *int `json:"threshold_tenths,omitempty"`
+	HiddenUnseen    bool `json:"hidden_unseen,omitempty"`
+}
+
+// CatalogItemScore names the rule that matches a catalog item, without regard
+// to its verdict, and the label of the deciding override. With an active model
+// it also gives the item's score and its strongest weights.
+type CatalogItemScore struct {
+	Rule     string               `json:"rule,omitempty"`
+	Override string               `json:"override,omitempty"`
+	Value    *float64             `json:"value,omitempty"`
+	Weights  []CatalogScoreWeight `json:"weights,omitempty"`
+}
+
+// CatalogScoreWeight is the active weight of one tag, uploader or category of
+// a catalog item, labelled like an override.
+type CatalogScoreWeight struct {
+	Kind   string  `json:"kind"`
+	Label  string  `json:"label"`
+	Weight float64 `json:"weight"`
+}
+
+// ScoreOverride is one stored override. Label is namespace:value for a tag
+// and the stored value for an uploader or category.
+type ScoreOverride struct {
+	ID    int64  `json:"id"`
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	Rule  string `json:"rule"`
+}
+
+// The reasons a preview offers no model: no verdicts at all, no "Not for me"
+// evidence, or no "Interesting" and no neutral evidence.
+const (
+	ScoreNoVerdicts   = "no_verdicts"
+	ScoreNoNotForMe   = "no_not_for_me"
+	ScoreNoAcceptable = "no_acceptable"
+)
+
+// ScorePreviewOptions asks for a candidate score model. Favorites counts Panda
+// favorites without a verdict as "Interesting". The default filter describes
+// the listing as the user sees it.
+type ScorePreviewOptions struct {
+	Favorites         *bool    `json:"favorites"`
+	DefaultQuery      string   `json:"default_query"`
+	DefaultCategories []string `json:"default_categories"`
+}
+
+// ScorePreview is a calculated candidate, or the reason there is none, with
+// the evidence it came from and the current overrides.
+type ScorePreview struct {
+	Favorites bool            `json:"favorites"`
+	Evidence  ScoreEvidence   `json:"evidence"`
+	Candidate *ScoreCandidate `json:"candidate"`
+	NoModel   string          `json:"no_model,omitempty"`
+	Active    *ScoreActive    `json:"active"`
+	Overrides []ScoreOverride `json:"overrides"`
+	Recent    ScoreRecent     `json:"recent"`
+}
+
+// ScoreActive describes the active model.
+type ScoreActive struct {
+	CalculatedAt    time.Time `json:"calculated_at"`
+	Favorites       bool      `json:"favorites"`
+	ThresholdTenths int       `json:"threshold_tenths"`
+}
+
+// ScoreRecent classes the newest catalog galleries that pass the default
+// filter by the first hiding rule that decides them: their verdict, a "never
+// hide" override, an "always hide" override, and for the rest their score
+// under the candidate and under the active model. A histogram is nil without
+// its model.
+type ScoreRecent struct {
+	Total        int             `json:"total"`
+	Interesting  int             `json:"interesting"`
+	NotForMe     int             `json:"not_for_me"`
+	NeverHidden  int             `json:"never_hidden"`
+	AlwaysHidden int             `json:"always_hidden"`
+	Candidate    *ScoreHistogram `json:"candidate"`
+	Active       *ScoreHistogram `json:"active"`
+}
+
+// ScoreHistogram counts galleries by score: Counts[i] is the number of
+// galleries with floor(score * 10) == FirstBucket + i. A threshold of t tenths
+// hides the counts of all buckets below t.
+type ScoreHistogram struct {
+	FirstBucket int   `json:"first_bucket"`
+	Counts      []int `json:"counts"`
+}
+
+// ScoreEvidence counts the evidence galleries of a preview. NewVerdicts is the
+// number of verdicts given or changed after the active model was calculated,
+// nil without one. FewVerdicts is set while either verdict count is under the
+// warning limit.
+type ScoreEvidence struct {
+	Interesting       int        `json:"interesting"`
+	NotForMe          int        `json:"not_for_me"`
+	Neutral           int        `json:"neutral"`
+	CountedFavorites  int        `json:"counted_favorites"`
+	FavoritesSyncedAt *time.Time `json:"favorites_synced_at"`
+	NewVerdicts       *int       `json:"new_verdicts"`
+	FewVerdicts       bool       `json:"few_verdicts"`
+}
+
+// ScoreCandidate is the stored candidate model with its strongest weights.
+// WeightCount is the number of weights the model has.
+type ScoreCandidate struct {
+	ID           int64         `json:"id"`
+	CalculatedAt time.Time     `json:"calculated_at"`
+	Favorites    bool          `json:"favorites"`
+	WeightCount  int           `json:"weight_count"`
+	Weights      []ScoreWeight `json:"weights"`
+	// SuggestedThresholdTenths is the start threshold the preview suggests
+	// for this candidate.
+	SuggestedThresholdTenths int          `json:"suggested_threshold_tenths"`
+	HeldOut                  ScoreHeldOut `json:"held_out"`
+}
+
+// ScoreHeldOut gives, per evidence class, the effect of the candidate on the
+// evidence galleries that pass the default filter, each scored by a model
+// calculated without it.
+type ScoreHeldOut struct {
+	Interesting ScoreClassEffect `json:"interesting"`
+	NotForMe    ScoreClassEffect `json:"not_for_me"`
+	Neutral     ScoreClassEffect `json:"neutral"`
+}
+
+// ScoreClassEffect counts the evidence galleries of one class: those an
+// override always hides or never hides, and the held-out scores of the rest.
+// A threshold of t tenths hides AlwaysHidden plus the buckets below t.
+type ScoreClassEffect struct {
+	Total        int            `json:"total"`
+	AlwaysHidden int            `json:"always_hidden"`
+	NeverHidden  int            `json:"never_hidden"`
+	Scores       ScoreHistogram `json:"scores"`
+}
+
+// ScoreWeight is the weight of one tag, uploader or category, labelled like an
+// override, with the numbers of evidence galleries of each class that carry it.
+// Interesting includes counted favorites. ActiveWeight is the value's weight
+// in the active model, nil without one.
+type ScoreWeight struct {
+	Kind         string   `json:"kind"`
+	Label        string   `json:"label"`
+	Weight       float64  `json:"weight"`
+	Interesting  int      `json:"interesting"`
+	NotForMe     int      `json:"not_for_me"`
+	Neutral      int      `json:"neutral"`
+	ActiveWeight *float64 `json:"active_weight"`
+}
+
+// SetScoreOverride gives the tag, uploader or category the rule, replacing
+// its other rule.
+func (c *Client) SetScoreOverride(ctx context.Context, kind, value, rule string) error {
+	body, err := json.Marshal(struct {
+		Kind  string `json:"kind"`
+		Value string `json:"value"`
+		Rule  string `json:"rule"`
+	}{kind, value, rule})
+	if err != nil {
+		return err
+	}
+	return c.scoreRequest(ctx, http.MethodPost, "/api/catalog/score/overrides", bytes.NewReader(body))
+}
+
+// RemoveScoreOverride removes the override with the ID, if it exists.
+func (c *Client) RemoveScoreOverride(ctx context.Context, id int64) error {
+	return c.scoreRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/catalog/score/overrides/%d", id), nil)
+}
+
+// PreviewScoreModel calculates a candidate score model and returns it with
+// its evidence and effect.
+func (c *Client) PreviewScoreModel(ctx context.Context, options ScorePreviewOptions) (ScorePreview, error) {
+	body, err := json.Marshal(options)
+	if err != nil {
+		return ScorePreview{}, err
+	}
+	var preview ScorePreview
+	err = c.catalogJSONRequest(ctx, http.MethodPost, "/api/catalog/score/preview", bytes.NewReader(body), &preview)
+	return preview, err
+}
+
+// ApplyScoreModel makes the candidate the active model with the threshold.
+func (c *Client) ApplyScoreModel(ctx context.Context, candidateID int64, thresholdTenths int) error {
+	body, err := json.Marshal(struct {
+		CandidateID     int64 `json:"candidate_id"`
+		ThresholdTenths int   `json:"threshold_tenths"`
+	}{candidateID, thresholdTenths})
+	if err != nil {
+		return err
+	}
+	return c.scoreRequest(ctx, http.MethodPost, "/api/catalog/score/apply", bytes.NewReader(body))
+}
+
+// SetScoreThreshold changes the active model's threshold.
+func (c *Client) SetScoreThreshold(ctx context.Context, thresholdTenths int) error {
+	body, err := json.Marshal(struct {
+		ThresholdTenths int `json:"threshold_tenths"`
+	}{thresholdTenths})
+	if err != nil {
+		return err
+	}
+	return c.scoreRequest(ctx, http.MethodPut, "/api/catalog/score/threshold", bytes.NewReader(body))
+}
+
+// RemoveScoreModel turns the active model off, if there is one.
+func (c *Client) RemoveScoreModel(ctx context.Context) error {
+	return c.scoreRequest(ctx, http.MethodDelete, "/api/catalog/score/model", nil)
+}
+
+func (c *Client) scoreRequest(ctx context.Context, method, path string, body io.Reader) error {
+	response, err := c.controlRequest(ctx, method, path, body)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return downloadResponseError(response)
+	}
+	return nil
+}

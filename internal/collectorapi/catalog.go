@@ -23,6 +23,7 @@ type CatalogOptions struct {
 	IncludeExpunged   bool
 	Unseen            bool
 	Verdict           string
+	ScoreFilter       string
 }
 
 type CatalogItem struct {
@@ -39,6 +40,7 @@ type CatalogItem struct {
 	SummaryTags     []gallerysearch.TagSuggestion `json:"summary_tags"`
 	Displayed       bool                          `json:"displayed"`
 	Verdict         string                        `json:"verdict,omitempty"`
+	Score           *CatalogItemScore             `json:"score,omitempty"`
 }
 
 type CatalogResult struct {
@@ -46,6 +48,8 @@ type CatalogResult struct {
 	PageSize       int           `json:"page_size"`
 	NextCursor     string        `json:"next_cursor,omitempty"`
 	PreviousCursor string        `json:"previous_cursor,omitempty"`
+	// ScoreFilter is set when the score filter is in force.
+	ScoreFilter *CatalogScoreFilter `json:"score_filter,omitempty"`
 }
 
 type CatalogCompletion = gallerysearch.Completion
@@ -61,6 +65,7 @@ func (c *Client) Catalog(ctx context.Context, options CatalogOptions) (CatalogRe
 		"include_expunged": {strconv.FormatBool(options.IncludeExpunged)},
 		"unseen":           {strconv.FormatBool(options.Unseen)},
 		"verdict":          {options.Verdict},
+		"score_filter":     {options.ScoreFilter},
 	}
 	var result CatalogResult
 	err := c.catalogRequest(ctx, "/api/catalog?"+params.Encode(), &result)
@@ -81,7 +86,12 @@ func (c *Client) CompleteCatalog(ctx context.Context, query string, cursor int) 
 }
 
 func (c *Client) catalogRequest(ctx context.Context, path string, result any) error {
-	response, err := c.controlRequest(ctx, http.MethodGet, path, nil)
+	return c.catalogJSONRequest(ctx, http.MethodGet, path, nil, result)
+}
+
+// catalogJSONRequest expects 200 and decodes at most 4 MiB of the response.
+func (c *Client) catalogJSONRequest(ctx context.Context, method, path string, body io.Reader, result any) error {
+	response, err := c.controlRequest(ctx, method, path, body)
 	if err != nil {
 		return err
 	}

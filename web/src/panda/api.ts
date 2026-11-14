@@ -2,7 +2,7 @@ import { request } from '../api'
 import { collectorMessages } from '../collector/api'
 import type { SearchCompletion, TagSuggestion } from '../galleries/api'
 import { isVerdictView } from '../navigation'
-import type { PandaListing } from '../navigation'
+import type { PandaListing, PandaScoreFilter } from '../navigation'
 
 export type PandaVerdict = 'interesting' | 'not_for_me'
 
@@ -22,6 +22,27 @@ export interface PandaGallery {
   summary_tags: TagSuggestion[]
   displayed?: boolean
   verdict?: PandaVerdict
+  score?: PandaGalleryScore
+}
+
+export interface PandaScoreWeight {
+  kind: 'tag' | 'uploader' | 'category'
+  label: string
+  weight: number
+}
+
+/** What the score filter knows about a gallery; the verdict rule is left to the card's own verdict. */
+export interface PandaGalleryScore {
+  value?: number
+  weights?: PandaScoreWeight[]
+  rule?: 'never_hide' | 'always_hide' | 'below_threshold'
+  override?: string
+}
+
+/** Present while the score filter is in force. */
+export interface PandaCatalogScoreFilter {
+  threshold_tenths?: number
+  hidden_unseen?: boolean
 }
 
 export interface PandaCatalogResult {
@@ -29,6 +50,7 @@ export interface PandaCatalogResult {
   page_size: number
   next_cursor?: string
   previous_cursor?: string
+  score_filter?: PandaCatalogScoreFilter
 }
 
 export interface FeedStatus {
@@ -61,10 +83,11 @@ export function savePandaDefaultFilter(filter: PandaDefaultFilter) {
   }, { ...collectorMessages, invalid_query: 'Invalid search query.', invalid_category: 'Unknown Panda gallery category.' })
 }
 
-export function listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view }: PandaListing, pageSize: number, signal?: AbortSignal) {
+export function listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view, scoreFilter }: PandaListing, pageSize: number, signal?: AbortSignal) {
   const params = new URLSearchParams({ q: search, cursor, page_size: String(pageSize), include_expunged: String(includeExpunged) })
   for (const category of categories) params.append('category', category)
   if (bypassDefault) params.set('bypass_default', 'true')
+  if (scoreFilter !== 'apply' && !isVerdictView(view)) params.set('score_filter', scoreFilter)
   if (view === 'unseen') params.set('unseen', 'true')
   else if (isVerdictView(view)) params.set('verdict', view)
   return request<PandaCatalogResult>(`/api/collector/catalog?${params}`, { signal }, {
@@ -76,9 +99,11 @@ export function listPandaCatalog({ search, cursor, includeExpunged, categories, 
 }
 
 // No abort signal: leaving the page must not cancel a record.
-export function recordPandaDisplays(galleryIDs: number[]) {
+// Displays in the "hidden only" state still mark galleries seen, but are not score evidence.
+export function recordPandaDisplays(galleryIDs: number[], scoreFilter: PandaScoreFilter = 'apply') {
+  const body = scoreFilter === 'hidden' ? { gallery_ids: galleryIDs, score_filter: 'hidden' } : { gallery_ids: galleryIDs }
   return request<void>('/api/collector/catalog/displays', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gallery_ids: galleryIDs }), keepalive: true,
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true,
   }, collectorMessages)
 }
 

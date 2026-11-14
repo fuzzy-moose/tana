@@ -41,6 +41,9 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if options.Verdict != "" && (!collectorapi.ValidVerdict(options.Verdict) || options.Unseen) {
 		return result, ErrInvalidQuery
 	}
+	if !collectorapi.ValidScoreFilter(options.ScoreFilter) || (options.Verdict != "" && options.ScoreFilter != "") {
+		return result, ErrInvalidQuery
+	}
 	if options.Unseen && cursor.Before {
 		// The unseen view has no way back to passed pages.
 		return result, ErrInvalidPagination
@@ -50,44 +53,9 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		return result, err
 	}
 	defer tx.Rollback(ctx)
-	namespaces, err := searchNamespaces(ctx, tx)
+	predicate, args, pageCategories, err := catalogPredicate(ctx, tx, options)
 	if err != nil {
 		return result, err
-	}
-	var args pgdb.Args
-	matcher := &tagMatcher{ctx: ctx, tx: tx}
-	predicate, err := gallerysearch.Predicate(options.Query, namespaces, &args, matcher.match)
-	if err != nil {
-		return result, err
-	}
-	defaultPredicate, err := gallerysearch.Predicate(options.DefaultQuery, namespaces, &args, matcher.match)
-	if err != nil {
-		return result, err
-	}
-	if matcher.err != nil {
-		return result, matcher.err
-	}
-	predicate = "(" + predicate + ") AND (" + defaultPredicate + ")"
-	var pageCategories []string
-	for _, selections := range [][]string{options.Categories, options.DefaultCategories} {
-		categories, err := panda.NormalizeCategories(selections)
-		if err != nil {
-			return result, err
-		}
-		if len(categories) == 0 {
-			continue
-		}
-		if len(pageCategories) == 0 || len(categories) < len(pageCategories) {
-			pageCategories = categories
-		}
-		placeholders := make([]string, 0, len(categories))
-		for _, category := range categories {
-			placeholders = append(placeholders, args.Add(category))
-		}
-		predicate += " AND g.category IN (" + strings.Join(placeholders, ", ") + ")"
-	}
-	if !options.IncludeExpunged {
-		predicate += " AND g.expunged IS DISTINCT FROM true"
 	}
 	if options.Unseen {
 		// Probe each candidate in index order; the display table is far too large
@@ -101,6 +69,25 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		if ok {
 			predicate += " AND (g.ordered_at, g.gallery_id) > (" + args.Add(orderedAt) + ", " + args.Add(galleryID) + ")"
 		}
+	}
+	filter, err := readScoreFilter(ctx, tx)
+	if err != nil {
+		return result, err
+	}
+	scored := filter.inForce()
+	if scored {
+		result.ScoreFilter = filter.result()
+	}
+	unseenPredicate, unseenArgs := predicate, slices.Clone(args)
+	switch {
+	case options.Verdict != "":
+		// Verdict views never apply the score filter.
+	case !scored && options.ScoreFilter == collectorapi.ScoreFilterHidden:
+		predicate += " AND false"
+	case scored && options.ScoreFilter == "":
+		predicate += " AND NOT (" + filter.hidden(&args) + ")"
+	case scored && options.ScoreFilter == collectorapi.ScoreFilterHidden:
+		predicate += " AND (" + filter.hidden(&args) + ")"
 	}
 	if options.Cursor != "" {
 		comparison := "<"
@@ -178,6 +165,17 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if err := markVerdicts(ctx, tx, result.Items); err != nil {
 		return result, err
 	}
+	if scored {
+		if err := filter.markScores(ctx, tx, result.Items); err != nil {
+			return result, err
+		}
+		if options.Unseen && options.ScoreFilter == "" && options.Cursor == "" && len(result.Items) == 0 {
+			result.ScoreFilter.HiddenUnseen, err = filter.hasHiddenUnseen(ctx, tx, unseenPredicate, unseenArgs)
+			if err != nil {
+				return result, err
+			}
+		}
+	}
 	hasOpposite := options.Cursor != "" && !cursor.Inclusive
 	if options.Unseen {
 		// Every non-empty page leads on, even the last: its galleries become seen
@@ -203,6 +201,52 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		}
 	}
 	return result, tx.Commit(ctx)
+}
+
+// catalogPredicate builds the search, default-filter, category and expunged
+// conditions on alias g, with their bound arguments and the page categories
+// for catalogPageQuery.
+func catalogPredicate(ctx context.Context, tx pgx.Tx, options collectorapi.CatalogOptions) (string, pgdb.Args, []string, error) {
+	namespaces, err := searchNamespaces(ctx, tx)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	var args pgdb.Args
+	matcher := &tagMatcher{ctx: ctx, tx: tx}
+	predicate, err := gallerysearch.Predicate(options.Query, namespaces, &args, matcher.match)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defaultPredicate, err := gallerysearch.Predicate(options.DefaultQuery, namespaces, &args, matcher.match)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if matcher.err != nil {
+		return "", nil, nil, matcher.err
+	}
+	predicate = "(" + predicate + ") AND (" + defaultPredicate + ")"
+	var pageCategories []string
+	for _, selections := range [][]string{options.Categories, options.DefaultCategories} {
+		categories, err := panda.NormalizeCategories(selections)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		if len(categories) == 0 {
+			continue
+		}
+		if len(pageCategories) == 0 || len(categories) < len(pageCategories) {
+			pageCategories = categories
+		}
+		placeholders := make([]string, 0, len(categories))
+		for _, category := range categories {
+			placeholders = append(placeholders, args.Add(category))
+		}
+		predicate += " AND g.category IN (" + strings.Join(placeholders, ", ") + ")"
+	}
+	if !options.IncludeExpunged {
+		predicate += " AND g.expunged IS DISTINCT FROM true"
+	}
+	return predicate, args, pageCategories, nil
 }
 
 func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogItem) error {

@@ -138,7 +138,7 @@ The browsable collection of Panda galleries described by collected or provisiona
 A Panda gallery that is a displayed Panda gallery or that a catch-up covers. Seen state belongs to the gallery ID, so a new version of a seen gallery is unseen.
 
 **Displayed Panda gallery**:
-A Panda gallery shown on a listing page that the user left by going to the next page, or one the user gave a verdict. Each display keeps the time it was recorded.
+A Panda gallery shown on a listing page that the user left by going to the next page, or one the user gave a verdict. Each display keeps the time it was recorded and whether it is evidence for the Panda score model.
 
 **Panda gallery verdict**:
 The user's judgment of one Panda gallery, "Not for me" or "Interesting". A displayed Panda gallery without a verdict is neutral.
@@ -148,6 +148,21 @@ The Panda catalog listing restricted to galleries that are not seen, in catalog 
 
 **Catch-up**:
 A user action that makes every Panda gallery at or before a catalog position seen, including galleries that join the catalog later at such a position. The position only advances and never makes a gallery unseen.
+
+**Panda score model**:
+A set of weights for tags, uploaders, and Panda gallery categories, calculated from the user's evidence (Panda gallery verdicts, displayed Panda galleries, and optionally Panda favorites), together with a score threshold. At most one model is active.
+
+**Panda gallery score**:
+The sum of the weights of a gallery's tags, uploader, and category in the active Panda score model.
+
+**Score threshold**:
+The score below which the score filter hides a gallery.
+
+**Score override**:
+A user rule, "always hide" or "never hide", for one tag, uploader, or Panda gallery category.
+
+**Score filter**:
+The hiding of Panda galleries in the catalog listing by the active Panda score model, the score overrides, and the user's own verdicts. It is in force while a model is active or an override exists.
 
 **Metadata refresh time**:
 The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.

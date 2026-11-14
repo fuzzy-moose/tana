@@ -6,7 +6,7 @@ import { useMutation } from '../collector/useMutation'
 import GallerySearch from '../galleries/GallerySearch'
 import { useGalleryGrid } from '../galleries/useGalleryLayout'
 import { isVerdictView, pandaListingLink } from '../navigation'
-import type { PandaListing, PandaView } from '../navigation'
+import type { PandaListing, PandaScoreFilter, PandaView } from '../navigation'
 import '../pagination/Pagination.css'
 import { catchUpPanda, completePandaSearch, getPandaDefaultFilter, hasDefaultFilter, listPandaCatalog, recordPandaDisplays, savePandaVerdict, verdictLabels } from './api'
 import type { PandaCatalogResult, PandaDefaultFilter as DefaultFilter, PandaGallery, PandaVerdict } from './api'
@@ -20,9 +20,9 @@ const sizingGallery: PandaGallery = {
   gallery_id: 0, title: '', thumbnail_url: '', page_count: null, posted_at: null, metadata_source: 'collected', url: '', summary_tags: [],
 }
 
-export default function PandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view }: PandaListing) {
+export default function PandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view, scoreFilter }: PandaListing) {
   // Built during render: never an effect dependency, or every render would refetch.
-  const listing: PandaListing = { search, cursor, includeExpunged, categories, bypassDefault, view }
+  const listing: PandaListing = { search, cursor, includeExpunged, categories, bypassDefault, view, scoreFilter }
   const [result, setResult] = useState<PandaCatalogResult | null>(null)
   const [requestState, setRequestState] = useState<{ key: string, error: string } | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -32,17 +32,25 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
   const [catchUpOpen, setCatchUpOpen] = useState(false)
   const [verdictError, setVerdictError] = useState<{ galleryID: number, title: string, message: string } | null>(null)
   const catchUp = useMutation()
-  const pageHref = useCallback((query: string, position = '') => pandaListingLink({ search: query, cursor: position, includeExpunged, categories, bypassDefault, view }), [includeExpunged, categories, bypassDefault, view])
+  const pageHref = useCallback((query: string, position = '') => pandaListingLink({ search: query, cursor: position, includeExpunged, categories, bypassDefault, view, scoreFilter }), [includeExpunged, categories, bypassDefault, view, scoreFilter])
   const { viewportRef, cardRef, pageSize, cardHeight } = useGalleryGrid()
-  const requestKey = JSON.stringify([search, cursor, pageSize, includeExpunged, categories, bypassDefault, view, attempt])
+  const requestKey = JSON.stringify([search, cursor, pageSize, includeExpunged, categories, bypassDefault, view, scoreFilter, attempt])
   const loading = requestState?.key !== requestKey
   // Keep the alert's height stable while retrying: it affects measured page capacity.
   const error = requestState?.error ?? ''
   const defaultConfigured = hasDefaultFilter(defaultFilter)
   const filtered = !!search || categories.length > 0 || (defaultConfigured && !bypassDefault)
-  const clearHref = pandaListingLink({ bypassDefault: true, view })
-  const allHref = pandaListingLink({ search, includeExpunged, categories, bypassDefault })
+  const clearHref = pandaListingLink({ bypassDefault: true, view, scoreFilter })
+  const allHref = pandaListingLink({ search, includeExpunged, categories, bypassDefault, scoreFilter })
   const verdictView = isVerdictView(view)
+  const pageScoreFilter = result?.score_filter
+  // A link that holds a state keeps the control, so the user can get back to "Filter on".
+  const scoreControl = !verdictView && (!!pageScoreFilter || scoreFilter !== 'apply')
+  const scoreFilterHref = (state: PandaScoreFilter) => pandaListingLink({ ...listing, cursor: '', scoreFilter: state })
+  // Only without a cursor: the end of a walk through the unseen view makes no claim about what remains.
+  const scoreHidesUnseen = view === 'unseen' && !cursor && scoreFilter === 'apply' && !!pageScoreFilter?.hidden_unseen
+  const catchUpScope = pageScoreFilter && scoreFilter === 'apply' ? ' and galleries that the score filter hides'
+    : scoreFilter === 'hidden' ? ' and galleries that the score filter does not hide' : ''
   const catchUpDisabled = view !== 'unseen' || loading || !!error || !result?.items.length
   const newest = result?.items[0]
   const newestDate = newest?.posted_at ?? newest?.first_seen_at
@@ -62,9 +70,9 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
     if (!result?.next_cursor) return
     // Records settle in any order; each one sets or clears the alert as it lands.
     const ids = result.items.map((gallery) => gallery.gallery_id)
-    if (ids.length) void recordPandaDisplays(ids).then(() => setRecordError(''), (error: Error) => setRecordError(error.message))
+    if (ids.length) void recordPandaDisplays(ids, scoreFilter).then(() => setRecordError(''), (error: Error) => setRecordError(error.message))
     window.location.hash = pageHref(search, result.next_cursor)
-  }, [result, pageHref, search])
+  }, [result, pageHref, search, scoreFilter])
   const clickNext = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
     event.preventDefault()
@@ -99,7 +107,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
   useEffect(() => {
     if (!pageSize) return
     const controller = new AbortController()
-    void listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view }, pageSize, controller.signal).then((next) => {
+    void listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view, scoreFilter }, pageSize, controller.signal).then((next) => {
       if (controller.signal.aborted) return
       setResult(next)
       setRequestState({ key: requestKey, error: '' })
@@ -107,7 +115,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
       if (!controller.signal.aborted) setRequestState({ key: requestKey, error: error.message })
     })
     return () => controller.abort()
-  }, [search, cursor, pageSize, includeExpunged, categories, bypassDefault, view, requestKey, pageHref])
+  }, [search, cursor, pageSize, includeExpunged, categories, bypassDefault, view, scoreFilter, requestKey, pageHref])
 
   useEffect(() => {
     if (!result || loading || error) return
@@ -134,6 +142,11 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
           <SegmentedControl.Item value="interesting">Interesting</SegmentedControl.Item>
           <SegmentedControl.Item value="not_for_me">Not for me</SegmentedControl.Item>
         </SegmentedControl.Root>
+        {scoreControl && <SegmentedControl.Root size="1" aria-label="Score filter" value={scoreFilter} onValueChange={(value) => { window.location.hash = scoreFilterHref(value as PandaScoreFilter) }}>
+          <SegmentedControl.Item value="apply">Filter on</SegmentedControl.Item>
+          <SegmentedControl.Item value="all">Filter off</SegmentedControl.Item>
+          <SegmentedControl.Item value="hidden">Hidden only</SegmentedControl.Item>
+        </SegmentedControl.Root>}
       </Flex>
       <GallerySearch key={search} search={search} completeSearch={completePandaSearch} searchHref={pageHref} />
       <PandaCategoryFilter categories={categories} onChange={(next) => { window.location.hash = pandaListingLink({ ...listing, cursor: '', categories: next }) }} />
@@ -154,6 +167,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
             <DropdownMenu.Item disabled={loading} onSelect={() => setAttempt((value) => value + 1)}><ReloadIcon />Reload results</DropdownMenu.Item>
             <DropdownMenu.Separator />
             <DropdownMenu.Item asChild><a href="#/panda/lookup">Look up gallery</a></DropdownMenu.Item>
+            <DropdownMenu.Item asChild><a href="#/panda/score">Score model</a></DropdownMenu.Item>
             <DropdownMenu.Item asChild><a href="#/collector/feeds">Collect feeds</a></DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Root>
@@ -180,12 +194,17 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
       </div></Theme>
       {!result && loading && !error && <Text as="p" size="2" color="gray" role="status">Loading Panda galleries…</Text>}
       {result && (result.items.length === 0 ? <Flex className="gallery-empty" direction="column" align="center" justify="center" gap="3">
-        {view === 'unseen' ? <>
+        {scoreFilter === 'hidden' && !cursor ? <>
+          <Heading as="h2" size="4">No hidden Panda galleries.</Heading>
+          <Text as="p" size="2" color="gray">The score filter hides no gallery that matches this view, search and filters.</Text>
+          <Button asChild variant="soft"><a href={scoreFilterHref('apply')}>Filter on</a></Button>
+        </> : view === 'unseen' ? <>
           <Heading as="h2" size="4">{cursor ? (filtered ? 'No more unseen Panda galleries match.' : 'No more unseen Panda galleries.') : filtered ? 'No unseen Panda galleries match.' : 'No unseen Panda galleries.'}</Heading>
-          <Text as="p" size="2" color="gray">{cursor ? 'Galleries that arrived during this visit wait with the newest unseen galleries.' : filtered ? 'Try different titles, tags, or categories, or show all galleries.' : 'You have seen every Panda gallery. New galleries appear here once feeds are collected.'}</Text>
+          <Text as="p" size="2" color="gray">{cursor ? 'Galleries that arrived during this visit wait with the newest unseen galleries.' : scoreHidesUnseen ? 'The score filter hides the unseen galleries that remain.' : filtered ? 'Try different titles, tags, or categories, or show all galleries.' : 'You have seen every Panda gallery. New galleries appear here once feeds are collected.'}</Text>
           <Flex gap="3" wrap="wrap" justify="center">
             {cursor && <Button asChild variant="soft"><a href={pageHref(search)}>Newest unseen galleries</a></Button>}
-            <Button asChild variant="soft" color={cursor ? 'gray' : undefined}><a href={allHref}>Show all galleries</a></Button>
+            {scoreHidesUnseen && <Button asChild variant="soft"><a href={scoreFilterHref('hidden')}>Show hidden only</a></Button>}
+            <Button asChild variant="soft" color={cursor || scoreHidesUnseen ? 'gray' : undefined}><a href={allHref}>Show all galleries</a></Button>
           </Flex>
         </> : verdictView && !cursor ? <>
           <Heading as="h2" size="4">{filtered ? 'No Panda gallery with this verdict matches.' : 'No Panda gallery has this verdict.'}</Heading>
@@ -197,7 +216,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
           <Button asChild variant="soft"><a href={cursor ? pageHref(search) : filtered ? clearHref : '#/collector/feeds'}>{cursor ? 'Newest galleries' : filtered ? 'Show all Panda galleries' : 'Collect feeds'}</a></Button>
         </>}
       </Flex> : <Theme asChild radius="none"><ul className="gallery-grid" aria-label="Panda galleries">
-        {result.items.map((gallery) => <li key={gallery.gallery_id}><PandaCard gallery={gallery} onVerdict={saveVerdict} subdued={verdictView ? false : undefined} /></li>)}
+        {result.items.map((gallery) => <li key={gallery.gallery_id}><PandaCard gallery={gallery} onVerdict={saveVerdict} subdued={verdictView ? false : undefined} scoreFilter={pageScoreFilter} /></li>)}
       </ul></Theme>)}
     </div>
     <div className="gallery-pagination">
@@ -227,7 +246,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
     <AlertDialog.Root open={catchUpOpen} onOpenChange={(open) => { if (!open && !catchUp.pending) setCatchUpOpen(false) }}>
       <AlertDialog.Content maxWidth="460px">
         <AlertDialog.Title>Catch up?</AlertDialog.Title>
-        <AlertDialog.Description size="2">This page and every older Panda gallery, back from {newestDate ? new Date(newestDate).toLocaleString() : 'the newest gallery on this page'}, become seen, including galleries that the current search and filters hide. Newer galleries keep their state. This can't be undone.</AlertDialog.Description>
+        <AlertDialog.Description size="2">This page and every older Panda gallery, back from {newestDate ? new Date(newestDate).toLocaleString() : 'the newest gallery on this page'}, become seen, including galleries that the current search and filters hide{catchUpScope}. Newer galleries keep their state. This can't be undone.</AlertDialog.Description>
         {catchUp.error && <Text as="p" size="2" color="red" mt="3" role="alert">Catch-up failed. Nothing was marked as seen. {catchUp.error}</Text>}
         <Flex gap="3" mt="4" justify="end">
           <AlertDialog.Cancel><Button size="2" variant="soft" color="gray" disabled={catchUp.pending}>Cancel</Button></AlertDialog.Cancel>

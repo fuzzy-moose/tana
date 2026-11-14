@@ -99,6 +99,13 @@ test('Panda autocomplete uses the collected vocabulary and preserves raw tag cha
   expect(catalogRequests()).toHaveLength(1)
 })
 
+test('links the score model page from the Options menu', async () => {
+  render(<App />)
+  await screen.findByRole('heading', { name: 'Upload 1 page 1' })
+  await userEvent.click(screen.getByRole('button', { name: 'Options' }))
+  expect(screen.getByRole('menuitem', { name: 'Score model' }).getAttribute('href')).toBe('#/panda/score')
+})
+
 test('reloads only on request and keeps collection tools on dedicated pages', async () => {
   render(<App />)
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })

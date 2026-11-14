@@ -17,6 +17,7 @@ func HandleCatalog(service *catalog.Service) http.Handler {
 			Query: r.URL.Query().Get("q"), Categories: r.URL.Query()["category"],
 			DefaultQuery: r.URL.Query().Get("default_q"), DefaultCategories: r.URL.Query()["default_category"],
 			Cursor: r.URL.Query().Get("cursor"), PageSize: 24, Verdict: r.URL.Query().Get("verdict"),
+			ScoreFilter: r.URL.Query().Get("score_filter"),
 		}
 		if r.URL.Query().Has("page_size") {
 			value, err := strconv.Atoi(r.URL.Query().Get("page_size"))
@@ -70,12 +71,13 @@ func HandleCompleteCatalog(service *catalog.Service) http.Handler {
 func HandleRecordCatalogDisplays(service *catalog.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			GalleryIDs []int64 `json:"gallery_ids"`
+			GalleryIDs  []int64 `json:"gallery_ids"`
+			ScoreFilter string  `json:"score_filter"`
 		}
 		if !server.DecodeJSON(w, r, &input) {
 			return
 		}
-		if err := service.RecordDisplays(r.Context(), input.GalleryIDs); err != nil {
+		if err := service.RecordDisplays(r.Context(), input.GalleryIDs, input.ScoreFilter); err != nil {
 			catalogError(w, r, err)
 			return
 		}
@@ -135,6 +137,97 @@ func HandleRemoveCatalogVerdict(service *catalog.Service) http.Handler {
 	})
 }
 
+func HandleSetScoreOverride(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Kind  string `json:"kind"`
+			Value string `json:"value"`
+			Rule  string `json:"rule"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.SetScoreOverride(r.Context(), input.Kind, input.Value, input.Rule); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func HandleRemoveScoreOverride(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			catalogError(w, r, catalog.ErrInvalidScoreOverride)
+			return
+		}
+		if err := service.RemoveScoreOverride(r.Context(), id); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func HandlePreviewScoreModel(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var options collectorapi.ScorePreviewOptions
+		if !server.DecodeJSON(w, r, &options) {
+			return
+		}
+		preview, err := service.PreviewScoreModel(r.Context(), options)
+		if err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, preview)
+	})
+}
+
+func HandleApplyScoreModel(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			CandidateID     int64 `json:"candidate_id"`
+			ThresholdTenths int   `json:"threshold_tenths"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.ApplyScoreModel(r.Context(), input.CandidateID, input.ThresholdTenths); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func HandleSetScoreThreshold(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			ThresholdTenths int `json:"threshold_tenths"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.SetScoreThreshold(r.Context(), input.ThresholdTenths); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func HandleRemoveScoreModel(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := service.RemoveScoreModel(r.Context()); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, catalog.ErrInvalidFactsBatch), errors.Is(err, catalog.ErrInvalidDisplays):
@@ -145,6 +238,16 @@ func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_gallery_reference"})
 	case errors.Is(err, catalog.ErrInvalidVerdict):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_verdict"})
+	case errors.Is(err, catalog.ErrInvalidScoreOverride):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_override"})
+	case errors.Is(err, catalog.ErrTagNotFound):
+		server.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "tag_not_found"})
+	case errors.Is(err, catalog.ErrInvalidScoreThreshold):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_threshold"})
+	case errors.Is(err, catalog.ErrScoreCandidateNotFound):
+		server.WriteJSON(w, http.StatusConflict, map[string]string{"error": "score_candidate_not_found"})
+	case errors.Is(err, catalog.ErrNoActiveScoreModel):
+		server.WriteJSON(w, http.StatusConflict, map[string]string{"error": "score_model_not_active"})
 	case errors.Is(err, catalog.ErrGalleryNotInCatalog):
 		server.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "gallery_not_found"})
 	case errors.Is(err, catalog.ErrInvalidQuery):

@@ -15,6 +15,9 @@ export function isVerdictView(view: string | null | undefined): view is PandaVer
   return view === 'interesting' || view === 'not_for_me'
 }
 
+/** `'apply'` filters by score, `'all'` turns the filter off, `'hidden'` lists only what it hides. */
+export type PandaScoreFilter = 'apply' | 'all' | 'hidden'
+
 export interface PandaListing {
   search: string
   cursor: string
@@ -22,12 +25,13 @@ export interface PandaListing {
   categories: string[]
   bypassDefault: boolean
   view: PandaView
+  scoreFilter: PandaScoreFilter
 }
 
 export type Route =
   | { kind: 'galleries', search: string, page: number, categories: string[], sort: GallerySort }
   | ({ kind: 'panda' } & PandaListing)
-  | { kind: 'libraries' | 'source-cleanup' | 'panda-lookup' | 'not-found' }
+  | { kind: 'libraries' | 'source-cleanup' | 'panda-lookup' | 'panda-score' | 'not-found' }
   | { kind: 'library-refresh', libraryID?: number }
   | { kind: 'collector', page: CollectorPage, listPage: number, state: string }
   | { kind: 'detail', id: number, page: number }
@@ -44,8 +48,9 @@ export function useRoute(): Route {
   const page = Number.isSafeInteger(value) && value > 0 ? value : 1
   const sort = params.get('sort')
   if (!path || path === '/' || path === '/galleries') return { kind: 'galleries', search: params.get('q') ?? '', page, categories, sort: sort === 'favorited_desc' || sort === 'favorited_asc' ? sort : 'title' }
-  if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', cursor: params.get('cursor') ?? '', includeExpunged: params.get('include_expunged') === 'true', categories, bypassDefault: params.get('bypass_default') === 'true', view: pandaView(params) }
+  if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', cursor: params.get('cursor') ?? '', includeExpunged: params.get('include_expunged') === 'true', categories, bypassDefault: params.get('bypass_default') === 'true', view: pandaView(params), scoreFilter: pandaScoreFilter(params) }
   if (path === '/panda/lookup') return { kind: 'panda-lookup' }
+  if (path === '/panda/score') return { kind: 'panda-score' }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
   if (path === '/libraries/source-cleanup') return { kind: 'source-cleanup' }
   if (path === '/libraries/refresh') return { kind: 'library-refresh' }
@@ -95,13 +100,20 @@ function pandaView(params: URLSearchParams): PandaView {
   return params.get('unseen') === 'true' ? 'unseen' : 'all'
 }
 
-export function pandaListingLink({ search, cursor, includeExpunged, categories = [], bypassDefault, view }: Partial<PandaListing>) {
+// Verdict views never apply the score filter, so a link with one holds no filter state.
+function pandaScoreFilter(params: URLSearchParams): PandaScoreFilter {
+  const value = params.get('score_filter')
+  return (value === 'all' || value === 'hidden') && !isVerdictView(params.get('verdict')) ? value : 'apply'
+}
+
+export function pandaListingLink({ search, cursor, includeExpunged, categories = [], bypassDefault, view, scoreFilter }: Partial<PandaListing>) {
   const params = new URLSearchParams()
   if (search) params.set('q', search)
   if (cursor) params.set('cursor', cursor)
   if (includeExpunged) params.set('include_expunged', 'true')
   for (const category of categories) params.append('category', category)
   if (bypassDefault) params.set('bypass_default', 'true')
+  if (scoreFilter && scoreFilter !== 'apply' && !isVerdictView(view)) params.set('score_filter', scoreFilter)
   if (view === 'unseen') params.set('unseen', 'true')
   else if (isVerdictView(view)) params.set('verdict', view)
   return `#/panda${params.size ? `?${params}` : ''}`

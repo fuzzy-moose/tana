@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -19,6 +21,8 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/local"
+	"github.com/fuzzy-moose/tana/internal/local/catalogfilter"
+	localstorage "github.com/fuzzy-moose/tana/internal/local/storage"
 	"github.com/fuzzy-moose/tana/internal/panda"
 	"github.com/fuzzy-moose/tana/internal/pgdb/pgtest"
 )
@@ -169,8 +173,15 @@ func TestLocalRecordCatalogDisplays(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: catalog.New(db, "https://panda.test"), APIToken: "server-secret"})
 	var requests atomic.Int64
+	var lastBody atomic.Value
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		lastBody.Store(string(body))
+		r.Body = io.NopCloser(bytes.NewReader(body))
 		collectorHandler.ServeHTTP(w, r)
 	}))
 	defer upstream.Close()
@@ -189,6 +200,9 @@ func TestLocalRecordCatalogDisplays(t *testing.T) {
 	if w := request(client, "POST", path, `{"gallery_ids":[3,1]}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
 		t.Fatalf("record: %d %s", w.Code, w.Body)
 	}
+	if got := lastBody.Load(); got != `{"gallery_ids":[3,1]}` {
+		t.Fatalf("collector body without a score filter: %v", got)
+	}
 	w := request(client, "GET", "/api/collector/catalog", "")
 	var page collectorapi.CatalogResult
 	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
@@ -201,12 +215,22 @@ func TestLocalRecordCatalogDisplays(t *testing.T) {
 	if !maps.Equal(displayed, map[int64]bool{1: true, 2: false, 3: true}) || !strings.Contains(w.Body.String(), `"displayed":true`) {
 		t.Fatalf("displayed flags: %s", w.Body)
 	}
+	if w := request(client, "POST", path, `{"gallery_ids":[2],"score_filter":"hidden"}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("record hidden: %d %s", w.Code, w.Body)
+	}
+	var evidence []bool
+	if err := db.QueryRow(t.Context(), "SELECT array_agg(evidence ORDER BY gallery_id) FROM panda_gallery_displays").Scan(&evidence); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(evidence, []bool{true, false, true}) {
+		t.Fatalf("evidence by gallery 1, 2, 3: %v", evidence)
+	}
 	tooMany := make([]string, collectorapi.MaxCatalogDisplays+1)
 	for i := range tooMany {
 		tooMany[i] = strconv.Itoa(i + 1)
 	}
 	before := requests.Load()
-	for _, body := range []string{`{"gallery_ids":[]}`, `{"gallery_ids":[` + strings.Join(tooMany, ",") + `]}`, `{"gallery_ids":[2,0]}`, `{"gallery_ids":[-1]}`} {
+	for _, body := range []string{`{"gallery_ids":[]}`, `{"gallery_ids":[` + strings.Join(tooMany, ",") + `]}`, `{"gallery_ids":[2,0]}`, `{"gallery_ids":[-1]}`, `{"gallery_ids":[2],"score_filter":"bogus"}`} {
 		if w := request(client, "POST", path, body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_batch") {
 			t.Fatalf("%s: %d %s", body, w.Code, w.Body)
 		}
@@ -414,5 +438,328 @@ func TestLocalCatalogVerdicts(t *testing.T) {
 	}
 	if w := request(nil, "DELETE", path, ""); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
 		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestLocalScoreOverrides(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES (2, 'token')"); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: 2, Title: "Gallery 2", Posted: 2, Tags: []string{"female:big hat"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.DiscardHandler)
+	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: catalog.New(db, "https://panda.test"), APIToken: "server-secret"})
+	var requests atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		collectorHandler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
+		return w
+	}
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "/api/collector/catalog/score/overrides"
+	if w := request(client, "POST", path, `{"kind":"tag","value":"female:big_hat","rule":"always_hide"}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("post: %d %s", w.Code, w.Body)
+	}
+	var id int64
+	if err := db.QueryRow(t.Context(), "SELECT id FROM panda_score_overrides WHERE kind = 'tag' AND rule = 'always_hide'").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		body   string
+		status int
+		code   string
+	}{
+		{`{"kind":"tag","value":"female:glasses","rule":"always_hide"}`, http.StatusNotFound, "tag_not_found"},
+		{`{"kind":"tag","value":"glasses","rule":"always_hide"}`, http.StatusBadRequest, "invalid_override"},
+	} {
+		if w := request(client, "POST", path, tc.body); w.Code != tc.status || !strings.Contains(w.Body.String(), tc.code) {
+			t.Fatalf("post %s: %d %s", tc.body, w.Code, w.Body)
+		}
+	}
+	if w := request(client, "DELETE", path+"/"+strconv.FormatInt(id, 10), ""); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("delete: %d %s", w.Code, w.Body)
+	}
+	var count int
+	if err := db.QueryRow(t.Context(), "SELECT count(*) FROM panda_score_overrides").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rows after delete = %d, %v", count, err)
+	}
+	before := requests.Load()
+	for _, invalid := range []string{"0", "-1", "x"} {
+		if w := request(client, "DELETE", path+"/"+invalid, ""); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_override") {
+			t.Fatalf("delete %s: %d %s", invalid, w.Code, w.Body)
+		}
+	}
+	if requests.Load() != before {
+		t.Fatal("invalid requests reached the collector")
+	}
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request(wrong, "POST", path, `{"kind":"uploader","value":"Some One","rule":"never_hide"}`); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("wrong token: %d %s", w.Code, w.Body)
+	}
+	if w := request(nil, "DELETE", path+"/1", ""); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
+		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestLocalCatalogScoreFilter(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	service := catalog.New(db, "https://panda.test")
+	for id, tags := range map[int64][]string{2: {"female:big hat"}, 3: nil} {
+		if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := db.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: "Gallery", Posted: id, Tags: tags}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logger := slog.New(slog.DiscardHandler)
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: service, APIToken: "server-secret"}))
+	defer upstream.Close()
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w
+	}
+	page := func(path string) map[string]any {
+		t.Helper()
+		w := request(path)
+		var page map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s, %v", path, w.Code, w.Body, err)
+		}
+		return page
+	}
+	unfiltered := page("/api/collector/catalog")
+	if _, ok := unfiltered["score_filter"]; ok {
+		t.Fatalf("page without a filter in force: %v", unfiltered)
+	}
+	for _, item := range unfiltered["items"].([]any) {
+		if _, ok := item.(map[string]any)["score"]; ok {
+			t.Fatalf("item without a filter in force: %v", item)
+		}
+	}
+	if err := service.SetScoreOverride(t.Context(), collectorapi.ScoreKindTag, "female:big hat", collectorapi.ScoreRuleAlwaysHide); err != nil {
+		t.Fatal(err)
+	}
+	hidden := page("/api/collector/catalog?score_filter=hidden")
+	items := hidden["items"].([]any)
+	if _, ok := hidden["score_filter"].(map[string]any); !ok || len(items) != 1 {
+		t.Fatalf("hidden page: %v", hidden)
+	}
+	item := items[0].(map[string]any)
+	if score, _ := item["score"].(map[string]any); item["gallery_id"] != float64(2) || score["rule"] != "always_hide" || score["override"] != "female:big hat" {
+		t.Fatalf("hidden item: %v", item)
+	}
+	if w := request("/api/collector/catalog?score_filter=bogus"); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_query") {
+		t.Fatalf("bogus filter: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestLocalScoreModel(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	service := catalog.New(db, "https://panda.test")
+	for id, tags := range map[int64][]string{2: {"male:hat"}, 3: {"female:glasses"}} {
+		if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := db.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: "Gallery", Posted: id, Tags: tags}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, verdict := range map[int64]string{2: collectorapi.VerdictInteresting, 3: collectorapi.VerdictNotForMe} {
+		if err := service.SetVerdict(t.Context(), id, verdict); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logger := slog.New(slog.DiscardHandler)
+	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: service, APIToken: "server-secret"})
+	var previewBody []byte
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/catalog/score/preview" {
+			previewBody, _ = io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(previewBody))
+		}
+		collectorHandler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults := catalogfilter.New(pgtest.Open(t, localstorage.Migrations()))
+	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client, CatalogFilter: defaults}).ServeHTTP(w, r)
+		return w
+	}
+	sent := func() map[string]json.RawMessage {
+		t.Helper()
+		var body map[string]json.RawMessage
+		if err := json.Unmarshal(previewBody, &body); err != nil {
+			t.Fatalf("preview request body %s: %v", previewBody, err)
+		}
+		return body
+	}
+	const previewPath = "/api/collector/catalog/score/preview"
+	preview := func(body string) collectorapi.ScorePreview {
+		t.Helper()
+		w := request(client, "POST", previewPath, body)
+		var result collectorapi.ScorePreview
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("preview %s: %d %s, %v", body, w.Code, w.Body, err)
+		}
+		return result
+	}
+	scoreFilter := func() map[string]any {
+		t.Helper()
+		w := request(client, "GET", "/api/collector/catalog", "")
+		var page map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("catalog: %d %s, %v", w.Code, w.Body, err)
+		}
+		filter, _ := page["score_filter"].(map[string]any)
+		return filter
+	}
+
+	result := preview(`{"favorites":false}`)
+	if result.Evidence.Interesting != 1 || result.Evidence.NotForMe != 1 || result.Candidate == nil || result.Candidate.ID == 0 {
+		t.Fatalf("preview: %+v", result)
+	}
+	if body := sent(); string(body["favorites"]) != "false" || string(body["default_query"]) != `""` || string(body["default_categories"]) != "[]" {
+		t.Fatalf("empty default filter sent as %s", previewBody)
+	}
+	for _, body := range []string{`{}`, `{"favorites":null}`} {
+		preview(body)
+		if favorites := string(sent()["favorites"]); favorites != "null" {
+			t.Fatalf("%s sent favorites %s", body, favorites)
+		}
+	}
+	filter, err := catalogfilter.Normalize(catalogfilter.Filter{Query: "hat", Categories: []string{"Manga", "Doujinshi"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := defaults.Save(t.Context(), filter); err != nil {
+		t.Fatal(err)
+	}
+	result = preview(`{"favorites":true}`)
+	if body := sent(); string(body["default_query"]) != `"hat"` || string(body["default_categories"]) != `["manga","doujinshi"]` {
+		t.Fatalf("default filter sent as %s", previewBody)
+	}
+	if err := defaults.Save(t.Context(), catalogfilter.Filter{}); err != nil {
+		t.Fatal(err)
+	}
+
+	const applyPath = "/api/collector/catalog/score/apply"
+	const thresholdPath = "/api/collector/catalog/score/threshold"
+	const modelPath = "/api/collector/catalog/score/model"
+	candidate := strconv.FormatInt(result.Candidate.ID, 10)
+	for _, tc := range []struct {
+		method, path, body string
+		status             int
+		code               string
+	}{
+		{"POST", applyPath, `{"candidate_id":` + candidate + `9,"threshold_tenths":5}`, http.StatusConflict, "score_candidate_not_found"},
+		{"POST", applyPath, `{"candidate_id":` + candidate + `,"threshold_tenths":1001}`, http.StatusBadRequest, "invalid_threshold"},
+		{"PUT", thresholdPath, `{"threshold_tenths":5}`, http.StatusConflict, "score_model_not_active"},
+	} {
+		if w := request(client, tc.method, tc.path, tc.body); w.Code != tc.status || !strings.Contains(w.Body.String(), tc.code) {
+			t.Fatalf("%s %s %s: %d %s", tc.method, tc.path, tc.body, w.Code, w.Body)
+		}
+	}
+	if w := request(client, "POST", applyPath, `{"candidate_id":`+candidate+`,"threshold_tenths":-5}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("apply: %d %s", w.Code, w.Body)
+	}
+	if filter := scoreFilter(); filter["threshold_tenths"] != float64(-5) {
+		t.Fatalf("score filter after apply: %v", filter)
+	}
+	if w := request(client, "PUT", thresholdPath, `{"threshold_tenths":7}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("threshold: %d %s", w.Code, w.Body)
+	}
+	if filter := scoreFilter(); filter["threshold_tenths"] != float64(7) {
+		t.Fatalf("score filter after threshold: %v", filter)
+	}
+	if w := request(client, "DELETE", modelPath, ""); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("remove: %d %s", w.Code, w.Body)
+	}
+	if filter := scoreFilter(); filter != nil {
+		t.Fatalf("score filter after remove: %v", filter)
+	}
+
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close()
+	unreachable, err := collectorapi.NewClient(closed.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []struct{ method, path, body, unknown string }{
+		{"POST", previewPath, `{"favorites":true}`, `{"favorites":true,"default_query":"x"}`},
+		{"POST", applyPath, `{"candidate_id":1,"threshold_tenths":0}`, `{"candidate_id":1,"threshold":0}`},
+		{"PUT", thresholdPath, `{"threshold_tenths":0}`, `{"threshold":0}`},
+		{"DELETE", modelPath, "", ""},
+	} {
+		for _, tc := range []struct {
+			client *collectorapi.Client
+			status int
+			code   string
+		}{
+			{nil, http.StatusServiceUnavailable, "collector_not_configured"},
+			{wrong, http.StatusBadGateway, "collector_unauthorized"},
+			{unreachable, http.StatusBadGateway, "collector_unavailable"},
+		} {
+			if w := request(tc.client, route.method, route.path, route.body); w.Code != tc.status || !strings.Contains(w.Body.String(), tc.code) {
+				t.Fatalf("%s %s with %s: %d %s", route.method, route.path, tc.code, w.Code, w.Body)
+			}
+		}
+		if route.unknown != "" {
+			if w := request(client, route.method, route.path, route.unknown); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_json") {
+				t.Fatalf("%s %s %s: %d %s", route.method, route.path, route.unknown, w.Code, w.Body)
+			}
+		}
 	}
 }
