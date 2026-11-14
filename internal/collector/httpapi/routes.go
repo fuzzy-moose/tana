@@ -30,6 +30,8 @@ func NewHandler(app *collector.App) http.Handler {
 	mux.Handle("DELETE /api/metadata/proxies/channels/{id}", proxies)
 	mux.Handle("GET /api/catalog", HandleCatalog(app.Catalog))
 	mux.Handle("POST /api/catalog/facts", HandleCatalogFacts(app.Catalog))
+	mux.Handle("POST /api/catalog/displays", HandleRecordCatalogDisplays(app.Catalog))
+	mux.Handle("POST /api/catalog/catch-up", HandleCatalogCatchUp(app.Catalog))
 	mux.Handle("POST /api/catalog/lookup", HandleLookupGallery(app.Catalog, app.Metadata))
 	mux.Handle("GET /api/catalog/completions", HandleCompleteCatalog(app.Catalog))
 	mux.Handle("GET /api/feed/status", HandleFeed(app.Feeds))

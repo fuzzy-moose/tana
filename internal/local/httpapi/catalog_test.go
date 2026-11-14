@@ -1,14 +1,26 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/fuzzy-moose/tana/internal/collector"
+	"github.com/fuzzy-moose/tana/internal/collector/catalog"
+	collectorhttp "github.com/fuzzy-moose/tana/internal/collector/httpapi"
+	"github.com/fuzzy-moose/tana/internal/collector/storage"
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/local"
+	"github.com/fuzzy-moose/tana/internal/panda"
+	"github.com/fuzzy-moose/tana/internal/pgdb/pgtest"
 )
 
 func TestPandaCatalogThroughLocalProxy(t *testing.T) {
@@ -59,6 +71,7 @@ func TestPandaCatalogThroughLocalProxy(t *testing.T) {
 		{"GET", "/api/collector/catalog?page_size=0", "", "invalid_pagination", 400},
 		{"GET", "/api/collector/catalog?page_size=101", "", "invalid_pagination", 400},
 		{"GET", "/api/collector/catalog?include_expunged=garbage", "", "invalid_query", 400},
+		{"GET", "/api/collector/catalog?unseen=garbage", "", "invalid_query", 400},
 		{"GET", "/api/collector/catalog/completions?q=x&cursor=-1", "", "invalid_query", 400},
 		{"POST", "/api/collector/feed/refresh", `{"unknown":true}`, "invalid", 400},
 	} {
@@ -73,6 +86,31 @@ func TestPandaCatalogThroughLocalProxy(t *testing.T) {
 				t.Fatalf("got %d %s", w.Code, w.Body)
 			}
 		})
+	}
+}
+
+func TestCollectorCatalogForwardsUnseen(t *testing.T) {
+	var unseen atomic.Value
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		unseen.Store(r.URL.Query()["unseen"])
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[],"page_size":24}`))
+	}))
+	defer upstream.Close()
+	client, err := collectorapi.NewClient(upstream.URL, "collector-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(&local.App{Logger: slog.New(slog.DiscardHandler), Collector: client})
+	for path, want := range map[string]string{
+		"/api/collector/catalog?unseen=true": "true",
+		"/api/collector/catalog":             "false",
+	} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if got, _ := unseen.Load().([]string); w.Code != http.StatusOK || !slices.Equal(got, []string{want}) {
+			t.Fatalf("%s: %d %s, upstream unseen = %v", path, w.Code, w.Body, got)
+		}
 	}
 }
 
@@ -108,5 +146,157 @@ func TestPandaCatalogProxyErrors(t *testing.T) {
 		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
 			t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
 		}
+	}
+}
+
+func TestLocalRecordCatalogDisplays(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	tx, err := db.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id := int64(1); id <= 3; id++ {
+		if _, err := tx.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: fmt.Sprintf("Gallery %d", id), Posted: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.DiscardHandler)
+	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: catalog.New(db, "https://panda.test"), APIToken: "server-secret"})
+	var requests atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		collectorHandler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
+		return w
+	}
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "/api/collector/catalog/displays"
+	if w := request(client, "POST", path, `{"gallery_ids":[3,1]}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("record: %d %s", w.Code, w.Body)
+	}
+	w := request(client, "GET", "/api/collector/catalog", "")
+	var page collectorapi.CatalogResult
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("catalog: %d %s, %v", w.Code, w.Body, err)
+	}
+	displayed := map[int64]bool{}
+	for _, item := range page.Items {
+		displayed[item.GalleryID] = item.Displayed
+	}
+	if !maps.Equal(displayed, map[int64]bool{1: true, 2: false, 3: true}) || !strings.Contains(w.Body.String(), `"displayed":true`) {
+		t.Fatalf("displayed flags: %s", w.Body)
+	}
+	tooMany := make([]string, collectorapi.MaxCatalogDisplays+1)
+	for i := range tooMany {
+		tooMany[i] = strconv.Itoa(i + 1)
+	}
+	before := requests.Load()
+	for _, body := range []string{`{"gallery_ids":[]}`, `{"gallery_ids":[` + strings.Join(tooMany, ",") + `]}`, `{"gallery_ids":[2,0]}`, `{"gallery_ids":[-1]}`} {
+		if w := request(client, "POST", path, body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_batch") {
+			t.Fatalf("%s: %d %s", body, w.Code, w.Body)
+		}
+	}
+	if w := request(client, "POST", path, `{"gallery_ids":[1],"unknown":true}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_json") {
+		t.Fatalf("unknown field: %d %s", w.Code, w.Body)
+	}
+	if requests.Load() != before {
+		t.Fatal("invalid lists reached the collector")
+	}
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request(wrong, "POST", path, `{"gallery_ids":[2]}`); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("wrong token: %d %s", w.Code, w.Body)
+	}
+	if w := request(nil, "POST", path, `{"gallery_ids":[2]}`); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
+		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestLocalCatalogCatchUp(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	tx, err := db.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id := int64(1); id <= 3; id++ {
+		if _, err := tx.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: fmt.Sprintf("Gallery %d", id), Posted: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.DiscardHandler)
+	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: catalog.New(db, "https://panda.test"), APIToken: "server-secret"})
+	var requests atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		collectorHandler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
+		return w
+	}
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "/api/collector/catalog/catch-up"
+	if w := request(client, "POST", path, `{"gallery_id":2}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("catch-up: %d %s", w.Code, w.Body)
+	}
+	w := request(client, "GET", "/api/collector/catalog?unseen=true", "")
+	var page collectorapi.CatalogResult
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("unseen catalog: %d %s, %v", w.Code, w.Body, err)
+	}
+	if len(page.Items) != 1 || page.Items[0].GalleryID != 3 {
+		t.Fatalf("unseen after catch-up: %s", w.Body)
+	}
+	if w := request(client, "POST", path, `{"gallery_id":99}`); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "gallery_not_found") {
+		t.Fatalf("unknown gallery: %d %s", w.Code, w.Body)
+	}
+	before := requests.Load()
+	for _, body := range []string{`{"gallery_id":0}`, `{"gallery_id":-1}`, `{}`} {
+		if w := request(client, "POST", path, body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_gallery_reference") {
+			t.Fatalf("%s: %d %s", body, w.Code, w.Body)
+		}
+	}
+	if requests.Load() != before {
+		t.Fatal("invalid gallery references reached the collector")
+	}
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request(wrong, "POST", path, `{"gallery_id":3}`); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("wrong token: %d %s", w.Code, w.Body)
+	}
+	if w := request(nil, "POST", path, `{"gallery_id":3}`); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
+		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
 	}
 }

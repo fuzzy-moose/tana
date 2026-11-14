@@ -36,3 +36,14 @@ test('details distinguish unknown dates and collection outcomes from collected d
   expect(screen.getByText(/^Posted/)).toBeTruthy()
   expect(screen.queryByText(/Feed metadata|First seen|Eligible from/)).toBeNull()
 })
+
+test('cards of displayed galleries look subdued and say they were seen', () => {
+  const { rerender } = render(<Theme><PandaCard gallery={{ ...collectedGallery, displayed: true }} /></Theme>)
+  expect(screen.getByRole('link').classList.contains('gallery-box-subdued')).toBe(true)
+  expect(screen.getByRole('link').textContent).toContain('Seen')
+  for (const displayed of [false, undefined]) {
+    rerender(<Theme><PandaCard gallery={{ ...collectedGallery, displayed }} /></Theme>)
+    expect(screen.getByRole('link').classList.contains('gallery-box-subdued')).toBe(false)
+    expect(screen.getByRole('link').textContent).not.toContain('Seen')
+  }
+})

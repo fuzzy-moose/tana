@@ -34,6 +34,14 @@ func HandleCatalog(service *catalog.Service) http.Handler {
 				return
 			}
 		}
+		if r.URL.Query().Has("unseen") {
+			var err error
+			options.Unseen, err = strconv.ParseBool(r.URL.Query().Get("unseen"))
+			if err != nil {
+				catalogError(w, r, catalog.ErrInvalidQuery)
+				return
+			}
+		}
 		result, err := service.List(r.Context(), options)
 		if err != nil {
 			catalogError(w, r, err)
@@ -59,14 +67,48 @@ func HandleCompleteCatalog(service *catalog.Service) http.Handler {
 	})
 }
 
+func HandleRecordCatalogDisplays(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			GalleryIDs []int64 `json:"gallery_ids"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.RecordDisplays(r.Context(), input.GalleryIDs); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func HandleCatalogCatchUp(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			GalleryID int64 `json:"gallery_id"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.CatchUp(r.Context(), input.GalleryID); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, catalog.ErrInvalidFactsBatch):
+	case errors.Is(err, catalog.ErrInvalidFactsBatch), errors.Is(err, catalog.ErrInvalidDisplays):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_batch"})
 	case errors.Is(err, panda.ErrInvalidCategory):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_category"})
 	case errors.Is(err, catalog.ErrInvalidGalleryReference):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_gallery_reference"})
+	case errors.Is(err, catalog.ErrGalleryNotInCatalog):
+		server.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "gallery_not_found"})
 	case errors.Is(err, catalog.ErrInvalidQuery):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_query"})
 	case errors.Is(err, catalog.ErrInvalidPagination):

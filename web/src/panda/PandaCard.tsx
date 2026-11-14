@@ -23,6 +23,7 @@ export default function PandaCard({ gallery }: { gallery: PandaGallery }) {
   const [failedImage, setFailedImage] = useState<string | null>(null)
   const failed = gallery.metadata_state === 'failed'
   return <GalleryBox href={gallery.url} target="_blank" rel="noopener noreferrer" title={gallery.title} pageCount={gallery.page_count} tags={gallery.summary_tags}
+    subdued={!!gallery.displayed}
     tooltip={<PandaDetails gallery={gallery} />}
     status={gallery.metadata_source === 'feed' && <Badge variant="solid" color={failed ? 'red' : 'gray'}>
       {failed ? <ExclamationTriangleIcon /> : <ClockIcon />}<VisuallyHidden>{failed ? 'Collection failed' : 'Waiting for metadata'}</VisuallyHidden>

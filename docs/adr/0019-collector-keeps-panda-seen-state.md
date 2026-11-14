@@ -1,0 +1,5 @@
+# Collector keeps the Panda seen state
+
+The unseen view of the Panda catalog must test each candidate gallery inside the collector's catalog page query, so the page fills in catalog order and stops at its limit. [ADR 0018](0018-postgresql-storage.md) keeps Tana's and the collector's databases separate, and passing Tana's seen galleries to the collector would send a growing list on every page. The collector therefore keeps the user's seen state for the Panda catalog, beyond the Panda metadata and archives it owns under [ADR 0004](0004-collector-owns-panda-data.md), and Tana reaches that state only through the collector API.
+
+Display records and catch-up coverage are separate facts. Each display keeps its own time as evidence for later judgments about a gallery; a catch-up is one catalog position that only advances, with the time of the catch-up that set it. Neither references catalog rows, so the seen state survives every projection change, including provisional-to-collected replacement and removal and re-projection of a row. Identity is the gallery ID, so a new version of a seen gallery is unseen.

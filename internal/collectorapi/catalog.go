@@ -21,6 +21,7 @@ type CatalogOptions struct {
 	Cursor            string
 	PageSize          int
 	IncludeExpunged   bool
+	Unseen            bool
 }
 
 type CatalogItem struct {
@@ -35,6 +36,7 @@ type CatalogItem struct {
 	FetchEligibleAt *time.Time                    `json:"fetch_eligible_at,omitempty"`
 	FirstSeenAt     *time.Time                    `json:"first_seen_at,omitempty"`
 	SummaryTags     []gallerysearch.TagSuggestion `json:"summary_tags"`
+	Displayed       bool                          `json:"displayed"`
 }
 
 type CatalogResult struct {
@@ -55,6 +57,7 @@ func (c *Client) Catalog(ctx context.Context, options CatalogOptions) (CatalogRe
 		"cursor":           {options.Cursor},
 		"page_size":        {strconv.Itoa(options.PageSize)},
 		"include_expunged": {strconv.FormatBool(options.IncludeExpunged)},
+		"unseen":           {strconv.FormatBool(options.Unseen)},
 	}
 	var result CatalogResult
 	err := c.catalogRequest(ctx, "/api/catalog?"+params.Encode(), &result)

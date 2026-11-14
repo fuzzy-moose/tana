@@ -1,6 +1,7 @@
 package storage_test
 
 import (
+	"io/fs"
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/collector/storage"
@@ -8,6 +9,10 @@ import (
 )
 
 func TestMigrationsCreateBaselineWithSingletons(t *testing.T) {
+	files, err := fs.Glob(storage.Migrations(), "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	pool := pgtest.Open(t, storage.Migrations())
 	var versions []int32
 	rows, err := pool.Query(t.Context(), "SELECT version FROM schema_migrations ORDER BY version")
@@ -24,8 +29,13 @@ func TestMigrationsCreateBaselineWithSingletons(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 1 || versions[0] != 1 {
-		t.Fatalf("schema versions = %v, want [1]", versions)
+	if len(versions) != len(files) {
+		t.Fatalf("schema versions = %v, want 1..%d", versions, len(files))
+	}
+	for i, v := range versions {
+		if v != int32(i+1) {
+			t.Fatalf("schema versions = %v, want 1..%d", versions, len(files))
+		}
 	}
 	var bans, delayHours int
 	var state string

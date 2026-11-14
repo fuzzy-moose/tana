@@ -29,8 +29,17 @@ func HandleCollectorCatalog(client *collectorapi.Client, defaults ...*catalogfil
 				return
 			}
 		}
+		unseen := false
+		if r.URL.Query().Has("unseen") {
+			var err error
+			unseen, err = strconv.ParseBool(r.URL.Query().Get("unseen"))
+			if err != nil {
+				server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_query"})
+				return
+			}
+		}
 		options := collectorapi.CatalogOptions{
-			Query: r.URL.Query().Get("q"), Cursor: r.URL.Query().Get("cursor"), PageSize: int(pageSize), IncludeExpunged: includeExpunged,
+			Query: r.URL.Query().Get("q"), Cursor: r.URL.Query().Get("cursor"), PageSize: int(pageSize), IncludeExpunged: includeExpunged, Unseen: unseen,
 			Categories: r.URL.Query()["category"],
 		}
 		bypassDefault := false
@@ -121,6 +130,10 @@ func writeCatalogCollectorError(w http.ResponseWriter, err error) {
 		case http.StatusBadRequest:
 			if upstream.Code == "invalid_query" || upstream.Code == "invalid_pagination" || upstream.Code == "invalid_category" {
 				status, code = http.StatusBadRequest, upstream.Code
+			}
+		case http.StatusNotFound:
+			if upstream.Code == "gallery_not_found" {
+				status, code = http.StatusNotFound, upstream.Code
 			}
 		}
 	}

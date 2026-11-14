@@ -134,6 +134,18 @@ A user-requested suspension of the main collector channel's background metadata 
 **Panda catalog**:
 The browsable collection of Panda galleries described by collected or provisional Panda metadata, with one entry per upstream gallery. Missing descriptive values remain unknown.
 
+**Seen Panda gallery**:
+A Panda gallery that is a displayed Panda gallery or that a catch-up covers. Seen state belongs to the gallery ID, so a new version of a seen gallery is unseen.
+
+**Displayed Panda gallery**:
+A Panda gallery shown on a listing page that the user left by going to the next page. Each display keeps the time it was recorded.
+
+**Unseen view**:
+The Panda catalog listing restricted to galleries that are not seen, in catalog order, combined with the current search and filters.
+
+**Catch-up**:
+A user action that makes every Panda gallery at or before a catalog position seen, including galleries that join the catalog later at such a position. The position only advances and never makes a gallery unseen.
+
 **Metadata refresh time**:
 The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.
 

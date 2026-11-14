@@ -1,6 +1,7 @@
 import { request } from '../api'
 import { collectorMessages } from '../collector/api'
 import type { SearchCompletion, TagSuggestion } from '../galleries/api'
+import type { PandaListing } from '../navigation'
 
 export interface PandaGallery {
   gallery_id: number
@@ -14,6 +15,7 @@ export interface PandaGallery {
   first_seen_at?: string
   url: string
   summary_tags: TagSuggestion[]
+  displayed?: boolean
 }
 
 export interface PandaCatalogResult {
@@ -53,16 +55,30 @@ export function savePandaDefaultFilter(filter: PandaDefaultFilter) {
   }, { ...collectorMessages, invalid_query: 'Invalid search query.', invalid_category: 'Unknown Panda gallery category.' })
 }
 
-export function listPandaCatalog(search: string, cursor: string, pageSize: number, includeExpunged: boolean, categories: string[], bypassDefault: boolean, signal?: AbortSignal) {
+export function listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, unseen }: PandaListing, pageSize: number, signal?: AbortSignal) {
   const params = new URLSearchParams({ q: search, cursor, page_size: String(pageSize), include_expunged: String(includeExpunged) })
   for (const category of categories) params.append('category', category)
   if (bypassDefault) params.set('bypass_default', 'true')
+  if (unseen) params.set('unseen', 'true')
   return request<PandaCatalogResult>(`/api/collector/catalog?${params}`, { signal }, {
     ...collectorMessages,
     invalid_query: 'Invalid search query.',
     invalid_category: 'Unknown Panda gallery category.',
     invalid_pagination: 'Invalid catalog position. Return to the newest galleries.',
   })
+}
+
+// No abort signal: leaving the page must not cancel a record.
+export function recordPandaDisplays(galleryIDs: number[]) {
+  return request<void>('/api/collector/catalog/displays', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gallery_ids: galleryIDs }), keepalive: true,
+  }, collectorMessages)
+}
+
+export function catchUpPanda(galleryID: number, signal: AbortSignal) {
+  return request<void>('/api/collector/catalog/catch-up', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gallery_id: galleryID }), signal,
+  }, { ...collectorMessages, gallery_not_found: 'This gallery is no longer in the Panda catalog. Reload and try again.' })
 }
 
 export function completePandaSearch(query: string, cursor: number, signal?: AbortSignal) {

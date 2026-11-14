@@ -38,6 +38,10 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if err != nil {
 		return result, err
 	}
+	if options.Unseen && cursor.Before {
+		// The unseen view has no way back to passed pages.
+		return result, ErrInvalidPagination
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return result, err
@@ -81,6 +85,19 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	}
 	if !options.IncludeExpunged {
 		predicate += " AND g.expunged IS DISTINCT FROM true"
+	}
+	if options.Unseen {
+		// Probe each candidate in index order; the display table is far too large
+		// to read into a list before the first page can be returned.
+		predicate += " AND NOT EXISTS (SELECT 1 FROM panda_gallery_displays d WHERE d.gallery_id = g.gallery_id)"
+		// Bind the position read beforehand, so the ordered index scan stops there.
+		orderedAt, galleryID, ok, err := catchUpPosition(ctx, tx)
+		if err != nil {
+			return result, err
+		}
+		if ok {
+			predicate += " AND (g.ordered_at, g.gallery_id) > (" + args.Add(orderedAt) + ", " + args.Add(galleryID) + ")"
+		}
 	}
 	if options.Cursor != "" {
 		comparison := "<"
@@ -147,8 +164,17 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if err := summarizeTags(ctx, tx, result.Items); err != nil {
 		return result, err
 	}
+	if err := markDisplayed(ctx, tx, result.Items); err != nil {
+		return result, err
+	}
 	hasOpposite := options.Cursor != "" && !cursor.Inclusive
-	if len(result.Items) > 0 {
+	if options.Unseen {
+		// Every non-empty page leads on, even the last: its galleries become seen
+		// once the user passes it, and newer galleries wait for the newest page.
+		if len(result.Items) > 0 {
+			result.NextCursor = itemCursor(result.Items[len(result.Items)-1], false)
+		}
+	} else if len(result.Items) > 0 {
 		if (!cursor.Before && more) || (cursor.Before && hasOpposite) {
 			result.NextCursor = itemCursor(result.Items[len(result.Items)-1], false)
 		}
