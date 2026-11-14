@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"math"
 )
 
 var (
@@ -11,16 +12,17 @@ var (
 	ErrNoActiveScoreModel     = errors.New("no active score model")
 )
 
-// The range of a threshold in tenths.
-const (
-	minScoreThreshold = -1000
-	maxScoreThreshold = 1000
-)
+// validScoreThreshold reports whether a threshold in tenths fits the
+// INTEGER column that stores it. A score is a sum of weights with no bound,
+// so the threshold has no other limit.
+func validScoreThreshold(tenths int) bool {
+	return tenths >= math.MinInt32 && tenths <= math.MaxInt32
+}
 
 // ApplyScoreModel makes the stored candidate the active model with the
 // threshold, and deletes the model that was active.
 func (s *Service) ApplyScoreModel(ctx context.Context, candidateID int64, thresholdTenths int) error {
-	if thresholdTenths < minScoreThreshold || thresholdTenths > maxScoreThreshold {
+	if !validScoreThreshold(thresholdTenths) {
 		return ErrInvalidScoreThreshold
 	}
 	tx, err := s.db.Begin(ctx)
@@ -52,7 +54,7 @@ func (s *Service) ApplyScoreModel(ctx context.Context, candidateID int64, thresh
 
 // SetScoreThreshold changes the threshold of the active model.
 func (s *Service) SetScoreThreshold(ctx context.Context, thresholdTenths int) error {
-	if thresholdTenths < minScoreThreshold || thresholdTenths > maxScoreThreshold {
+	if !validScoreThreshold(thresholdTenths) {
 		return ErrInvalidScoreThreshold
 	}
 	result, err := s.db.Exec(ctx, "UPDATE panda_score_models SET threshold_tenths = $1 WHERE active", thresholdTenths)

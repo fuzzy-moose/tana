@@ -98,7 +98,7 @@ const changeMessages = {
   ...collectorMessages,
   score_candidate_not_found: 'This calculation is no longer available. Check the new calculation and apply again.',
   score_model_not_active: 'No score model is active any more.',
-  invalid_threshold: 'Enter a threshold between -100 and 100.',
+  invalid_threshold: 'Enter a valid threshold.',
 }
 
 export const applyPandaScore = (candidateID: number, thresholdTenths: number, signal: AbortSignal) => request<void>('/api/collector/catalog/score/apply', {

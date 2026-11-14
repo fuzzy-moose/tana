@@ -369,7 +369,7 @@ test('failures to save the threshold or turn off the model show a message and re
   render(<App />)
   await screen.findByRole('region', { name: 'Evidence' })
   await userEvent.click(screen.getByRole('button', { name: 'Save threshold' }))
-  await activeModel().findByText('Could not save the threshold. Enter a threshold between -100 and 100.')
+  await activeModel().findByText('Could not save the threshold. Enter a valid threshold.')
   await userEvent.click(screen.getByRole('button', { name: 'Turn off' }))
   await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
   expect(screen.queryByRole('alertdialog')).toBeNull()

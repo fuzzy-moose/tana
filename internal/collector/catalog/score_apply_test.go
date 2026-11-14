@@ -354,7 +354,7 @@ func TestSetScoreThresholdChangesWhatIsHidden(t *testing.T) {
 		t.Fatalf("without a model: %v", err)
 	}
 	candidate := previewScore(t, s, false)
-	for _, threshold := range []int{-1001, 1001} {
+	for _, threshold := range []int{math.MinInt32 - 1, math.MaxInt32 + 1} {
 		if err := s.ApplyScoreModel(t.Context(), candidate.Candidate.ID, threshold); !errors.Is(err, ErrInvalidScoreThreshold) {
 			t.Fatalf("apply %d: %v", threshold, err)
 		}
@@ -380,7 +380,13 @@ func TestSetScoreThresholdChangesWhatIsHidden(t *testing.T) {
 	if after.id != before.id || after.weights != before.weights || after.sum != before.sum || after.threshold != -8 {
 		t.Fatalf("model before %+v, after %+v", before, after)
 	}
-	for _, threshold := range []int{-1000, 1000} {
+	if err := s.SetScoreThreshold(t.Context(), 1001); err != nil {
+		t.Fatal(err)
+	}
+	result = scorePage(t, s, "", collectorapi.CatalogOptions{})
+	assertCatalogIDs(t, result, []int64{10, 9, 8, 7, 6})
+	assertThreshold(t, result, 1001)
+	for _, threshold := range []int{math.MinInt32, math.MaxInt32} {
 		if err := s.SetScoreThreshold(t.Context(), threshold); err != nil {
 			t.Fatalf("set %d: %v", threshold, err)
 		}

@@ -701,7 +701,7 @@ func TestLocalScoreModel(t *testing.T) {
 		code               string
 	}{
 		{"POST", applyPath, `{"candidate_id":` + candidate + `9,"threshold_tenths":5}`, http.StatusConflict, "score_candidate_not_found"},
-		{"POST", applyPath, `{"candidate_id":` + candidate + `,"threshold_tenths":1001}`, http.StatusBadRequest, "invalid_threshold"},
+		{"POST", applyPath, `{"candidate_id":` + candidate + `,"threshold_tenths":2147483648}`, http.StatusBadRequest, "invalid_threshold"},
 		{"PUT", thresholdPath, `{"threshold_tenths":5}`, http.StatusConflict, "score_model_not_active"},
 	} {
 		if w := request(client, tc.method, tc.path, tc.body); w.Code != tc.status || !strings.Contains(w.Body.String(), tc.code) {

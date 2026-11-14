@@ -300,10 +300,10 @@ func TestScoreModelValidation(t *testing.T) {
 	}{
 		{http.MethodPut, threshold, `{"threshold_tenths":-5}`, http.StatusConflict, "score_model_not_active"},
 		{http.MethodPost, apply, fmt.Sprintf(`{"candidate_id":%d,"threshold_tenths":0}`, candidate+1), http.StatusConflict, "score_candidate_not_found"},
-		{http.MethodPost, apply, fmt.Sprintf(`{"candidate_id":%d,"threshold_tenths":1001}`, candidate), http.StatusBadRequest, "invalid_threshold"},
+		{http.MethodPost, apply, fmt.Sprintf(`{"candidate_id":%d,"threshold_tenths":2147483648}`, candidate), http.StatusBadRequest, "invalid_threshold"},
 		{http.MethodPost, apply, fmt.Sprintf(`{"candidate_id":%d,"threshold_tenths":0,"unknown":1}`, candidate), http.StatusBadRequest, "invalid_json"},
 		{http.MethodPost, apply, fmt.Sprintf(`{"candidate_id":%d,"threshold_tenths":0}`, candidate), http.StatusNoContent, ""},
-		{http.MethodPut, threshold, `{"threshold_tenths":-1001}`, http.StatusBadRequest, "invalid_threshold"},
+		{http.MethodPut, threshold, `{"threshold_tenths":-2147483649}`, http.StatusBadRequest, "invalid_threshold"},
 		{http.MethodPut, threshold, `{"threshold_tenths":-5,"unknown":1}`, http.StatusBadRequest, "invalid_json"},
 		{http.MethodPut, threshold, `{"threshold_tenths":-5}`, http.StatusNoContent, ""},
 		{http.MethodDelete, model, "", http.StatusNoContent, ""},
