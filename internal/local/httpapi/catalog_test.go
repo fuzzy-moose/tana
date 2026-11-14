@@ -583,6 +583,9 @@ func TestLocalCatalogScoreFilter(t *testing.T) {
 	if score, _ := item["score"].(map[string]any); item["gallery_id"] != float64(2) || score["rule"] != "always_hide" || score["override"] != "female:big hat" {
 		t.Fatalf("hidden item: %v", item)
 	}
+	if tags, _ := item["summary_tags"].([]any); len(tags) == 0 || tags[0].(map[string]any)["override"] != "always_hide" {
+		t.Fatalf("hidden item tags: %v", item["summary_tags"])
+	}
 	if w := request("/api/collector/catalog?score_filter=bogus"); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_query") {
 		t.Fatalf("bogus filter: %d %s", w.Code, w.Body)
 	}
@@ -761,5 +764,104 @@ func TestLocalScoreModel(t *testing.T) {
 				t.Fatalf("%s %s %s: %d %s", route.method, route.path, route.unknown, w.Code, w.Body)
 			}
 		}
+	}
+}
+
+func TestLocalCatalogSummaryTagsRankWeightedTags(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	service := catalog.New(db, "https://panda.test")
+	galleries := map[int64][]string{7: {"artist:zed", "male:hat"}, 8: nil}
+	for id := int64(1); id <= 6; id++ {
+		galleries[id] = []string{"female:glasses"}
+		if id > 3 {
+			galleries[id] = []string{"male:hat"}
+		}
+	}
+	for id, tags := range galleries {
+		if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := db.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: "Gallery", Posted: id, Tags: tags}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id := int64(1); id <= 6; id++ {
+		verdict := collectorapi.VerdictNotForMe
+		if id > 3 {
+			verdict = collectorapi.VerdictInteresting
+		}
+		if err := service.SetVerdict(t.Context(), id, verdict); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logger := slog.New(slog.DiscardHandler)
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: service, APIToken: "server-secret"}))
+	defer upstream.Close()
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	summaryTags := func(path string) map[float64][]any {
+		t.Helper()
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		var page struct {
+			Items []map[string]any `json:"items"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s, %v", path, w.Code, w.Body, err)
+		}
+		tags := map[float64][]any{}
+		for _, item := range page.Items {
+			list, ok := item["summary_tags"].([]any)
+			if !ok {
+				t.Fatalf("%s: summary tags of %v", path, item)
+			}
+			tags[item["gallery_id"].(float64)] = list
+		}
+		return tags
+	}
+
+	unfiltered := summaryTags("/api/collector/catalog")
+	for id, tags := range unfiltered {
+		for _, tag := range tags {
+			entry := tag.(map[string]any)
+			if _, ok := entry["term"].(string); !ok || len(entry) != 3 || entry["namespace"] == nil || entry["value"] == nil {
+				t.Fatalf("gallery %v summary tag without a filter in force: %v", id, entry)
+			}
+		}
+	}
+	if tags := unfiltered[8]; len(tags) != 0 {
+		t.Fatalf("gallery without tags: %v", tags)
+	}
+
+	preview, err := service.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
+	if err != nil || preview.Candidate == nil {
+		t.Fatalf("preview: %+v, %v", preview, err)
+	}
+	if err := service.ApplyScoreModel(t.Context(), preview.Candidate.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	scored := summaryTags("/api/collector/catalog?score_filter=all")
+	if tags := scored[8]; tags == nil || len(tags) != 0 {
+		t.Fatalf("gallery without tags under a model: %v", tags)
+	}
+	tags := scored[7]
+	if len(tags) != 2 {
+		t.Fatalf("gallery 7 summary tags: %v", tags)
+	}
+	first, second := tags[0].(map[string]any), tags[1].(map[string]any)
+	if _, ok := first["weight"].(float64); !ok || first["value"] != "hat" {
+		t.Fatalf("first summary tag: %v", first)
+	}
+	if _, ok := second["weight"]; ok || second["value"] != "zed" {
+		t.Fatalf("second summary tag: %v", second)
 	}
 }

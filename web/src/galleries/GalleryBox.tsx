@@ -3,7 +3,16 @@ import type { ComponentProps, ReactEventHandler, ReactNode } from 'react'
 import { Badge, Box, Flex, Text, Tooltip, VisuallyHidden } from '@radix-ui/themes'
 import type { TagSuggestion } from './api'
 
-function SummaryTags({ tags }: { tags: TagSuggestion[] }) {
+type BadgeColor = NonNullable<ComponentProps<typeof Badge>['color']>
+
+export interface GalleryBoxTag extends TagSuggestion {
+  /** Badge colour; gray without one. */
+  color?: BadgeColor
+  /** Shown inside the badge, before the value. */
+  mark?: ReactNode
+}
+
+function SummaryTags({ tags }: { tags: GalleryBoxTag[] }) {
   const listRef = useRef<HTMLUListElement>(null)
   const [shown, setShown] = useState(tags.length)
 
@@ -18,10 +27,10 @@ function SummaryTags({ tags }: { tags: TagSuggestion[] }) {
     const observer = new ResizeObserver(() => setShown(tags.length))
     observer.observe(listRef.current!)
     return () => observer.disconnect()
-  }, [tags])
+  }, [tags.length])
 
   return <Flex asChild wrap="wrap" gap="1" m="0" p="0"><ul className="gallery-summary-tags" aria-label="Tags" ref={listRef}>
-    {tags.slice(0, shown).map(({ term, value }) => <li key={term}><Badge color="gray"><Text truncate>{value}</Text></Badge></li>)}
+    {tags.slice(0, shown).map(({ term, value, color = 'gray', mark }) => <li key={term}><Badge color={color}>{mark}<Text truncate>{value}</Text></Badge></li>)}
   </ul></Flex>
 }
 
@@ -33,7 +42,7 @@ interface GalleryBoxProps extends Pick<ComponentProps<'a'>, 'href' | 'target' | 
   title: string
   cover: (image: CoverImageProps) => ReactNode
   pageCount: number | null
-  tags: TagSuggestion[]
+  tags: GalleryBoxTag[]
   /** Hover details; the title alone by default. */
   tooltip?: ReactNode
   /** Small badges pinned to the cover's bottom-left corner. */
@@ -63,7 +72,8 @@ export default function GalleryBox({ title, cover, pageCount, tags, tooltip = ti
           {pageCount}<VisuallyHidden>{pageCount === 1 ? ' page' : ' pages'}</VisuallyHidden>
         </Badge>}
       </div></div>
-      <SummaryTags key={tags.map((tag) => tag.term).join(' ')} tags={tags} />
+      {/* A mark widens its badge, and a mounted strip fits again only on a resize. */}
+      <SummaryTags key={tags.map((tag) => `${tag.mark ? '+' : '-'}${tag.term}`).join(' ')} tags={tags} />
     </Flex>
   </a></Box></Tooltip>
   if (!actions) return box

@@ -5,6 +5,9 @@ export type ScoreKind = 'tag' | 'uploader' | 'category'
 export type ScoreRule = 'always_hide' | 'never_hide'
 export type NoScoreModel = 'no_verdicts' | 'no_not_for_me' | 'no_acceptable'
 
+/** The names of the score override rules, as the user reads them. */
+export const scoreRuleNames: Record<ScoreRule, string> = { always_hide: 'Always hide', never_hide: 'Never hide' }
+
 /** `counts[i]` is the number of galleries with `floor(score * 10) == first_bucket + i`. */
 export interface ScoreHistogram {
   first_bucket: number

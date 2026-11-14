@@ -68,6 +68,18 @@ test('defaults to galleries, searches and paginates, then opens gallery details 
   expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/scans'))).toBe(false)
 })
 
+test('local gallery cards keep gray tags whatever their summary tags carry', async () => {
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => Response.json({ items: [{
+    id: 1, title: 'Weighted', page_count: 3,
+    summary_tags: [{ namespace: 'female', value: 'glasses', term: 'female:glasses$', weight: 2, override: 'always_hide' }],
+  }], total: 1, page: 1, page_size: 24 })))
+  window.history.replaceState(null, '', '#/galleries')
+  render(<App />)
+  await screen.findByRole('heading', { name: 'Weighted' })
+  const items = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
+  expect(items.map((item) => [item.textContent, item.querySelector('.rt-Badge')?.getAttribute('data-accent-color')])).toEqual([['glasses', 'gray']])
+})
+
 test('keeps empty galleries visible and disables reading in their detail view', async () => {
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input) => Response.json(String(input).includes('?')
     ? { items: [{ id: 1, title: 'Empty gallery', page_count: 0, summary_tags: [] }], total: 1, page: 1, page_size: 24 }

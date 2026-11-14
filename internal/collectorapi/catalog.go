@@ -27,20 +27,32 @@ type CatalogOptions struct {
 }
 
 type CatalogItem struct {
-	GalleryID       int64                         `json:"gallery_id"`
-	Title           string                        `json:"title"`
-	ThumbnailURL    string                        `json:"thumbnail_url"`
-	PageCount       *int64                        `json:"page_count"`
-	PostedAt        *time.Time                    `json:"posted_at"`
-	URL             string                        `json:"url"`
-	MetadataSource  string                        `json:"metadata_source"`
-	MetadataState   string                        `json:"metadata_state,omitempty"`
-	FetchEligibleAt *time.Time                    `json:"fetch_eligible_at,omitempty"`
-	FirstSeenAt     *time.Time                    `json:"first_seen_at,omitempty"`
-	SummaryTags     []gallerysearch.TagSuggestion `json:"summary_tags"`
-	Displayed       bool                          `json:"displayed"`
-	Verdict         string                        `json:"verdict,omitempty"`
-	Score           *CatalogItemScore             `json:"score,omitempty"`
+	GalleryID       int64             `json:"gallery_id"`
+	Title           string            `json:"title"`
+	ThumbnailURL    string            `json:"thumbnail_url"`
+	PageCount       *int64            `json:"page_count"`
+	PostedAt        *time.Time        `json:"posted_at"`
+	URL             string            `json:"url"`
+	MetadataSource  string            `json:"metadata_source"`
+	MetadataState   string            `json:"metadata_state,omitempty"`
+	FetchEligibleAt *time.Time        `json:"fetch_eligible_at,omitempty"`
+	FirstSeenAt     *time.Time        `json:"first_seen_at,omitempty"`
+	SummaryTags     []CatalogTag      `json:"summary_tags"`
+	Displayed       bool              `json:"displayed"`
+	Verdict         string            `json:"verdict,omitempty"`
+	Score           *CatalogItemScore `json:"score,omitempty"`
+}
+
+// CatalogTag is a tag offered to a card of the catalog listing.
+type CatalogTag struct {
+	Namespace string `json:"namespace"`
+	Value     string `json:"value"`
+	Term      string `json:"term"`
+	// Weight is the tag's weight in the active Panda score model.
+	Weight *float64 `json:"weight,omitempty"`
+	// Override is the rule of the tag's score override: ScoreRuleAlwaysHide
+	// or ScoreRuleNeverHide.
+	Override string `json:"override,omitempty"`
 }
 
 type CatalogResult struct {

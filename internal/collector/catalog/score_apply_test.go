@@ -205,11 +205,11 @@ func TestAppliedModelHidesGalleriesBelowTheThreshold(t *testing.T) {
 			}
 		}
 	}
-	for _, tag := range itemByID(t, all, 104).SummaryTags {
-		if tag.Namespace == "female" {
-			t.Fatalf("summary tags hold the strongest weight: %+v", itemByID(t, all, 104).SummaryTags)
-		}
+	ranked := []summaryTag{weighted("female:glasses", glasses)}
+	for _, label := range scoreArtists[:5] {
+		ranked = append(ranked, weighted(label, weightOf(t, preview, collectorapi.ScoreKindTag, label)))
 	}
+	assertSummaryTags(t, itemByID(t, all, 104), ranked)
 }
 
 func TestApplyKeepsTheActiveModelForAMissingCandidate(t *testing.T) {

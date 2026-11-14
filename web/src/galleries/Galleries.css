@@ -167,6 +167,7 @@
 
 .gallery-summary-tags > li { display: flex; align-items: center; min-width: 0; max-width: 100%; }
 .gallery-summary-tags .rt-Badge { max-width: 100%; }
+.gallery-summary-tags .rt-Badge > svg { flex-shrink: 0; }
 .image-placeholder { padding: var(--space-4); text-align: center; color: var(--gray-10); font-size: var(--font-size-1); }
 
 @media (max-width: 900px) {

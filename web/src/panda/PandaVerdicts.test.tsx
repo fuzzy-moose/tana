@@ -23,6 +23,7 @@ const fetchMock = vi.fn<typeof fetch>()
 let verdicts: Record<number, string>
 let saves: Save[]
 let defaultFilter: { query: string, categories: string[] }
+let summaryTags: Record<number, { namespace: string, value: string, term: string, weight?: number }[]>
 
 const pages: Record<string, number[]> = { '': [5, 3], 'next-token': [2, 1] }
 
@@ -30,6 +31,7 @@ beforeEach(() => {
   verdicts = {}
   saves = []
   defaultFilter = { query: '', categories: [] }
+  summaryTags = {}
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(String(input), 'http://localhost')
@@ -46,7 +48,7 @@ beforeEach(() => {
     return Response.json({
       items: ids.map((id) => ({
         gallery_id: id, title: `${verdict ?? (unseen ? 'unseen' : 'all')} ${cursor || 'first'} ${id}`, thumbnail_url: '', page_count: 20, posted_at: '2026-09-12T10:00:00Z',
-        metadata_source: 'collected', url: `https://panda.example/g/${id}/token/`, summary_tags: [], verdict: verdicts[id], displayed: verdicts[id] ? true : undefined,
+        metadata_source: 'collected', url: `https://panda.example/g/${id}/token/`, summary_tags: summaryTags[id] ?? [], verdict: verdicts[id], displayed: verdicts[id] ? true : undefined,
       })),
       page_size: 8, next_cursor: cursor ? undefined : 'next-token', previous_cursor: cursor ? 'previous-token' : undefined,
     })
@@ -156,6 +158,30 @@ test('gives, changes and removes a verdict after the collector stored it, withou
 
   expect(listingRequests()).toHaveLength(before)
   expect(titles()).toEqual(['all first 5', 'all first 3'])
+})
+
+/** The text and badge colour of each tag of the card of gallery `id`, in order. */
+function tags(id: number) {
+  return within(within(card(id)).getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
+    .map((item) => [item.textContent, item.querySelector('.rt-Badge')?.getAttribute('data-accent-color')])
+}
+
+test('a verdict save keeps the order and colours of the card\'s tags and loads nothing', async () => {
+  summaryTags = { 5: [
+    { namespace: 'female', value: 'glasses', term: 'female:glasses$', weight: -1.5 },
+    { namespace: 'artist', value: 'alpha', term: 'artist:alpha$', weight: 0.8 },
+    { namespace: 'other', value: 'misc', term: 'other:misc$', weight: 0.05 },
+    { namespace: 'language', value: 'english', term: 'language:english$' },
+  ] }
+  await renderAt()
+  const before = listingRequests().length
+  const shown = [['glasses', 'red'], ['alpha', 'green'], ['misc', 'gray'], ['english', 'gray']]
+  expect(tags(5)).toEqual(shown)
+  fireEvent.click(control(5, 'Interesting'))
+  await answer(saves[0], noContent())
+  expect(pressed(5)).toEqual(['Interesting'])
+  expect(tags(5)).toEqual(shown)
+  expect(listingRequests()).toHaveLength(before)
 })
 
 test('in the unseen view a judged card stays in its position with its verdict pressed', async () => {

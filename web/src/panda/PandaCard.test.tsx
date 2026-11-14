@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { Theme } from '@radix-ui/themes'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import PandaCard, { PandaDetails } from './PandaCard'
-import type { PandaGallery } from './api'
+import type { PandaGallery, PandaSummaryTag } from './api'
+import type { ScoreRule } from './score'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const feedGallery: PandaGallery = {
   gallery_id: 1, title: 'Feed gallery', thumbnail_url: '', url: 'https://example.test/g/1/token/',
@@ -75,4 +76,62 @@ test('details name the rule that decides, the verdict first, only on a page with
   expect(screen.getByText('Hidden: the score is below the threshold.')).toBeTruthy()
   rerender(<PandaDetails gallery={{ ...collectedGallery, verdict: 'not_for_me' }} />)
   expect(screen.queryByText(/Hidden/)).toBeNull()
+})
+
+const tag = (value: string, weight?: number): PandaSummaryTag => ({ namespace: 'female', value, term: `female:${value}$`, ...(weight === undefined ? {} : { weight }) })
+
+/** The text and badge colour of each tag in the strip, in order. */
+function stripTags() {
+  return within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
+    .map((item) => [item.textContent, item.querySelector('.rt-Badge')?.getAttribute('data-accent-color')])
+}
+
+test('cards colour a tag green or red only when its weight is clear, in the given order', () => {
+  const weights = [0.9, -0.9, 0.2, -0.2, 0.19, -0.19]
+  const { rerender } = render(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: weights.map((weight, index) => tag(`t${index}`, weight)) }} /></Theme>)
+  expect(stripTags()).toEqual([['t0', 'green'], ['t1', 'red'], ['t2', 'green'], ['t3', 'red'], ['t4', 'gray'], ['t5', 'gray']])
+  rerender(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [tag('zero', 0), tag('none')] }} /></Theme>)
+  expect(stripTags()).toEqual([['zero', 'gray'], ['none', 'gray']])
+  rerender(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [tag('weak', 0.3), tag('strong', -2)] }} /></Theme>)
+  expect(stripTags()).toEqual([['weak', 'green'], ['strong', 'red']])
+})
+
+test('cards without weights show one gray badge per tag', () => {
+  render(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [tag('glasses'), tag('sole female')] }} /></Theme>)
+  expect(stripTags()).toEqual([['glasses', 'gray'], ['sole female', 'gray']])
+})
+
+const overrideTag = (value: string, override: ScoreRule, weight?: number): PandaSummaryTag => ({ ...tag(value, weight), override })
+
+test('cards mark an override tag with its rule, coloured by the rule whatever its weight', () => {
+  const { rerender } = render(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [overrideTag('glasses', 'always_hide', 1.5), overrideTag('sole female', 'never_hide', -1.5)] }} /></Theme>)
+  expect(stripTags()).toEqual([['Always hide: glasses', 'red'], ['Never hide: sole female', 'green']])
+  const [hidden, kept] = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
+  for (const item of [hidden, kept]) {
+    expect(item.querySelectorAll('svg')).toHaveLength(1)
+    expect(item.querySelector('.rt-Badge')?.firstElementChild?.tagName.toLowerCase()).toBe('svg')
+  }
+  expect(hidden.querySelector('svg')!.innerHTML).not.toBe(kept.querySelector('svg')!.innerHTML)
+  rerender(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [tag('plain', 0.9), overrideTag('glasses', 'always_hide')] }} /></Theme>)
+  expect(stripTags()).toEqual([['plain', 'green'], ['Always hide: glasses', 'red']])
+  expect(within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')[0].querySelector('svg')).toBeNull()
+})
+
+test('a card fits its strip again when a tag gains or loses its mark, not for a new array of the same tags', () => {
+  const observed: Element[] = []
+  vi.stubGlobal('ResizeObserver', class {
+    observe(target: Element) { observed.push(target) }
+    unobserve() {}
+    disconnect() {}
+  })
+  const card = (summaryTags: PandaSummaryTag[]) => <Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: summaryTags }} /></Theme>
+  const { rerender } = render(card([tag('glasses'), tag('sole female')]))
+  expect(observed).toHaveLength(1)
+  rerender(card([overrideTag('glasses', 'never_hide'), tag('sole female')]))
+  expect(observed).toHaveLength(2)
+  expect(observed[1]).toBe(screen.getByRole('list', { name: 'Tags' }))
+  rerender(card([overrideTag('glasses', 'never_hide'), tag('sole female')]))
+  expect(observed).toHaveLength(2)
+  rerender(card([tag('glasses'), tag('sole female')]))
+  expect(observed).toHaveLength(3)
 })

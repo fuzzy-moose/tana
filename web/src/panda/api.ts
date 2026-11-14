@@ -3,10 +3,18 @@ import { collectorMessages } from '../collector/api'
 import type { SearchCompletion, TagSuggestion } from '../galleries/api'
 import { isVerdictView } from '../navigation'
 import type { PandaListing, PandaScoreFilter } from '../navigation'
+import type { ScoreRule } from './score'
 
 export type PandaVerdict = 'interesting' | 'not_for_me'
 
 export const verdictLabels: Record<PandaVerdict, string> = { not_for_me: 'Not for me', interesting: 'Interesting' }
+
+/** A tag offered to a card, with its weight in the active Panda score model. */
+export interface PandaSummaryTag extends TagSuggestion {
+  weight?: number
+  /** The rule of the tag's score override. */
+  override?: ScoreRule
+}
 
 export interface PandaGallery {
   gallery_id: number
@@ -19,7 +27,7 @@ export interface PandaGallery {
   fetch_eligible_at?: string
   first_seen_at?: string
   url: string
-  summary_tags: TagSuggestion[]
+  summary_tags: PandaSummaryTag[]
   displayed?: boolean
   verdict?: PandaVerdict
   score?: PandaGalleryScore

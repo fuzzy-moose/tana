@@ -6,7 +6,7 @@ import { APIError } from '../api'
 import { formatDate } from '../collector/formatDate'
 import { useMutation } from '../collector/useMutation'
 import { pandaCategories } from './categories'
-import { applyPandaScore, currentHiddenShare, hiddenShare, previewPandaScore, recentHiddenShare, removePandaScoreOverride, savePandaScoreOverride, savePandaScoreThreshold, turnOffPandaScore } from './score'
+import { applyPandaScore, currentHiddenShare, hiddenShare, previewPandaScore, recentHiddenShare, removePandaScoreOverride, savePandaScoreOverride, savePandaScoreThreshold, scoreRuleNames, turnOffPandaScore } from './score'
 import type { NoScoreModel, ScoreCandidate, ScoreKind, ScoreOverride, ScorePreview, ScoreRule, ScoreWeight } from './score'
 import './PandaCatalog.css'
 
@@ -75,7 +75,6 @@ interface ChangeState {
   action: Change | null
 }
 
-const ruleNames: Record<ScoreRule, string> = { always_hide: 'Always hide', never_hide: 'Never hide' }
 const rules: ScoreRule[] = ['always_hide', 'never_hide']
 
 /** Saves or removes an override; the page calculates again after it. */
@@ -171,7 +170,7 @@ function OverrideButtons({ weight, overrides, disabled, onOverride }: {
     return <Button key={rule} size="1" variant={isPressed ? 'solid' : 'soft'} color={isPressed ? undefined : 'gray'} aria-pressed={isPressed} disabled={disabled}
       onClick={() => onOverride(current && isPressed
         ? (signal) => removePandaScoreOverride(current.id, signal)
-        : (signal) => savePandaScoreOverride({ kind: weight.kind, value: weight.label, rule }, signal))}>{ruleNames[rule]}</Button>
+        : (signal) => savePandaScoreOverride({ kind: weight.kind, value: weight.label, rule }, signal))}>{scoreRuleNames[rule]}</Button>
   })}</Flex>
 }
 
@@ -227,7 +226,7 @@ function OverrideForm({ disabled, change, onAdd }: {
         <SegmentedControl.Item value="category">Category</SegmentedControl.Item>
       </SegmentedControl.Root>
       <SegmentedControl.Root size="1" aria-label="Rule" value={rule} onValueChange={(next) => setRule(next as ScoreRule)}>
-        {rules.map((item) => <SegmentedControl.Item key={item} value={item}>{ruleNames[item]}</SegmentedControl.Item>)}
+        {rules.map((item) => <SegmentedControl.Item key={item} value={item}>{scoreRuleNames[item]}</SegmentedControl.Item>)}
       </SegmentedControl.Root>
     </Flex>
     <Flex direction="column" gap="1" maxWidth="360px">
@@ -256,7 +255,7 @@ function Overrides({ overrides, disabled, change, onOverride }: {
     {overrides.length === 0
       ? <Text as="p" size="2" color="gray">No overrides.</Text>
       : <Flex asChild direction="column" gap="2"><ul className="rt-reset">{overrides.map((override) => <Flex asChild key={override.id} align="center" gap="3" wrap="wrap"><li>
-        <Text size="2" data-override-label="">{ruleNames[override.rule]} {weightLabel(override)}</Text>
+        <Text size="2" data-override-label="">{scoreRuleNames[override.rule]} {weightLabel(override)}</Text>
         <Button size="1" variant="soft" color="gray" disabled={disabled}
           onClick={() => onOverride('override-list', (signal) => removePandaScoreOverride(override.id, signal))}>Remove</Button>
       </li></Flex>)}</ul></Flex>}

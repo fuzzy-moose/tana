@@ -124,7 +124,7 @@ func TestCatalogProjectionUpdatesAndRawTagCompletions(t *testing.T) {
 	entry := panda.Metadata{ID: 1, Title: "Original", Posted: 10, Tags: []string{"artist:" + raw, "other:under_score", "other:旧作"}}
 	retain(t, db, entry, true)
 	listed, err := s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 24})
-	if want := []gallerysearch.TagSuggestion{
+	if want := []collectorapi.CatalogTag{
 		{Namespace: "artist", Value: raw, Term: gallerysearch.SuggestionTerm("", "artist", raw)},
 		{Namespace: "other", Value: "under_score", Term: "other:under_score$"},
 		{Namespace: "other", Value: "旧作", Term: "other:旧作$"},

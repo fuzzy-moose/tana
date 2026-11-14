@@ -1,11 +1,26 @@
 import { useState } from 'react'
 import { Badge, Flex, IconButton, Spinner, Text, VisuallyHidden } from '@radix-ui/themes'
-import { BookmarkFilledIcon, BookmarkIcon, ClockIcon, Cross2Icon, ExclamationTriangleIcon } from '@radix-ui/react-icons'
+import { BookmarkFilledIcon, BookmarkIcon, ClockIcon, Cross2Icon, ExclamationTriangleIcon, EyeNoneIcon, EyeOpenIcon } from '@radix-ui/react-icons'
 import GalleryBox from '../galleries/GalleryBox'
+import type { GalleryBoxTag } from '../galleries/GalleryBox'
 import { verdictLabels } from './api'
-import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaVerdict } from './api'
+import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaSummaryTag, PandaVerdict } from './api'
+import { scoreRuleNames } from './score'
 
 const weightPrefixes: Record<PandaScoreWeight['kind'], string> = { tag: '', uploader: 'Uploader ', category: 'Category ' }
+
+/** The smallest absolute weight that colours a tag by its direction. */
+const clearTagWeight = 0.2
+
+/** Marks an override tag with its rule, or colours a tag green or red when its weight clearly likes or dislikes it; the order stays the catalog page's. */
+function stripTag({ weight, override, ...tag }: PandaSummaryTag): GalleryBoxTag {
+  if (override) return { ...tag, color: override === 'never_hide' ? 'green' : 'red', mark: <>
+    {override === 'never_hide' ? <EyeOpenIcon /> : <EyeNoneIcon />}<VisuallyHidden>{scoreRuleNames[override]}: </VisuallyHidden>
+  </> }
+  if (weight !== undefined && weight >= clearTagWeight) return { ...tag, color: 'green' }
+  if (weight !== undefined && weight <= -clearTagWeight) return { ...tag, color: 'red' }
+  return tag
+}
 
 /** The rule that decides whether the score filter hides the gallery: the verdict first, then the collector's rule. */
 function scoreRule({ verdict, score }: PandaGallery) {
@@ -68,7 +83,7 @@ function VerdictControls({ gallery, onVerdict }: { gallery: PandaGallery, onVerd
 export default function PandaCard({ gallery, onVerdict, subdued = !!gallery.displayed, scoreFilter }: { gallery: PandaGallery, onVerdict?: VerdictHandler, subdued?: boolean, scoreFilter?: PandaCatalogScoreFilter }) {
   const [failedImage, setFailedImage] = useState<string | null>(null)
   const failed = gallery.metadata_state === 'failed'
-  return <GalleryBox actions={onVerdict && <VerdictControls gallery={gallery} onVerdict={onVerdict} />} href={gallery.url} target="_blank" rel="noopener noreferrer" title={gallery.title} pageCount={gallery.page_count} tags={gallery.summary_tags}
+  return <GalleryBox actions={onVerdict && <VerdictControls gallery={gallery} onVerdict={onVerdict} />} href={gallery.url} target="_blank" rel="noopener noreferrer" title={gallery.title} pageCount={gallery.page_count} tags={gallery.summary_tags.map(stripTag)}
     subdued={subdued}
     tooltip={<PandaDetails gallery={gallery} scoreFilter={scoreFilter} />}
     status={gallery.metadata_source === 'feed' && <Badge variant="solid" color={failed ? 'red' : 'gray'}>
