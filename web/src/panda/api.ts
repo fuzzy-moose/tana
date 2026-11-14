@@ -1,7 +1,12 @@
 import { request } from '../api'
 import { collectorMessages } from '../collector/api'
 import type { SearchCompletion, TagSuggestion } from '../galleries/api'
+import { isVerdictView } from '../navigation'
 import type { PandaListing } from '../navigation'
+
+export type PandaVerdict = 'interesting' | 'not_for_me'
+
+export const verdictLabels: Record<PandaVerdict, string> = { not_for_me: 'Not for me', interesting: 'Interesting' }
 
 export interface PandaGallery {
   gallery_id: number
@@ -16,6 +21,7 @@ export interface PandaGallery {
   url: string
   summary_tags: TagSuggestion[]
   displayed?: boolean
+  verdict?: PandaVerdict
 }
 
 export interface PandaCatalogResult {
@@ -55,11 +61,12 @@ export function savePandaDefaultFilter(filter: PandaDefaultFilter) {
   }, { ...collectorMessages, invalid_query: 'Invalid search query.', invalid_category: 'Unknown Panda gallery category.' })
 }
 
-export function listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, unseen }: PandaListing, pageSize: number, signal?: AbortSignal) {
+export function listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view }: PandaListing, pageSize: number, signal?: AbortSignal) {
   const params = new URLSearchParams({ q: search, cursor, page_size: String(pageSize), include_expunged: String(includeExpunged) })
   for (const category of categories) params.append('category', category)
   if (bypassDefault) params.set('bypass_default', 'true')
-  if (unseen) params.set('unseen', 'true')
+  if (view === 'unseen') params.set('unseen', 'true')
+  else if (isVerdictView(view)) params.set('verdict', view)
   return request<PandaCatalogResult>(`/api/collector/catalog?${params}`, { signal }, {
     ...collectorMessages,
     invalid_query: 'Invalid search query.',
@@ -73,6 +80,14 @@ export function recordPandaDisplays(galleryIDs: number[]) {
   return request<void>('/api/collector/catalog/displays', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gallery_ids: galleryIDs }), keepalive: true,
   }, collectorMessages)
+}
+
+// No abort signal: leaving the page must not cancel a save. `null` removes the verdict.
+export function savePandaVerdict(galleryID: number, verdict: PandaVerdict | null) {
+  const path = `/api/collector/catalog/verdicts/${galleryID}`
+  return request<void>(path, verdict === null
+    ? { method: 'DELETE', keepalive: true }
+    : { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verdict }), keepalive: true }, collectorMessages)
 }
 
 export function catchUpPanda(galleryID: number, signal: AbortSignal) {

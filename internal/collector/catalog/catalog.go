@@ -38,6 +38,9 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if err != nil {
 		return result, err
 	}
+	if options.Verdict != "" && (!collectorapi.ValidVerdict(options.Verdict) || options.Unseen) {
+		return result, ErrInvalidQuery
+	}
 	if options.Unseen && cursor.Before {
 		// The unseen view has no way back to passed pages.
 		return result, ErrInvalidPagination
@@ -109,7 +112,12 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		}
 		predicate += " AND (g.ordered_at, g.gallery_id) " + comparison + " (" + args.Add(time.Unix(cursor.Posted, 0)) + ", " + args.Add(cursor.GalleryID) + ")"
 	}
-	pageQuery := catalogPageQuery(predicate, &args, pageCategories, cursor.Before, result.PageSize+1)
+	var pageQuery string
+	if options.Verdict != "" {
+		pageQuery = verdictPageQuery(predicate, &args, options.Verdict, cursor.Before, result.PageSize+1)
+	} else {
+		pageQuery = catalogPageQuery(predicate, &args, pageCategories, cursor.Before, result.PageSize+1)
+	}
 	order := "DESC"
 	if cursor.Before {
 		order = "ASC"
@@ -165,6 +173,9 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		return result, err
 	}
 	if err := markDisplayed(ctx, tx, result.Items); err != nil {
+		return result, err
+	}
+	if err := markVerdicts(ctx, tx, result.Items); err != nil {
 		return result, err
 	}
 	hasOpposite := options.Cursor != "" && !cursor.Inclusive

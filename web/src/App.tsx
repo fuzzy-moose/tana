@@ -50,7 +50,7 @@ function App() {
           {route.kind === 'source-cleanup' && <SourceCleanup />}
           {route.kind === 'library-refresh' && <LibraryRefresh key={route.libraryID ?? 'all'} libraryID={route.libraryID} />}
           {route.kind === 'collector' && <Suspense fallback={<Text as="p" size="2" color="gray" role="status">Loading collector…</Text>}><Collector page={route.page} /></Suspense>}
-          {route.kind === 'panda' && <PandaCatalog search={route.search} cursor={route.cursor} includeExpunged={route.includeExpunged} categories={route.categories} bypassDefault={route.bypassDefault} unseen={route.unseen} />}
+          {route.kind === 'panda' && <PandaCatalog search={route.search} cursor={route.cursor} includeExpunged={route.includeExpunged} categories={route.categories} bypassDefault={route.bypassDefault} view={route.view} />}
           {route.kind === 'panda-lookup' && <PandaLookupPage />}
           {route.kind === 'galleries' && <Galleries search={route.search} page={route.page} categories={route.categories} sort={route.sort} />}
           {route.kind === 'detail' && <GalleryDetail key={route.id} id={route.id} />}

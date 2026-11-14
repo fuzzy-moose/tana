@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react'
+import type { PandaVerdict } from './panda/api'
 
 function subscribe(callback: () => void) {
   window.addEventListener('hashchange', callback)
@@ -8,13 +9,19 @@ function subscribe(callback: () => void) {
 export type CollectorPage = 'overview' | 'downloads' | 'favorites' | 'sitemap' | 'imports' | 'proxies' | 'feeds'
 export type GallerySort = 'title' | 'favorited_desc' | 'favorited_asc'
 
+export type PandaView = 'all' | 'unseen' | PandaVerdict
+
+export function isVerdictView(view: string | null | undefined): view is PandaVerdict {
+  return view === 'interesting' || view === 'not_for_me'
+}
+
 export interface PandaListing {
   search: string
   cursor: string
   includeExpunged: boolean
   categories: string[]
   bypassDefault: boolean
-  unseen: boolean
+  view: PandaView
 }
 
 export type Route =
@@ -37,7 +44,7 @@ export function useRoute(): Route {
   const page = Number.isSafeInteger(value) && value > 0 ? value : 1
   const sort = params.get('sort')
   if (!path || path === '/' || path === '/galleries') return { kind: 'galleries', search: params.get('q') ?? '', page, categories, sort: sort === 'favorited_desc' || sort === 'favorited_asc' ? sort : 'title' }
-  if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', cursor: params.get('cursor') ?? '', includeExpunged: params.get('include_expunged') === 'true', categories, bypassDefault: params.get('bypass_default') === 'true', unseen: params.get('unseen') === 'true' }
+  if (path === '/panda') return { kind: 'panda', search: params.get('q') ?? '', cursor: params.get('cursor') ?? '', includeExpunged: params.get('include_expunged') === 'true', categories, bypassDefault: params.get('bypass_default') === 'true', view: pandaView(params) }
   if (path === '/panda/lookup') return { kind: 'panda-lookup' }
   if (path === '/libraries' || path === 'library') return { kind: 'libraries' }
   if (path === '/libraries/source-cleanup') return { kind: 'source-cleanup' }
@@ -81,14 +88,22 @@ export function listingLink(search: string, page = 1, categories: string[] = [],
   return `#/galleries${params.size ? `?${params}` : ''}`
 }
 
-export function pandaListingLink({ search, cursor, includeExpunged, categories = [], bypassDefault, unseen }: Partial<PandaListing>) {
+// A verdict wins over unseen: the two views can't be combined.
+function pandaView(params: URLSearchParams): PandaView {
+  const verdict = params.get('verdict')
+  if (isVerdictView(verdict)) return verdict
+  return params.get('unseen') === 'true' ? 'unseen' : 'all'
+}
+
+export function pandaListingLink({ search, cursor, includeExpunged, categories = [], bypassDefault, view }: Partial<PandaListing>) {
   const params = new URLSearchParams()
   if (search) params.set('q', search)
   if (cursor) params.set('cursor', cursor)
   if (includeExpunged) params.set('include_expunged', 'true')
   for (const category of categories) params.append('category', category)
   if (bypassDefault) params.set('bypass_default', 'true')
-  if (unseen) params.set('unseen', 'true')
+  if (view === 'unseen') params.set('unseen', 'true')
+  else if (isVerdictView(view)) params.set('verdict', view)
   return `#/panda${params.size ? `?${params}` : ''}`
 }
 

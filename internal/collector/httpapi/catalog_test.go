@@ -28,6 +28,9 @@ func TestCatalogPaginationAndQueryValidation(t *testing.T) {
 		{"/api/catalog?include_expunged=maybe", "invalid_query"},
 		{"/api/catalog?unseen=maybe", "invalid_query"},
 		{"/api/catalog?unseen=true", ""},
+		{"/api/catalog?verdict=interesting", ""},
+		{"/api/catalog?verdict=maybe", "invalid_query"},
+		{"/api/catalog?verdict=interesting&unseen=true", "invalid_query"},
 		{"/api/catalog?q=unknown:value", "invalid_query"},
 		{"/api/catalog?q=%22unfinished", "invalid_query"},
 		{"/api/catalog?default_q=%22unfinished", "invalid_query"},
@@ -125,6 +128,50 @@ func TestCatalogCatchUpValidation(t *testing.T) {
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
+			if response.Code != tc.want {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			if tc.code == "" {
+				if response.Body.Len() != 0 {
+					t.Fatalf("body = %q", response.Body.String())
+				}
+				return
+			}
+			var result map[string]string
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result["error"] != tc.code {
+				t.Fatalf("response = %s, %v", response.Body.String(), err)
+			}
+		})
+	}
+}
+
+func TestCatalogVerdictValidation(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	service := catalog.New(db, "https://favorites.example.test")
+	mux := http.NewServeMux()
+	mux.Handle("PUT /api/catalog/verdicts/{id}", HandleSetCatalogVerdict(service))
+	mux.Handle("DELETE /api/catalog/verdicts/{id}", HandleRemoveCatalogVerdict(service))
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+		want   int
+		code   string
+	}{
+		{http.MethodPut, "/api/catalog/verdicts/7", `{"verdict":"interesting"}`, http.StatusNoContent, ""},
+		{http.MethodPut, "/api/catalog/verdicts/7", `{"verdict":"maybe"}`, http.StatusBadRequest, "invalid_verdict"},
+		{http.MethodPut, "/api/catalog/verdicts/7", `{"verdict":"interesting","unknown":true}`, http.StatusBadRequest, "invalid_json"},
+		{http.MethodPut, "/api/catalog/verdicts/0", `{"verdict":"interesting"}`, http.StatusBadRequest, "invalid_gallery_reference"},
+		{http.MethodPut, "/api/catalog/verdicts/x", `{"verdict":"interesting"}`, http.StatusBadRequest, "invalid_gallery_reference"},
+		{http.MethodDelete, "/api/catalog/verdicts/7", "", http.StatusNoContent, ""},
+		{http.MethodDelete, "/api/catalog/verdicts/0", "", http.StatusBadRequest, "invalid_gallery_reference"},
+		{http.MethodDelete, "/api/catalog/verdicts/x", "", http.StatusBadRequest, "invalid_gallery_reference"},
+	} {
+		t.Run(tc.method+" "+tc.path+" "+tc.body, func(t *testing.T) {
+			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
 			if response.Code != tc.want {
 				t.Fatalf("response = %d %s", response.Code, response.Body.String())
 			}

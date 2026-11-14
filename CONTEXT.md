@@ -138,7 +138,10 @@ The browsable collection of Panda galleries described by collected or provisiona
 A Panda gallery that is a displayed Panda gallery or that a catch-up covers. Seen state belongs to the gallery ID, so a new version of a seen gallery is unseen.
 
 **Displayed Panda gallery**:
-A Panda gallery shown on a listing page that the user left by going to the next page. Each display keeps the time it was recorded.
+A Panda gallery shown on a listing page that the user left by going to the next page, or one the user gave a verdict. Each display keeps the time it was recorded.
+
+**Panda gallery verdict**:
+The user's judgment of one Panda gallery, "Not for me" or "Interesting". A displayed Panda gallery without a verdict is neutral.
 
 **Unseen view**:
 The Panda catalog listing restricted to galleries that are not seen, in catalog order, combined with the current search and filters.

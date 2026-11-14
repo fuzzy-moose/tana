@@ -40,7 +40,7 @@ func HandleCollectorCatalog(client *collectorapi.Client, defaults ...*catalogfil
 		}
 		options := collectorapi.CatalogOptions{
 			Query: r.URL.Query().Get("q"), Cursor: r.URL.Query().Get("cursor"), PageSize: int(pageSize), IncludeExpunged: includeExpunged, Unseen: unseen,
-			Categories: r.URL.Query()["category"],
+			Categories: r.URL.Query()["category"], Verdict: r.URL.Query().Get("verdict"),
 		}
 		bypassDefault := false
 		if r.URL.Query().Has("bypass_default") {

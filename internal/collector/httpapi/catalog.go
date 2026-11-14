@@ -16,7 +16,7 @@ func HandleCatalog(service *catalog.Service) http.Handler {
 		options := collectorapi.CatalogOptions{
 			Query: r.URL.Query().Get("q"), Categories: r.URL.Query()["category"],
 			DefaultQuery: r.URL.Query().Get("default_q"), DefaultCategories: r.URL.Query()["default_category"],
-			Cursor: r.URL.Query().Get("cursor"), PageSize: 24,
+			Cursor: r.URL.Query().Get("cursor"), PageSize: 24, Verdict: r.URL.Query().Get("verdict"),
 		}
 		if r.URL.Query().Has("page_size") {
 			value, err := strconv.Atoi(r.URL.Query().Get("page_size"))
@@ -99,6 +99,42 @@ func HandleCatalogCatchUp(service *catalog.Service) http.Handler {
 	})
 }
 
+func HandleSetCatalogVerdict(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		galleryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			catalogError(w, r, catalog.ErrInvalidGalleryReference)
+			return
+		}
+		var input struct {
+			Verdict string `json:"verdict"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.SetVerdict(r.Context(), galleryID, input.Verdict); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func HandleRemoveCatalogVerdict(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		galleryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			catalogError(w, r, catalog.ErrInvalidGalleryReference)
+			return
+		}
+		if err := service.RemoveVerdict(r.Context(), galleryID); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, catalog.ErrInvalidFactsBatch), errors.Is(err, catalog.ErrInvalidDisplays):
@@ -107,6 +143,8 @@ func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_category"})
 	case errors.Is(err, catalog.ErrInvalidGalleryReference):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_gallery_reference"})
+	case errors.Is(err, catalog.ErrInvalidVerdict):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_verdict"})
 	case errors.Is(err, catalog.ErrGalleryNotInCatalog):
 		server.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "gallery_not_found"})
 	case errors.Is(err, catalog.ErrInvalidQuery):

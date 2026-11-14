@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
-import { AlertDialog, Button, Callout, DropdownMenu, Flex, Heading, SegmentedControl, Spinner, Text, Theme } from '@radix-ui/themes'
-import { DotsHorizontalIcon, ExclamationTriangleIcon, ReloadIcon } from '@radix-ui/react-icons'
+import { AlertDialog, Button, Callout, DropdownMenu, Flex, Heading, IconButton, SegmentedControl, Spinner, Text, Theme } from '@radix-ui/themes'
+import { Cross2Icon, DotsHorizontalIcon, ExclamationTriangleIcon, ReloadIcon } from '@radix-ui/react-icons'
 import { useMutation } from '../collector/useMutation'
 import GallerySearch from '../galleries/GallerySearch'
 import { useGalleryGrid } from '../galleries/useGalleryLayout'
-import { pandaListingLink } from '../navigation'
-import type { PandaListing } from '../navigation'
+import { isVerdictView, pandaListingLink } from '../navigation'
+import type { PandaListing, PandaView } from '../navigation'
 import '../pagination/Pagination.css'
-import { catchUpPanda, completePandaSearch, getPandaDefaultFilter, hasDefaultFilter, listPandaCatalog, recordPandaDisplays } from './api'
-import type { PandaCatalogResult, PandaDefaultFilter as DefaultFilter, PandaGallery } from './api'
+import { catchUpPanda, completePandaSearch, getPandaDefaultFilter, hasDefaultFilter, listPandaCatalog, recordPandaDisplays, savePandaVerdict, verdictLabels } from './api'
+import type { PandaCatalogResult, PandaDefaultFilter as DefaultFilter, PandaGallery, PandaVerdict } from './api'
 import PandaCard from './PandaCard'
 import PandaCategoryFilter from './PandaCategoryFilter'
 import PandaDefaultFilter from './PandaDefaultFilter'
@@ -20,9 +20,9 @@ const sizingGallery: PandaGallery = {
   gallery_id: 0, title: '', thumbnail_url: '', page_count: null, posted_at: null, metadata_source: 'collected', url: '', summary_tags: [],
 }
 
-export default function PandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, unseen }: PandaListing) {
+export default function PandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view }: PandaListing) {
   // Built during render: never an effect dependency, or every render would refetch.
-  const listing: PandaListing = { search, cursor, includeExpunged, categories, bypassDefault, unseen }
+  const listing: PandaListing = { search, cursor, includeExpunged, categories, bypassDefault, view }
   const [result, setResult] = useState<PandaCatalogResult | null>(null)
   const [requestState, setRequestState] = useState<{ key: string, error: string } | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -30,18 +30,20 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
   const [defaultError, setDefaultError] = useState('')
   const [recordError, setRecordError] = useState('')
   const [catchUpOpen, setCatchUpOpen] = useState(false)
+  const [verdictError, setVerdictError] = useState<{ galleryID: number, title: string, message: string } | null>(null)
   const catchUp = useMutation()
-  const pageHref = useCallback((query: string, position = '') => pandaListingLink({ search: query, cursor: position, includeExpunged, categories, bypassDefault, unseen }), [includeExpunged, categories, bypassDefault, unseen])
+  const pageHref = useCallback((query: string, position = '') => pandaListingLink({ search: query, cursor: position, includeExpunged, categories, bypassDefault, view }), [includeExpunged, categories, bypassDefault, view])
   const { viewportRef, cardRef, pageSize, cardHeight } = useGalleryGrid()
-  const requestKey = JSON.stringify([search, cursor, pageSize, includeExpunged, categories, bypassDefault, unseen, attempt])
+  const requestKey = JSON.stringify([search, cursor, pageSize, includeExpunged, categories, bypassDefault, view, attempt])
   const loading = requestState?.key !== requestKey
   // Keep the alert's height stable while retrying: it affects measured page capacity.
   const error = requestState?.error ?? ''
   const defaultConfigured = hasDefaultFilter(defaultFilter)
   const filtered = !!search || categories.length > 0 || (defaultConfigured && !bypassDefault)
-  const clearHref = pandaListingLink({ bypassDefault: true, unseen })
+  const clearHref = pandaListingLink({ bypassDefault: true, view })
   const allHref = pandaListingLink({ search, includeExpunged, categories, bypassDefault })
-  const catchUpDisabled = !unseen || loading || !!error || !result?.items.length
+  const verdictView = isVerdictView(view)
+  const catchUpDisabled = view !== 'unseen' || loading || !!error || !result?.items.length
   const newest = result?.items[0]
   const newestDate = newest?.posted_at ?? newest?.first_seen_at
   const confirmCatchUp = () => {
@@ -69,6 +71,20 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
     goNext()
   }
 
+  // A save patches the result that is current when it settles and never loads the listing again:
+  // a new load would drop a judged card from the unseen view, and the request key must stay put.
+  const saveVerdict = useCallback(async ({ gallery_id: galleryID, title }: PandaGallery, verdict: PandaVerdict | null) => {
+    try {
+      await savePandaVerdict(galleryID, verdict)
+    } catch (error) {
+      setVerdictError({ galleryID, title, message: (error as Error).message })
+      return
+    }
+    setResult((current) => current && { ...current, items: current.items.map((item) => item.gallery_id !== galleryID ? item
+      : { ...item, verdict: verdict ?? undefined, displayed: verdict ? true : item.displayed }) })
+    setVerdictError((current) => current?.galleryID === galleryID ? null : current)
+  }, [])
+
   useEffect(() => {
     if (!pageSize) return
     const controller = new AbortController()
@@ -83,7 +99,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
   useEffect(() => {
     if (!pageSize) return
     const controller = new AbortController()
-    void listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, unseen }, pageSize, controller.signal).then((next) => {
+    void listPandaCatalog({ search, cursor, includeExpunged, categories, bypassDefault, view }, pageSize, controller.signal).then((next) => {
       if (controller.signal.aborted) return
       setResult(next)
       setRequestState({ key: requestKey, error: '' })
@@ -91,7 +107,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
       if (!controller.signal.aborted) setRequestState({ key: requestKey, error: error.message })
     })
     return () => controller.abort()
-  }, [search, cursor, pageSize, includeExpunged, categories, bypassDefault, unseen, requestKey, pageHref])
+  }, [search, cursor, pageSize, includeExpunged, categories, bypassDefault, view, requestKey, pageHref])
 
   useEffect(() => {
     if (!result || loading || error) return
@@ -110,11 +126,13 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
 
   return <section className="gallery-listing gallery-boxes panda-catalog" aria-labelledby="panda-title" style={{ '--gallery-card-height': `${cardHeight}px` } as CSSProperties}>
     <div className="gallery-toolbar">
-      <Flex align="center" gap="3">
+      <Flex className="panda-catalog-heading" align="center" gap="3" wrap="wrap">
         <Heading as="h1" size="5" id="panda-title">Panda</Heading>
-        <SegmentedControl.Root size="1" aria-label="View" value={unseen ? 'unseen' : 'all'} onValueChange={(view) => { window.location.hash = pandaListingLink({ ...listing, cursor: '', unseen: view === 'unseen' }) }}>
+        <SegmentedControl.Root size="1" aria-label="View" value={view} onValueChange={(value) => { window.location.hash = pandaListingLink({ ...listing, cursor: '', view: value as PandaView }) }}>
           <SegmentedControl.Item value="all">All</SegmentedControl.Item>
           <SegmentedControl.Item value="unseen">Unseen</SegmentedControl.Item>
+          <SegmentedControl.Item value="interesting">Interesting</SegmentedControl.Item>
+          <SegmentedControl.Item value="not_for_me">Not for me</SegmentedControl.Item>
         </SegmentedControl.Root>
       </Flex>
       <GallerySearch key={search} search={search} completeSearch={completePandaSearch} searchHref={pageHref} />
@@ -126,7 +144,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
       }} />
       {(defaultConfigured || bypassDefault) && <Button asChild variant="ghost" color="gray"><a href={pandaListingLink({ ...listing, cursor: '', bypassDefault: !bypassDefault })}>{bypassDefault ? 'Apply default' : 'Bypass default'}</a></Button>}
       {(filtered || includeExpunged) && <Button asChild variant="ghost" color="gray"><a href={clearHref}>Clear all filters</a></Button>}
-      {unseen && <Button variant="soft" disabled={catchUpDisabled} onClick={() => { catchUp.clear(); setCatchUpOpen(true) }}>Catch up…</Button>}
+      {view === 'unseen' && <Button variant="soft" disabled={catchUpDisabled} onClick={() => { catchUp.clear(); setCatchUpOpen(true) }}>Catch up…</Button>}
       <Flex align="center" gap="2">
         {loading && result && <Spinner aria-label="Loading results" />}
         <DropdownMenu.Root>
@@ -162,20 +180,24 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
       </div></Theme>
       {!result && loading && !error && <Text as="p" size="2" color="gray" role="status">Loading Panda galleries…</Text>}
       {result && (result.items.length === 0 ? <Flex className="gallery-empty" direction="column" align="center" justify="center" gap="3">
-        {unseen ? <>
+        {view === 'unseen' ? <>
           <Heading as="h2" size="4">{cursor ? (filtered ? 'No more unseen Panda galleries match.' : 'No more unseen Panda galleries.') : filtered ? 'No unseen Panda galleries match.' : 'No unseen Panda galleries.'}</Heading>
           <Text as="p" size="2" color="gray">{cursor ? 'Galleries that arrived during this visit wait with the newest unseen galleries.' : filtered ? 'Try different titles, tags, or categories, or show all galleries.' : 'You have seen every Panda gallery. New galleries appear here once feeds are collected.'}</Text>
           <Flex gap="3" wrap="wrap" justify="center">
             {cursor && <Button asChild variant="soft"><a href={pageHref(search)}>Newest unseen galleries</a></Button>}
             <Button asChild variant="soft" color={cursor ? 'gray' : undefined}><a href={allHref}>Show all galleries</a></Button>
           </Flex>
+        </> : verdictView && !cursor ? <>
+          <Heading as="h2" size="4">{filtered ? 'No Panda gallery with this verdict matches.' : 'No Panda gallery has this verdict.'}</Heading>
+          <Text as="p" size="2" color="gray">{filtered ? 'Try different titles, tags, or categories, or clear all filters.' : `Mark a gallery as ${verdictLabels[view]} on its card, and it appears here.`}</Text>
+          <Button asChild variant="soft"><a href={filtered ? clearHref : allHref}>{filtered ? 'Clear all filters' : 'Show all galleries'}</a></Button>
         </> : <>
           <Heading as="h2" size="4">{cursor ? 'No more matching Panda galleries.' : filtered ? 'No matching Panda galleries.' : 'No Panda galleries yet.'}</Heading>
           <Text as="p" size="2" color="gray">{cursor ? 'Browse back or return to the newest galleries.' : filtered ? 'Try different titles, tags, or categories, or bypass the default filter.' : 'Collect a feed to discover galleries and browse their feed metadata.'}</Text>
           <Button asChild variant="soft"><a href={cursor ? pageHref(search) : filtered ? clearHref : '#/collector/feeds'}>{cursor ? 'Newest galleries' : filtered ? 'Show all Panda galleries' : 'Collect feeds'}</a></Button>
         </>}
       </Flex> : <Theme asChild radius="none"><ul className="gallery-grid" aria-label="Panda galleries">
-        {result.items.map((gallery) => <li key={gallery.gallery_id}><PandaCard gallery={gallery} /></li>)}
+        {result.items.map((gallery) => <li key={gallery.gallery_id}><PandaCard gallery={gallery} onVerdict={saveVerdict} subdued={verdictView ? false : undefined} /></li>)}
       </ul></Theme>)}
     </div>
     <div className="gallery-pagination">
@@ -188,6 +210,18 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
           ? <Button asChild variant="soft" color="gray"><a href={pageHref(search, result.next_cursor)} rel="next" onClick={clickNext}>Next</a></Button>
           : <Button variant="soft" color="gray" disabled>Next</Button>}
       </nav>
+      {/* Out of the page flow: an in-flow alert would change the page capacity and load the page again. */}
+      {verdictError && <div className="panda-verdict-error">
+        <Callout.Root size="1" color="red" role="alert">
+          <Callout.Icon><ExclamationTriangleIcon /></Callout.Icon>
+          <Flex align="start" gap="2" minWidth="0">
+            <Callout.Text className="panda-verdict-error-text">
+              Could not save the verdict for <span className="panda-verdict-error-title">{verdictError.title}.</span> {verdictError.message}
+            </Callout.Text>
+            <IconButton size="1" variant="ghost" color="red" aria-label="Dismiss" title="Dismiss" onClick={() => setVerdictError(null)}><Cross2Icon /></IconButton>
+          </Flex>
+        </Callout.Root>
+      </div>}
     </div>
 
     <AlertDialog.Root open={catchUpOpen} onOpenChange={(open) => { if (!open && !catchUp.pending) setCatchUpOpen(false) }}>

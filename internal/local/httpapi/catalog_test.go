@@ -300,3 +300,119 @@ func TestLocalCatalogCatchUp(t *testing.T) {
 		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
 	}
 }
+
+func TestLocalCatalogVerdicts(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	tx, err := db.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES (2, 'token')"); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: 2, Title: "Gallery 2", Posted: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.DiscardHandler)
+	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: catalog.New(db, "https://panda.test"), APIToken: "server-secret"})
+	var requests atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		collectorHandler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
+		return w
+	}
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := func() map[string]any {
+		t.Helper()
+		w := request(client, "GET", "/api/collector/catalog", "")
+		var page struct {
+			Items []map[string]any `json:"items"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK || len(page.Items) != 1 {
+			t.Fatalf("catalog: %d %s, %v", w.Code, w.Body, err)
+		}
+		return page.Items[0]
+	}
+	const path = "/api/collector/catalog/verdicts/2"
+	for _, verdict := range []string{"not_for_me", "interesting"} {
+		if w := request(client, "PUT", path, `{"verdict":"`+verdict+`"}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+			t.Fatalf("put %s: %d %s", verdict, w.Code, w.Body)
+		}
+		if item := listed(); item["verdict"] != verdict || item["displayed"] != true {
+			t.Fatalf("after %s: %v", verdict, item)
+		}
+	}
+	if w := request(client, "DELETE", path, ""); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("delete: %d %s", w.Code, w.Body)
+	}
+	if item := listed(); item["verdict"] != nil || item["displayed"] != true {
+		t.Fatalf("after delete: %v", item)
+	}
+	if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES (3, 'token3')"); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = db.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: 3, Title: "Gallery 3", Posted: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for id, verdict := range map[string]string{"2": "interesting", "3": "not_for_me"} {
+		if w := request(client, "PUT", "/api/collector/catalog/verdicts/"+id, `{"verdict":"`+verdict+`"}`); w.Code != http.StatusNoContent {
+			t.Fatalf("put %s: %d %s", id, w.Code, w.Body)
+		}
+	}
+	w := request(client, "GET", "/api/collector/catalog?verdict=not_for_me", "")
+	var view struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil || w.Code != http.StatusOK || len(view.Items) != 1 || view.Items[0]["gallery_id"] != float64(3) {
+		t.Fatalf("not_for_me view: %d %s, %v", w.Code, w.Body, err)
+	}
+	if w := request(client, "GET", "/api/collector/catalog?verdict=maybe", ""); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_query") {
+		t.Fatalf("unknown verdict view: %d %s", w.Code, w.Body)
+	}
+	before := requests.Load()
+	for _, tc := range []struct{ method, path, body, code string }{
+		{"PUT", path, `{"verdict":"maybe"}`, "invalid_verdict"},
+		{"PUT", "/api/collector/catalog/verdicts/0", `{"verdict":"interesting"}`, "invalid_gallery_reference"},
+		{"PUT", "/api/collector/catalog/verdicts/-1", `{"verdict":"interesting"}`, "invalid_gallery_reference"},
+		{"PUT", "/api/collector/catalog/verdicts/x", `{"verdict":"interesting"}`, "invalid_gallery_reference"},
+		{"DELETE", "/api/collector/catalog/verdicts/0", "", "invalid_gallery_reference"},
+		{"DELETE", "/api/collector/catalog/verdicts/x", "", "invalid_gallery_reference"},
+	} {
+		if w := request(client, tc.method, tc.path, tc.body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), tc.code) {
+			t.Fatalf("%s %s %s: %d %s", tc.method, tc.path, tc.body, w.Code, w.Body)
+		}
+	}
+	if requests.Load() != before {
+		t.Fatal("invalid requests reached the collector")
+	}
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request(wrong, "PUT", path, `{"verdict":"interesting"}`); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("wrong token: %d %s", w.Code, w.Body)
+	}
+	if w := request(nil, "DELETE", path, ""); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
+		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
+	}
+}
