@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import { AlertDialog, Button, Callout, DropdownMenu, Flex, Heading, IconButton, SegmentedControl, Spinner, Text, Theme } from '@radix-ui/themes'
 import { Cross2Icon, DotsHorizontalIcon, ExclamationTriangleIcon, ReloadIcon } from '@radix-ui/react-icons'
@@ -117,7 +117,8 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
     return () => controller.abort()
   }, [search, cursor, pageSize, includeExpunged, categories, bypassDefault, view, scoreFilter, requestKey, pageHref])
 
-  useEffect(() => {
+  // A layout effect, so a key pressed as soon as the page shows is not lost before a passive effect subscribes.
+  useLayoutEffect(() => {
     if (!result || loading || error) return
     const navigate = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return

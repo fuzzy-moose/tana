@@ -52,7 +52,9 @@ test('submits a URL, reuses an existing job, cancels and explicitly retries it',
   await screen.findByText(/No downloads yet/)
   const input = screen.getByLabelText('Panda gallery URL') as HTMLInputElement
   for (let i = 0; i < 2; i++) {
-    await user.type(input, 'https://panda.test/g/42/gallery-token/?p=1')
+    // Pasting enters the URL in one input event; typing it re-renders the page once per character.
+    await user.click(input)
+    await user.paste('https://panda.test/g/42/gallery-token/?p=1')
     await user.click(screen.getByRole('button', { name: 'Add download' }))
     await screen.findByText('Gallery 42: Queued.')
     expect(input.value).toBe('')

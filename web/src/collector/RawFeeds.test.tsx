@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import App from '../App'
 import type { FeedCapture } from './api'
 
 vi.mock('./FavoriteSyncAction', () => ({ default: () => null }))
+
+// App loads the collector pages lazily; load them up front so the first query waits for rendering only.
+beforeAll(async () => { await import('./Collector') })
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
 

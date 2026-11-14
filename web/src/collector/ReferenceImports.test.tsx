@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { Theme } from '@radix-ui/themes'
 import type { ReactNode } from 'react'
 
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import App from '../App'
 import ReferenceImports from './ReferenceImports'
 import { uploadReferenceImport } from './referenceImports'
@@ -16,6 +16,9 @@ vi.mock('./referenceImports', async (importOriginal) => ({
   ...await importOriginal<typeof import('./referenceImports')>(),
   uploadReferenceImport: vi.fn(),
 }))
+
+// App loads the collector pages lazily; load them up front so the first query waits for rendering only.
+beforeAll(async () => { await import('./Collector') })
 
 const render = (ui: ReactNode) => testingRender(ui, { wrapper: Theme })
 const page = (props: Partial<{ available: boolean }> = {}) => <ReferenceImports available refreshKey={0} interval={5000} {...props} />

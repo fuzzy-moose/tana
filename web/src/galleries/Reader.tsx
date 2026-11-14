@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { Badge, Button, Callout, Flex, Heading, Text } from '@radix-ui/themes'
 import { galleryLink, readerSpreadLink } from '../navigation'
 import type { Gallery } from './api'
@@ -10,7 +10,9 @@ import './Reader.css'
 
 export default function Reader({ id, initialPage, initialLastPage }: { id: number, initialPage: number, initialLastPage?: number }) {
   const { gallery, error, retry } = useGallery(id)
-  useEffect(() => {
+  // Layout effects keep the key listeners and the URL in step with the shown spread: a passive effect
+  // that ran after a key press could ignore the press or replace the URL that the press set.
+  useLayoutEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') window.location.hash = galleryLink(id)
     }
@@ -43,7 +45,7 @@ function ReadingGallery({ gallery, initialPage, initialLastPage }: { gallery: Ga
   const lastPage = pages[pages.length - 1]
   const atEnd = lastPage === total
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!ready) return
     const hash = readerSpreadLink(gallery.id, start, lastPage)
     // Replacing the entry preserves Back/Forward without triggering a reader remount.
@@ -70,7 +72,7 @@ function ReadingGallery({ gallery, initialPage, initialLastPage }: { gallery: Ga
     }
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const navigate = (event: KeyboardEvent) => {
       if (event.altKey || event.ctrlKey || event.metaKey || (event.target instanceof HTMLElement && event.target.matches('input, textarea, select, [contenteditable="true"]'))) return
       const key = event.key.toLowerCase()

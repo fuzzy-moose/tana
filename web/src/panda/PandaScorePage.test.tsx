@@ -286,7 +286,7 @@ test('the entered threshold stays across the favorites switch and applies the ca
   await userEvent.click(newModel().getByRole('button', { name: 'Apply model and threshold' }))
   expect(await newModel().findByText('Model applied.')).toBeTruthy()
   expect(changeCalls()).toEqual([['/api/collector/catalog/score/apply', 'POST', '{"candidate_id":9,"threshold_tenths":-2}']])
-  expect(previewBodies()).toEqual(['{"favorites":null}', '{"favorites":false}', '{"favorites":false}'])
+  await waitFor(() => expect(previewBodies()).toEqual(['{"favorites":null}', '{"favorites":false}', '{"favorites":false}']))
 })
 
 test('after a successful change both fields start again from the next preview', async () => {
@@ -301,8 +301,8 @@ test('after a successful change both fields start again from the next preview', 
   await userEvent.click(screen.getByRole('button', { name: 'Save threshold' }))
   await activeModel().findByText('Threshold saved.')
   expect(changeCalls()).toEqual([['/api/collector/catalog/score/threshold', 'PUT', '{"threshold_tenths":-3}']])
-  expect(previewBodies()).toHaveLength(2)
-  expect(field('Threshold').value).toBe('-0.3')
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
+  await waitFor(() => expect(field('Threshold').value).toBe('-0.3'))
   expect(field('Active threshold').value).toBe('-0.3')
 
   await userEvent.click(screen.getByRole('button', { name: 'Turn off' }))
@@ -404,7 +404,7 @@ test('a calculation in progress and a change in progress lock each other out, so
   expect(favorites().disabled).toBe(true)
   finishChange(noContent())
   await activeModel().findByText('Threshold saved.')
-  expect(previewBodies()).toEqual(['{"favorites":null}', '{"favorites":false}', '{"favorites":false}'])
+  await waitFor(() => expect(previewBodies()).toEqual(['{"favorites":null}', '{"favorites":false}', '{"favorites":false}']))
 })
 
 test('Retry waits for a change in progress, so a retried favorites setting is not replaced', async () => {
@@ -420,7 +420,7 @@ test('Retry waits for a change in progress, so a retried favorites setting is no
   respond(Response.json(measured()))
   finishChange(noContent())
   await newModel().findByText('Model applied.')
-  expect(previewBodies()).toEqual(['{"favorites":null}', '{"favorites":false}', '{"favorites":true}'])
+  await waitFor(() => expect(previewBodies()).toEqual(['{"favorites":null}', '{"favorites":false}', '{"favorites":true}']))
 })
 
 function overridesSection() {
@@ -537,7 +537,7 @@ test('the form adds an override for a tag, an uploader or a category', async () 
   await userEvent.type(value(), 'other:tag  ')
   await userEvent.click(add())
   await waitFor(() => expect(value().value).toBe(''))
-  expect(previewBodies()).toHaveLength(2)
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
 
   await userEvent.click(form().getByRole('radio', { name: 'Uploader' }))
   await userEvent.click(form().getByRole('radio', { name: 'Never hide' }))

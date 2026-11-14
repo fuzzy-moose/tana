@@ -215,6 +215,8 @@ test('a plain click on Next pages in place, and a modified click keeps the nativ
   fireEvent.click(screen.getByRole('link', { name: 'Previous' }))
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
   expect(fireEvent.click(screen.getByRole('link', { name: 'Next' }), { ctrlKey: true })).toBe(true)
+  // The native navigation lands after the click; let it finish here instead of in the next test.
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?cursor=next-token'))
 })
 
 const pageIDs: Record<string, number[]> = { '': [5, 3, 4], 'previous-token': [5, 3, 4], 'next-token': [2, 1], 'empty-token': [] }
