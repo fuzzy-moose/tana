@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Badge, Button, Callout, DropdownMenu, Flex, Heading, Text, Theme } from '@radix-ui/themes'
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons'
@@ -55,7 +55,8 @@ export default function Galleries({ search, page, categories, sort }: { search: 
     return () => { controller.abort(); clearTimeout(timer) }
   }, [search, page, pageSize, categories, sort, scope, pageHref, attempt])
 
-  useEffect(() => {
+  // A layout effect, so a key pressed as soon as the page shows is not lost before a passive effect subscribes.
+  useLayoutEffect(() => {
     if (!current) return
     const navigate = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
