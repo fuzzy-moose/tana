@@ -82,10 +82,13 @@ func scoreTenths(modelID string) string {
 	return "floor(" + scoreSum(modelID) + " * 10)"
 }
 
+// scoreSum probes the weight of each of the gallery's tags in a scalar
+// subquery. With a join instead, a candidate stored in the same transaction
+// has no statistics, and the planner scans all its tag weights per gallery.
 func scoreSum(modelID string) string {
-	return `(COALESCE((SELECT sum(w.weight) FROM catalog_gallery_tags gt
-			JOIN panda_score_weights w ON w.model_id = ` + modelID + ` AND w.kind = 'tag' AND w.tag_id = gt.tag_id
-			WHERE gt.gallery_id = g.gallery_id), 0)
+	return `(COALESCE((SELECT sum((SELECT w.weight FROM panda_score_weights w
+				WHERE w.model_id = ` + modelID + ` AND w.kind = 'tag' AND w.tag_id = gt.tag_id))
+			FROM catalog_gallery_tags gt WHERE gt.gallery_id = g.gallery_id), 0)
 		+ COALESCE((SELECT w.weight FROM panda_score_weights w
 			WHERE w.model_id = ` + modelID + ` AND w.kind = 'uploader' AND w.value = g.uploader), 0)
 		+ COALESCE((SELECT w.weight FROM panda_score_weights w
