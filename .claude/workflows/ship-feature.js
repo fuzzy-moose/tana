@@ -1,11 +1,11 @@
 export const meta = {
   name: 'ship-feature',
-  description: 'Plan (opus, xhigh), then implement, review and fix every ticket (medium) of a tana feature',
+  description: 'Plan (fable, xhigh), then implement, review and fix every ticket (medium) of a tana feature',
   whenToUse:
     'Pass a feature brief to plan and build it hands-off, or the slug of an existing .scratch/<feature>/ plan to build or resume it.',
   phases: [
     { title: 'Setup', detail: 'clean tree, find an existing plan' },
-    { title: 'Plan', detail: 'planner writes spec + tickets, critic reviews, planner revises', model: 'opus' },
+    { title: 'Plan', detail: 'planner writes spec + tickets, critic reviews, planner revises', model: 'fable' },
     { title: 'Tickets', detail: 'per ticket: implement → review → fix' },
     { title: 'Final review', detail: '/code-review of the branch, triage every open finding, apply the relevant ones' },
   ],
@@ -20,7 +20,7 @@ if (!input) throw new Error('Pass a feature brief, or the slug of an existing pl
 
 // Model and effort per role. Agent frontmatter sets the same values for manual use; passing
 // them here makes the pipeline independent of the session's own settings.
-const PLAN = { model: 'opus', effort: 'xhigh' }
+const PLAN = { model: 'fable', effort: 'xhigh' }
 const CRITIC = { model: 'opus', effort: 'high' }
 const WORK = { model: 'opus', effort: 'medium' }
 const CHORE = { model: 'haiku', effort: 'medium' } // setup, branch and the ticket board: git state and status lines

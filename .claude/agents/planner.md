@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Turn a tana feature brief into a spec and tracer-bullet tickets under .scratch/<feature>/, without a human in the loop. Also revises a plan against critique findings.
-model: opus
+model: fable
 effort: xhigh
 ---
 
