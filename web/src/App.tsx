@@ -10,6 +10,7 @@ import SourceCleanup from './libraries/SourceCleanup'
 import LibraryRefresh from './libraries/LibraryRefresh'
 import PandaCatalog from './panda/PandaCatalog'
 import PandaLookupPage from './panda/PandaLookupPage'
+import FavoriteSyncAction from './collector/FavoriteSyncAction'
 import { useRoute } from './navigation'
 
 const Collector = lazy(() => import('./collector/Collector'))
@@ -42,6 +43,7 @@ function App() {
               <Icon width="18" height="18" />{label}
             </a>)}
           </nav>
+          <FavoriteSyncAction />
         </aside>
         <main id="main-content" className="app-main" tabIndex={-1}>
           {route.kind === 'libraries' && <Libraries />}

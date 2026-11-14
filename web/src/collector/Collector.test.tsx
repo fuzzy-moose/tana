@@ -6,6 +6,8 @@ import App from '../App'
 import type { CollectorSummary, ConnectionStatus, FavoriteCategory, FavoriteDownloadsStatus } from './api'
 import type { DownloadJob } from './downloads'
 
+vi.mock('./FavoriteSyncAction', () => ({ default: () => null }))
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
 
 function connected(): ConnectionStatus {

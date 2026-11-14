@@ -11,11 +11,17 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 )
 
-// enqueue bootstraps every category even when the caller selects just one.
-// Previously successful syncs are not proof of a complete download baseline.
-func (s *store) enqueue(ctx context.Context, categories []int, full bool) error {
+// enqueueSelected bootstraps every category even when the caller selects just
+// one. Previously successful syncs are not proof of a complete download baseline.
+// It selects the categories after the download-settings row lock, so a saved
+// selection is read in the admitting transaction, before favorite_syncs locks.
+func (s *store) enqueueSelected(ctx context.Context, selectCategories func(*dbgen.Queries) ([]int, error), full bool) error {
 	return s.transaction(ctx, func(q *dbgen.Queries) error {
 		state, err := q.LockDownloadSettings(ctx)
+		if err != nil {
+			return err
+		}
+		categories, err := selectCategories(q)
 		if err != nil {
 			return err
 		}

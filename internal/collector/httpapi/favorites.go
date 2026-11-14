@@ -59,3 +59,21 @@ func HandleSyncFavorites(service *favorites.Service) http.Handler {
 		w.WriteHeader(http.StatusAccepted)
 	})
 }
+
+func HandleSyncDownloadCategories(service *favorites.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct{}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.EnqueueDownloadCategories(); err != nil {
+			status := http.StatusServiceUnavailable
+			if errors.Is(err, favorites.ErrNoDownloadCategories) {
+				status = http.StatusConflict
+			}
+			server.WriteJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+}

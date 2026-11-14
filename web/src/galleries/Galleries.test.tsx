@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import App from '../App'
 
+vi.mock('../collector/FavoriteSyncAction', () => ({ default: () => null }))
+
 let viewport: { width: number, height: number }
 let total: number
 const observers = new Set<() => void>()

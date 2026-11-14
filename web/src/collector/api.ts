@@ -124,6 +124,7 @@ export const collectorMessages: Record<string, string> = {
   collector_status_unavailable: 'The collector is reachable, but its status API is unavailable.',
   collector_invalid_response: 'The collector returned an unexpected status response.',
   collector_unavailable: 'The request could not be confirmed. Check collector status and try again.',
+  no_download_categories: 'No category has auto-download checked. Check one on the Favorites page.',
   invalid_download_categories: 'Select distinct favorite categories from 0 to 9.',
   invalid_metadata_settings: 'Enter a whole number of hours from 0 to 8760.',
   sitemap_state_conflict: 'Sitemap collection changed state. Refresh its status and try again.',
@@ -156,6 +157,13 @@ export const syncFavorites = (category: string, full: boolean, signal: AbortSign
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ full }),
+  signal,
+}, collectorMessages)
+
+export const syncDownloadCategories = (signal: AbortSignal) => request<void>('/api/collector/favorites/download-categories/sync', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: '{}',
   signal,
 }, collectorMessages)
 

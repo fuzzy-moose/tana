@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import App from './App'
 
+vi.mock('./collector/FavoriteSyncAction', () => ({ default: () => 'Favorite sync action' }))
+
 vi.mock('./galleries/useGalleryLayout', () => ({
   useGalleryGrid: () => ({ pageSize: 8, cardHeight: 317, viewportRef: null, cardRef: null }),
   useGalleryLayout: () => ({ pageSize: 24, cardHeight: 317, viewportRef: null, cardRef: null }),
@@ -22,6 +24,17 @@ test('opens bookmarked Panda lookup without starting collection or loading a cat
   expect(screen.getByRole('link', { name: 'Panda catalog' }).getAttribute('href')).toBe('#/panda')
   expect(screen.getByRole('textbox', { name: 'Look up gallery' })).toBeTruthy()
   expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('places the favorite sync action in the sidebar after the main navigation', () => {
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>())
+  window.history.replaceState(null, '', '#/panda/lookup')
+  render(<App />)
+  const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+  const sidebar = navigation.closest('.sidebar')!
+  expect(sidebar.lastChild?.textContent).toBe('Favorite sync action')
+  expect(navigation.nextSibling).toBe(sidebar.lastChild)
+  expect(screen.getByRole('link', { name: 'Collector' }).getAttribute('href')).toBe('#/collector')
 })
 
 test('defaults to galleries, searches and paginates, then opens gallery details and thumbnail links', async () => {

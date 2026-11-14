@@ -1,7 +1,9 @@
-import { Button, Card, Checkbox, Flex, Grid, SegmentedControl, Select, Table, Text, VisuallyHidden } from '@radix-ui/themes'
+import { DotsHorizontalIcon } from '@radix-ui/react-icons'
+import { Button, Card, Checkbox, DropdownMenu, Flex, Grid, IconButton, Table, Text, VisuallyHidden } from '@radix-ui/themes'
 import { useState } from 'react'
 import { getFavoritesStatus, saveFavoriteDownloadSettings, syncFavorites } from './api'
 import type { FavoriteCategory } from './api'
+import { categoryName } from './favoriteCategories'
 import MissingFavoriteDownloads from './MissingFavoriteDownloads'
 import ResourceStatus from './ResourceStatus'
 import RowActions from './RowActions'
@@ -14,8 +16,7 @@ import type { CollectorPageProps } from './pageProps'
 import { useCollectorResource } from './useCollectorResource'
 import { useMutation } from './useMutation'
 import { formatDate } from './formatDate'
-
-function categoryName(category: FavoriteCategory) { return category.name || `Category ${category.category}` }
+import { notifyFavoritesChanged } from './favoriteSync'
 
 function stateLabel(category: FavoriteCategory) {
   if (category.state === 'waiting_cooldown') return 'Waiting for cooldown'
@@ -45,28 +46,13 @@ function stateDetails(category: FavoriteCategory) {
   ])
 }
 
-// "5–9", "2, 5–9"
-function categoryRanges(ids: number[]) {
-  const ranges: string[] = []
-  for (let i = 0; i < ids.length; i++) {
-    let j = i
-    while (ids[j + 1] === ids[j] + 1) j++
-    ranges.push(j > i ? `${ids[i]}–${ids[j]}` : String(ids[i]))
-    i = j
-  }
-  return ranges.join(', ')
-}
-
 const baselineLabels = { not_started: 'Not started', ready: 'Ready' }
 
 export default function Favorites({ available, refreshKey, interval }: CollectorPageProps) {
   const favorites = useCollectorResource(getFavoritesStatus, available, refreshKey, interval)
-  const [category, setCategory] = useState('all')
-  const [full, setFull] = useState(false)
   const [downloadCategory, setDownloadCategory] = useState<FavoriteCategory | null>(null)
   const [downloadPending, setDownloadPending] = useState(false)
   const [draft, setDraft] = useState<number[] | null>(null)
-  const [showEmpty, setShowEmpty] = useState(false)
   const syncMutation = useMutation()
   const saveMutation = useMutation()
   const { pending: syncing } = syncMutation
@@ -74,13 +60,20 @@ export default function Favorites({ available, refreshKey, interval }: Collector
   const status = favorites.data
   const disabled = !available || favorites.stale || syncing || downloadPending || !status
 
-  function sync(category: string, full: boolean) {
+  // `item` is the row at click time; omitted for all ten categories.
+  function sync(full: boolean, item?: FavoriteCategory) {
     if (disabled) return
     const baseline = status?.downloads?.baseline_state
-    void syncMutation.run((signal) => syncFavorites(category, full, signal), {
-      onSuccess: () => baseline && baseline !== 'ready'
-        ? 'Baseline sync requested for all ten categories.'
-        : `${full ? 'Full re-sync' : 'Sync'} requested for ${category === 'all' ? 'all categories' : `category ${category}`}.`,
+    void syncMutation.run((signal) => syncFavorites(item ? String(item.category) : 'all', full, signal), {
+      onSuccess: () => {
+        notifyFavoritesChanged()
+        if (baseline && baseline !== 'ready') return 'Baseline sync requested for all ten categories.'
+        if (!item) return 'Sync requested for all ten categories.'
+        if (!full) return `Sync requested for ${categoryName(item)}.`
+        const suffix = item.state === 'queued' && !item.queued_full ? ' It replaces the queued sync.'
+          : (item.state === 'running' || item.state === 'waiting_cooldown') && !item.full ? ' It starts after the running sync.' : ''
+        return `Full re-sync requested for ${categoryName(item)}.${suffix}`
+      },
       onSettled: favorites.refresh,
     })
   }
@@ -92,20 +85,13 @@ export default function Favorites({ available, refreshKey, interval }: Collector
       onSuccess: (result) => {
         favorites.update({ ...status, downloads: { ...downloads, categories: result.categories } })
         setDraft(null)
+        notifyFavoritesChanged()
         return 'Download categories saved.'
       },
     })
   }
 
   const selected = draft ?? status?.downloads?.categories ?? []
-  // Based on the saved selection, so unchecking a box does not make its row vanish.
-  const saved = status?.downloads?.categories ?? []
-  const emptyCategories = status ? status.categories.filter((item) => item.favorites === 0 && item.state === 'idle' && !item.queued
-    && !item.last_error && item.last_outcome !== 'failed' && !saved.includes(item.category)) : []
-  const emptySynced = emptyCategories.map((item) => item.last_synced_at).filter((value): value is string => !!value).sort().at(-1)
-  const emptyCompleted = emptyCategories.every((item) => item.last_outcome === 'success')
-  const collapsible = emptyCategories.length >= 2
-  const rows = status ? status.categories.filter((item) => !collapsible || showEmpty || !emptyCategories.includes(item)) : []
   const sum = status?.categories.reduce((total, item) => total + item.favorites, 0) ?? 0
   const running = status?.categories.filter((item) => item.state === 'running' || item.state === 'waiting_cooldown').length ?? 0
   const queued = status?.categories.filter((item) => item.queued || item.state === 'queued').length ?? 0
@@ -129,41 +115,27 @@ export default function Favorites({ available, refreshKey, interval }: Collector
           <Text as="div" size="5" weight="medium" color={color} mt="1" asChild><dd style={{ margin: 0 }}>{value}</dd></Text>
         </div></Card>)}
       </dl></Grid>
-      <Card size="2"><Flex align="end" wrap="wrap" gap="3" asChild><form onSubmit={(event) => { event.preventDefault(); if (!disabled) sync(category, full) }}>
-        <Flex direction="column" gap="1" flexGrow="1" minWidth="220px" asChild><label>
-          <Text size="1" color="gray">Category</Text>
-          <Select.Root value={category} onValueChange={setCategory} disabled={disabled}><Select.Trigger aria-label="Favorite category" /><Select.Content>
-            <Select.Item value="all">All ten categories</Select.Item>
-            {status.categories.map((item) => <Select.Item key={item.category} value={String(item.category)}>{item.name ? `${item.category} · ${item.name}` : categoryName(item)}</Select.Item>)}
-          </Select.Content></Select.Root>
-        </label></Flex>
-        <Flex direction="column" gap="1" asChild><fieldset disabled={disabled}>
-          <Text as="div" size="1" color="gray" id="sync-mode-label">Mode</Text>
-          <SegmentedControl.Root value={full ? 'full' : 'incremental'} onValueChange={(value) => setFull(value === 'full')} aria-labelledby="sync-mode-label">
-            <SegmentedControl.Item value="incremental">Incremental</SegmentedControl.Item>
-            <SegmentedControl.Item value="full">Full re-sync</SegmentedControl.Item>
-          </SegmentedControl.Root>
-        </fieldset></Flex>
-        <Button size="2" variant="solid" type="submit" disabled={disabled}>{syncing ? 'Requesting…' : 'Sync favorites'}</Button>
-        <Text as="p" size="1" color="gray" style={{ flex: '1 1 100%' }}>{baseline && baseline !== 'ready'
-          ? 'Until the baseline is complete, sync collects all ten categories without downloading favorites.'
-          : full ? 'Full re-sync reconciles removed favorites. Collected gallery references and metadata are retained.' : 'Collects the newest favorites since the last sync.'}</Text>
-      </form></Flex></Card>
+      <Card size="2"><Flex align="center" wrap="wrap" gap="3">
+        <Button size="2" variant="solid" type="button" disabled={disabled} onClick={() => sync(false)}>Sync all</Button>
+        <Text as="p" size="1" color="gray" style={{ flex: '1 1 320px' }}>{baseline && baseline !== 'ready'
+          ? 'Until the baseline is complete, any sync collects all ten categories without downloading favorites.'
+          : 'Sync collects the newest favorites since the last sync. Full re-sync, in each category\'s menu, also removes favorites no longer on Panda; collected gallery references and metadata are kept.'}</Text>
+      </Flex></Card>
       {syncMutation.notice && <Text as="p" size="2" color="green" role="status">{syncMutation.notice}</Text>}
       {syncMutation.error && <Text as="p" size="2" color="red" role="alert">{syncMutation.error}</Text>}
       {downloadCategory && <MissingFavoriteDownloads key={downloadCategory.category} category={downloadCategory} available={!disabled}
         onClose={() => setDownloadCategory(null)} onSubmittingChange={setDownloadPending} />}
-      <TableCard caption="Favorite categories for the current account" collectorPage="favorites" columns={[undefined, 100, 190, 150, 140, 190]} minWidth={900}>
+      <TableCard caption="Favorite categories for the current account" collectorPage="favorites" columns={[undefined, 90, 180, 150, 130, 144]} minWidth={820}>
         <Table.Header><Table.Row>
           <Table.ColumnHeaderCell scope="col">Category</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col" justify="end">Favorites</Table.ColumnHeaderCell>
-          <Table.ColumnHeaderCell scope="col">Sync</Table.ColumnHeaderCell>
+          <Table.ColumnHeaderCell scope="col">Status</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col">Last success</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col" justify="center">Auto-download</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell scope="col" justify="end"><VisuallyHidden>Actions</VisuallyHidden></Table.ColumnHeaderCell>
         </Table.Row></Table.Header>
         <Table.Body>
-          {rows.map((item) => <Table.Row key={item.category} className={stateTone(item) === 'red' ? 'collector-row-failed' : undefined}>
+          {status.categories.map((item) => <Table.Row key={item.category} className={stateTone(item) === 'red' ? 'collector-row-failed' : undefined}>
             <Table.RowHeaderCell scope="row">{categoryName(item)}{item.name && <Text as="div" size="1" color="gray" mt="1">Category {item.category}</Text>}</Table.RowHeaderCell>
             <Table.Cell justify="end">{item.last_synced_at || item.last_saved_at ? item.favorites.toLocaleString() : '—'}</Table.Cell>
             <Table.Cell><StatusBadge tone={stateTone(item)} detail={stateDetails(item)}>{stateLabel(item)}</StatusBadge></Table.Cell>
@@ -174,25 +146,24 @@ export default function Favorites({ available, refreshKey, interval }: Collector
                 saveMutation.setNotice('')
               }} />
               : '—'}</Table.Cell>
-            <Table.Cell><RowActions slot1Width={160} slot1={<Button size="2" variant="soft" color="gray" type="button" style={{ width: '100%' }}
-              disabled={disabled || downloadCategory?.category === item.category} onClick={() => setDownloadCategory(item)}>Download missing…</Button>} /></Table.Cell>
+            <Table.Cell><RowActions
+              slot1Width={80} slot1={<Button size="2" variant="soft" color="gray" type="button" style={{ width: '100%' }}
+                disabled={disabled} onClick={() => sync(false, item)}>Sync</Button>}
+              trailing={<DropdownMenu.Root>
+                <DropdownMenu.Trigger disabled={disabled}><IconButton size="2" variant="soft" color="gray" aria-label={`More actions for ${categoryName(item)}`}><DotsHorizontalIcon /></IconButton></DropdownMenu.Trigger>
+                <DropdownMenu.Content align="end">
+                  <DropdownMenu.Item disabled={disabled} onSelect={() => sync(true, item)}>Full re-sync</DropdownMenu.Item>
+                  <DropdownMenu.Item disabled={disabled || downloadCategory?.category === item.category} onSelect={() => setDownloadCategory(item)}>Download missing…</DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>} /></Table.Cell>
           </Table.Row>)}
-          {collapsible && <Table.Row>
-            <Table.RowHeaderCell scope="row">Categories {categoryRanges(emptyCategories.map((item) => item.category))}</Table.RowHeaderCell>
-            <Table.Cell justify="end">0</Table.Cell>
-            <Table.Cell>{emptyCompleted ? <StatusBadge tone="green">Completed</StatusBadge> : <StatusBadge tone="gray">Idle</StatusBadge>}</Table.Cell>
-            <Table.Cell>{emptySynced ? formatDate(emptySynced) : '—'}</Table.Cell>
-            <Table.Cell justify="center">—</Table.Cell>
-            <Table.Cell><RowActions slot1Width={160} slot1={<Button size="2" variant="soft" color="gray" type="button" style={{ width: '100%' }}
-              onClick={() => setShowEmpty((value) => !value)}>{showEmpty ? 'Hide' : 'Show'} {emptyCategories.length} empty</Button>} /></Table.Cell>
-          </Table.Row>}
         </Table.Body>
       </TableCard>
       {status.downloads && <Flex align="center" wrap="wrap" gap="4">
         <Text size="1" color="gray" style={{ flex: '1 1 320px' }}>{status.downloads.baseline_state === 'not_started'
           ? 'Your first sync will establish a baseline across all ten categories without downloading existing favorites.'
           : status.downloads.baseline_state === 'collecting'
-            ? `Establishing baseline: ${status.downloads.baseline_categories} of 10 categories complete. No automatic downloads until a later sync. Use Sync favorites to resume failed categories.`
+            ? `Establishing baseline: ${status.downloads.baseline_categories} of 10 categories complete. No automatic downloads until a later sync. Use Sync all to resume failed categories.`
             : 'New favorites in checked categories download automatically. Favorites from the baseline are excluded. Disabling a category leaves queued downloads running.'}</Text>
         <Button size="2" variant="soft" color="gray" type="button" disabled={disabled || saving || draft === null} onClick={() => save(selected)}>{saving ? 'Saving…' : 'Save download categories'}</Button>
       </Flex>}

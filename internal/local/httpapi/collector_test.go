@@ -308,3 +308,50 @@ func TestLocalCollectorStatusAndSync(t *testing.T) {
 		t.Fatalf("unconfigured settings: %d", w.Code)
 	}
 }
+
+func TestLocalCollectorSyncDownloadCategories(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	logger := slog.New(slog.DiscardHandler)
+	favorites := favorites.New(t.Context(), db, panda.AuthenticatedConfig{FavoritesURL: "https://panda.test", AccountKey: "42"}, blockedFavorites{}, logger)
+	defer favorites.Close()
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{
+		Logger: logger, Favorites: favorites, Status: status.New(db, favorites, pandaban.New(db), pandaban.NewAuthenticated(db), nil, nil, nil), APIToken: "server-secret",
+	}))
+	defer upstream.Close()
+	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
+		return w
+	}
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "/api/collector/favorites/download-categories/sync"
+	w := request(client, "POST", path, `{}`)
+	if w.Code != 409 || strings.TrimSpace(w.Body.String()) != `{"error":"no_download_categories"}` {
+		t.Fatalf("no categories: %d %s", w.Code, w.Body)
+	}
+	if w = request(client, "POST", path, `{"unexpected":true}`); w.Code != 400 {
+		t.Fatalf("invalid body accepted: %d %s", w.Code, w.Body)
+	}
+	if w = request(client, "PUT", "/api/collector/favorites/download-settings", `{"categories":[1,4]}`); w.Code != 200 {
+		t.Fatalf("save download settings: %d %s", w.Code, w.Body)
+	}
+	w = request(client, "POST", path, `{}`)
+	if w.Code != 202 || strings.TrimSpace(w.Body.String()) != `{"status":"accepted"}` {
+		t.Fatalf("sync: %d %s", w.Code, w.Body)
+	}
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w = request(wrong, "POST", path, `{}`); w.Code != 502 || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("rejected sync: %d %s", w.Code, w.Body)
+	}
+	if w = request(nil, "POST", path, `{}`); w.Code != 503 || !strings.Contains(w.Body.String(), "collector_not_configured") {
+		t.Fatalf("unconfigured sync: %d %s", w.Code, w.Body)
+	}
+}

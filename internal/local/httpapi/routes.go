@@ -39,6 +39,7 @@ func NewHandler(app *local.App) http.Handler {
 	mux.Handle("GET /api/collector/sitemap/status", HandleCollectorSitemap(app.Collector))
 	mux.Handle("POST /api/collector/sitemap/{action}", HandleCollectorSitemap(app.Collector))
 	mux.Handle("POST /api/collector/favorites/{category}/sync", HandleCollectorSyncFavorites(app.Collector))
+	mux.Handle("POST /api/collector/favorites/download-categories/sync", HandleCollectorSyncDownloadCategories(app.Collector))
 	mux.Handle("GET /api/collector/favorites/download-settings", HandleCollectorFavoriteDownloadSettings(app.Collector))
 	mux.Handle("PUT /api/collector/favorites/download-settings", HandleCollectorFavoriteDownloadSettings(app.Collector))
 	mux.Handle("POST /api/collector/favorites/{category}/missing-downloads/preview", HandlePreviewMissingFavoriteDownloads(app.FavoriteDownloads))

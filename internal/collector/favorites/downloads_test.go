@@ -311,3 +311,104 @@ func TestFailedBootstrapResumesOnRestartWithoutDownloading(t *testing.T) {
 	syncEntries(t, s, 0, fixtureEntries(1, 3, 3000))
 	downloadIDs(t, s, 3)
 }
+
+func TestEnqueueDownloadCategoriesQueuesSavedSelection(t *testing.T) {
+	s := testStore(t)
+	bootstrap(t, s)
+	configureDownloads(t, s, 1, 4)
+	service := manualService(t, s, nil)
+	before, err := service.Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.EnqueueDownloadCategories(); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, category := range status.Categories {
+		if i == 1 || i == 4 {
+			if category.State != "queued" || !category.Queued || category.QueuedFull || category.Full {
+				t.Fatalf("category %d=%+v", i, category)
+			}
+			continue
+		}
+		if !reflect.DeepEqual(category, before.Categories[i]) {
+			t.Fatalf("category %d changed: %+v want %+v", i, category, before.Categories[i])
+		}
+	}
+}
+
+func TestEnqueueDownloadCategoriesRequiresSavedSelection(t *testing.T) {
+	for _, ready := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ready=%t", ready), func(t *testing.T) {
+			s := testStore(t)
+			if ready {
+				bootstrap(t, s)
+			}
+			configureDownloads(t, s)
+			service := manualService(t, s, nil)
+			before, err := service.Status(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := service.EnqueueDownloadCategories(); !errors.Is(err, ErrNoDownloadCategories) {
+				t.Fatalf("err=%v", err)
+			}
+			after, err := service.Status(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("status changed: %+v want %+v", after, before)
+			}
+		})
+	}
+}
+
+func TestEnqueueDownloadCategoriesStartsBaseline(t *testing.T) {
+	s := testStore(t)
+	configureDownloads(t, s, 2)
+	service := manualService(t, s, nil)
+	if err := service.EnqueueDownloadCategories(); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Downloads.BaselineState != "collecting" {
+		t.Fatalf("baseline=%+v", status.Downloads)
+	}
+	for _, category := range status.Categories {
+		if !category.Queued || !category.QueuedFull {
+			t.Fatalf("category not queued full: %+v", category)
+		}
+	}
+}
+
+func TestEnqueueDownloadCategoriesCoalescesExistingWork(t *testing.T) {
+	s := testStore(t)
+	bootstrap(t, s)
+	admit(t, s, 1, false)
+	if err := enqueueCategories(t.Context(), s, []int{4}, true); err != nil {
+		t.Fatal(err)
+	}
+	configureDownloads(t, s, 1, 4)
+	service := manualService(t, s, nil)
+	if err := service.EnqueueDownloadCategories(); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if running := status.Categories[1]; running.State != "running" || running.Queued {
+		t.Fatalf("running=%+v", running)
+	}
+	if queued := status.Categories[4]; queued.State != "queued" || !queued.QueuedFull {
+		t.Fatalf("queued=%+v", queued)
+	}
+}

@@ -2,6 +2,7 @@ import { Button, Card, Flex, Grid, Heading, Text } from '@radix-ui/themes'
 import { useEffect, useRef, useState } from 'react'
 import { APIError } from '../api'
 import type { FavoriteCategory } from './api'
+import { categoryName } from './favoriteCategories'
 import { previewMissingFavoriteDownloads, submitMissingFavoriteDownloads } from './missingFavoriteDownloads'
 import type { MissingFavoriteDownloadCounts, MissingFavoriteDownloadPreview } from './missingFavoriteDownloads'
 
@@ -74,7 +75,7 @@ export default function MissingFavoriteDownloads({ category, available, onClose,
   }
 
   const counts = result ?? plan
-  const name = category.name || `Category ${category.category}`
+  const name = categoryName(category)
   const blocked = !available || loading || submitting
 
   return <Card size="2" asChild><section aria-labelledby="missing-favorite-title"><Flex direction="column" gap="3">

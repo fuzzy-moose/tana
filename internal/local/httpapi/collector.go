@@ -133,6 +133,31 @@ func HandleCollectorSyncFavorites(client *collectorapi.Client) http.Handler {
 	})
 }
 
+func HandleCollectorSyncDownloadCategories(client *collectorapi.Client) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			server.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "collector_not_configured"})
+			return
+		}
+		var input struct{}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := client.SyncDownloadCategories(r.Context()); err != nil {
+			status, code := http.StatusBadGateway, "collector_unavailable"
+			if errors.Is(err, collectorapi.ErrNoDownloadCategories) {
+				status, code = http.StatusConflict, "no_download_categories"
+			} else if upstream, ok := errors.AsType[*collectorapi.HTTPError](err); ok &&
+				(upstream.StatusCode == http.StatusUnauthorized || upstream.StatusCode == http.StatusForbidden) {
+				code = "collector_unauthorized"
+			}
+			server.WriteJSON(w, status, map[string]string{"error": code})
+			return
+		}
+		server.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
+	})
+}
+
 func HandleCollectorMetadataSettings(client *collectorapi.Client) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {

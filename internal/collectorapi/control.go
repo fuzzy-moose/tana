@@ -9,10 +9,12 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
 var ErrInvalidCategory = errors.New("invalid_category")
+var ErrNoDownloadCategories = errors.New("no_download_categories")
 
 type HTTPError struct {
 	StatusCode int
@@ -90,6 +92,24 @@ func (c *Client) SyncFavorites(ctx context.Context, category string, full bool) 
 		return &HTTPError{StatusCode: response.StatusCode}
 	}
 	return nil
+}
+
+// SyncDownloadCategories asks the collector to sync its saved download categories.
+func (c *Client) SyncDownloadCategories(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	response, err := c.controlRequest(ctx, http.MethodPost, "/api/favorites/download-categories/sync", strings.NewReader("{}"))
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	switch response.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusConflict:
+		return ErrNoDownloadCategories
+	}
+	return &HTTPError{StatusCode: response.StatusCode}
 }
 
 func (c *Client) controlRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {

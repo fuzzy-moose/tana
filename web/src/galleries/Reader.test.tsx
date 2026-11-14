@@ -5,6 +5,8 @@ import App from '../App'
 import { galleryLink, readerLink } from '../navigation'
 import Reader from './Reader'
 
+vi.mock('../collector/FavoriteSyncAction', () => ({ default: () => null }))
+
 let wide: Set<number>
 let failed: Set<number>
 let imagePages: Map<string, number>

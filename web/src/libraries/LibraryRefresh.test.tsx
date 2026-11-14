@@ -6,6 +6,8 @@ import App from '../App'
 import LibraryRefresh from './LibraryRefresh'
 import type { RefreshPlan } from './refreshApi'
 
+vi.mock('../collector/FavoriteSyncAction', () => ({ default: () => null }))
+
 vi.mock('../scans/useScan', () => ({ useScan: () => ({ status: null, error: '', disabled: true, start: vi.fn() }) }))
 
 const plan: RefreshPlan = {

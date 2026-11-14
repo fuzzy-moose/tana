@@ -21,6 +21,7 @@ import (
 
 var ErrInvalidCategory = errors.New("favorite category must be 0–9")
 var ErrClosed = errors.New("favorite collection is stopped")
+var ErrNoDownloadCategories = errors.New("no_download_categories")
 
 type PageClient interface {
 	GetFavoritesPage(context.Context, int, string) (panda.FavoritesPage, error)
@@ -66,11 +67,34 @@ func (s *Service) EnqueueAll(full bool) error {
 	return s.enqueue(categories, full)
 }
 
+// EnqueueDownloadCategories admits an incremental sync of each saved download
+// category, read in the admitting transaction, like Enqueue(category, false).
+func (s *Service) EnqueueDownloadCategories() error {
+	return s.enqueueSelected(func(q *dbgen.Queries) ([]int, error) {
+		rows, err := q.DownloadCategories(s.ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			return nil, ErrNoDownloadCategories
+		}
+		categories := make([]int, len(rows))
+		for i, category := range rows {
+			categories[i] = int(category)
+		}
+		return categories, nil
+	}, false)
+}
+
 func (s *Service) enqueue(categories []int, full bool) error {
+	return s.enqueueSelected(func(*dbgen.Queries) ([]int, error) { return categories, nil }, full)
+}
+
+func (s *Service) enqueueSelected(selectCategories func(*dbgen.Queries) ([]int, error), full bool) error {
 	if s.ctx.Err() != nil {
 		return ErrClosed
 	}
-	if err := s.store.enqueue(s.ctx, categories, full); err != nil {
+	if err := s.store.enqueueSelected(s.ctx, selectCategories, full); err != nil {
 		return err
 	}
 	select {

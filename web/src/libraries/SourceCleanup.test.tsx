@@ -6,6 +6,8 @@ import App from '../App'
 import SourceCleanup from './SourceCleanup'
 import type { CleanupPlan, CleanupSource } from './cleanupApi'
 
+vi.mock('../collector/FavoriteSyncAction', () => ({ default: () => null }))
+
 vi.mock('../scans/useScan', () => ({ useScan: () => ({ status: null, error: '', disabled: true, start: vi.fn() }) }))
 
 const source = (id: number): CleanupSource => ({

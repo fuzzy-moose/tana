@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import App from '../App'
 
+vi.mock('../collector/FavoriteSyncAction', () => ({ default: () => null }))
+
 vi.mock('../galleries/useGalleryLayout', () => ({
   useGalleryGrid: () => ({ pageSize: 8, cardHeight: 317, viewportRef: null, cardRef: null }),
   useGalleryLayout: () => ({ pageSize: 8, cardHeight: 317, viewportRef: null, cardRef: null }),

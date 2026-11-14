@@ -10,6 +10,8 @@ import ReferenceImports from './ReferenceImports'
 import { uploadReferenceImport } from './referenceImports'
 import type { ReferenceImport } from './referenceImports'
 
+vi.mock('./FavoriteSyncAction', () => ({ default: () => null }))
+
 vi.mock('./referenceImports', async (importOriginal) => ({
   ...await importOriginal<typeof import('./referenceImports')>(),
   uploadReferenceImport: vi.fn(),

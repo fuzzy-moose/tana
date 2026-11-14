@@ -5,6 +5,8 @@ import { afterEach, expect, test, vi } from 'vitest'
 import App from '../App'
 import type { FeedCapture } from './api'
 
+vi.mock('./FavoriteSyncAction', () => ({ default: () => null }))
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
 
 const failed: FeedCapture = {
