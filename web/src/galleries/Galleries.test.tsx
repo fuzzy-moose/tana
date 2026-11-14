@@ -18,8 +18,9 @@ beforeEach(() => {
   const getStyle = window.getComputedStyle
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => {
     const style = getStyle(element)
-    if (element.classList.contains('gallery-sizing')) { style.columnGap = '12px'; style.rowGap = '12px' }
-    return style
+    if (!element.classList.contains('gallery-sizing')) return style
+    const gaps: Record<PropertyKey, string> = { columnGap: '12px', rowGap: '12px' }
+    return new Proxy(style, { get: (target, key) => gaps[key] ?? Reflect.get(target, key) })
   })
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     return (this.classList.contains('gallery-viewport') ? viewport : { width: 170, height: 317 }) as DOMRect
