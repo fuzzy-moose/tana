@@ -41,7 +41,7 @@ export default function PandaCatalog({ search, cursor, includeExpunged, categori
   const defaultConfigured = hasDefaultFilter(defaultFilter)
   const filtered = !!search || categories.length > 0 || (defaultConfigured && !bypassDefault)
   const clearHref = pandaListingLink({ bypassDefault: true, view, scoreFilter })
-  const allHref = pandaListingLink({ search, includeExpunged, categories, bypassDefault, scoreFilter })
+  const allHref = pandaListingLink({ search, includeExpunged, categories, bypassDefault, view: 'all', scoreFilter })
   const verdictView = isVerdictView(view)
   const pageScoreFilter = result?.score_filter
   // A link that holds a state keeps the control, so the user can get back to "Filter on".

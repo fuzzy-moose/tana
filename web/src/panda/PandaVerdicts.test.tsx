@@ -58,7 +58,7 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-async function renderAt(hash = '#/panda') {
+async function renderAt(hash = '#/panda?unseen=false') {
   window.history.replaceState(null, '', hash)
   render(<App />)
   await screen.findByRole('list', { name: 'Panda galleries' })
@@ -107,7 +107,7 @@ test('each card has the two verdict controls after its link, pressed only for th
   expect(pressed(3)).toEqual(['Not for me'])
 
   cleanup()
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   expect(titles()).toEqual(['unseen first 5', 'unseen first 3'])
   expect(pressed(3)).toEqual(['Not for me'])
 })
@@ -185,7 +185,7 @@ test('a verdict save keeps the order and colours of the card\'s tags and loads n
 })
 
 test('in the unseen view a judged card stays in its position with its verdict pressed', async () => {
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   const before = listingRequests().length
   fireEvent.click(control(5, 'Not for me'))
   await answer(saves[0], noContent())
@@ -286,15 +286,15 @@ async function chooseView(name: string, hash: string) {
   await waitFor(() => expect(window.location.hash).toBe(hash))
 }
 
-test('the view control offers all, unseen and the two verdict views, with all selected by default', async () => {
-  await renderAt()
+test('the view control offers all, unseen and the two verdict views, with unseen selected by default', async () => {
+  await renderAt('#/panda')
   expect(screen.getAllByRole('radio')).toEqual(views.map((name) => screen.getByRole('radio', { name })))
-  expect(viewChecked()).toEqual(['All'])
+  expect(viewChecked()).toEqual(['Unseen'])
   expect(catalogURLs().every((url) => !url.includes('verdict'))).toBe(true)
 })
 
 test('choosing a verdict view drops the cursor, puts the verdict last and records nothing', async () => {
-  await renderView('#/panda?q=s&cursor=next-token')
+  await renderView('#/panda?q=s&cursor=next-token&unseen=false')
   await chooseView('Interesting', '#/panda?q=s&verdict=interesting')
   await waitFor(() => expect(catalogURLs().at(-1)).toMatch(/[?&]q=s&.*&verdict=interesting$/))
   expect(catalogURLs().at(-1)).not.toContain('cursor=next-token')
@@ -306,23 +306,23 @@ test('choosing a verdict view drops the cursor, puts the verdict last and record
 
 test('the view control switches between the verdict views, unseen and all', async () => {
   await renderView('#/panda?verdict=interesting')
-  await chooseView('Unseen', '#/panda?unseen=true')
+  await chooseView('Unseen', '#/panda')
   await waitFor(() => expect(catalogURLs().at(-1)).toMatch(/&unseen=true$/))
   await chooseView('Not for me', '#/panda?verdict=not_for_me')
   await waitFor(() => expect(catalogURLs().at(-1)).toMatch(/&verdict=not_for_me$/))
   expect(catalogURLs().at(-1)).not.toContain('unseen')
-  await chooseView('All', '#/panda')
+  await chooseView('All', '#/panda?unseen=false')
   await waitFor(() => expect(catalogURLs().at(-1)).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false'))
 })
 
-test('a link opens its verdict view with its search and categories, prefers the verdict over unseen, and ignores an unknown verdict', async () => {
+test('a link opens its verdict view with its search and categories, prefers the verdict over the all view, and ignores an unknown verdict', async () => {
   await renderView('#/panda?q=s&category=manga&verdict=not_for_me')
   expect(viewChecked()).toEqual(['Not for me'])
   expect(catalogURLs().at(-1)).toBe('/api/collector/catalog?q=s&cursor=&page_size=8&include_expunged=false&category=manga&verdict=not_for_me')
 
   cleanup()
   fetchMock.mockClear()
-  await renderView('#/panda?verdict=interesting&unseen=true')
+  await renderView('#/panda?verdict=interesting&unseen=false')
   expect(viewChecked()).toEqual(['Interesting'])
   expect(catalogURLs().at(-1)).toMatch(/&verdict=interesting$/)
   expect(catalogURLs().at(-1)).not.toContain('unseen')
@@ -330,7 +330,7 @@ test('a link opens its verdict view with its search and categories, prefers the 
   cleanup()
   fetchMock.mockClear()
   await renderView('#/panda?verdict=maybe')
-  expect(viewChecked()).toEqual(['All'])
+  expect(viewChecked()).toEqual(['Unseen'])
   expect(catalogURLs().at(-1)).not.toContain('verdict')
 })
 
@@ -399,7 +399,7 @@ test('an empty verdict view without filters invites a verdict and offers all gal
     const heading = await screen.findByRole('heading', { level: 2 })
     expect(heading.textContent).toBe('No Panda gallery has this verdict.')
     expect(screen.getByText(`Mark a gallery as ${label} on its card, and it appears here.`)).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda')
+    expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda?unseen=false')
     expect(screen.queryByText('No Panda galleries yet.')).toBeNull()
     expect(emptyState(heading)).not.toMatch(/unseen/i)
     cleanup()

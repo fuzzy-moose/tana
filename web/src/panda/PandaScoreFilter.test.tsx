@@ -83,13 +83,13 @@ async function waitForHash(hash: string) {
 }
 
 test('the link holds the state, the request carries it outside verdict views, and the control shows it', async () => {
-  await renderAt('#/panda?score_filter=hidden')
+  await renderAt('#/panda?score_filter=hidden&unseen=false')
   expect(new URL(catalogURLs().at(-1)!, 'http://localhost').searchParams.get('score_filter')).toBe('hidden')
   expect(scoreChecked()).toEqual(['Hidden only'])
 
   cleanup()
   fetchMock.mockClear()
-  await renderAt('#/panda')
+  await renderAt('#/panda?unseen=false')
   expect(catalogURLs().at(-1)).not.toContain('score_filter')
   expect(scoreControl()).toBeNull()
 
@@ -104,56 +104,56 @@ test('the link holds the state, the request carries it outside verdict views, an
 
 test('the control shows with "Filter on" in the views All and Unseen when the filter is in force', async () => {
   scoreFilter = { threshold_tenths: -5 }
-  await renderAt('#/panda')
+  await renderAt('#/panda?unseen=false')
   expect(scoreChecked()).toEqual(['Filter on'])
   expect(within(scoreControl()!).getAllByRole('radio')).toEqual(states.map((name) => within(scoreControl()!).getByRole('radio', { name })))
   cleanup()
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   expect(scoreChecked()).toEqual(['Filter on'])
 })
 
 test('choosing a state drops the cursor and keeps the search and view', async () => {
   scoreFilter = {}
-  await renderAt('#/panda?q=x&cursor=c&unseen=true')
+  await renderAt('#/panda?q=x&cursor=c')
   await userEvent.click(within(scoreControl()!).getByRole('radio', { name: 'Filter off' }))
-  await waitForHash('#/panda?q=x&score_filter=all&unseen=true')
+  await waitForHash('#/panda?q=x&score_filter=all')
   await waitFor(() => expect(catalogURLs().at(-1)).toMatch(/score_filter=all&unseen=true$/))
 })
 
 test('the "Hidden only" state survives search, filters, paging and the view switch, but not a verdict view', async () => {
   defaultFilter = { query: '-l:chinese$', categories: [] }
-  await renderAt('#/panda?score_filter=hidden')
+  await renderAt('#/panda?score_filter=hidden&unseen=false')
 
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'p:fate' } })
   fireEvent.submit(screen.getByRole('search'))
-  await waitForHash('#/panda?q=p%3Afate&score_filter=hidden')
+  await waitForHash('#/panda?q=p%3Afate&score_filter=hidden&unseen=false')
 
-  window.location.hash = '#/panda?score_filter=hidden'
+  window.location.hash = '#/panda?score_filter=hidden&unseen=false'
   await waitFor(() => expect(screen.getByRole('link', { name: 'Bypass default' })).toBeTruthy())
-  expect(screen.getByRole('link', { name: 'Bypass default' }).getAttribute('href')).toBe('#/panda?bypass_default=true&score_filter=hidden')
-  window.location.hash = '#/panda?q=s&score_filter=hidden'
+  expect(screen.getByRole('link', { name: 'Bypass default' }).getAttribute('href')).toBe('#/panda?bypass_default=true&score_filter=hidden&unseen=false')
+  window.location.hash = '#/panda?q=s&score_filter=hidden&unseen=false'
   const clear = await screen.findByRole('link', { name: 'Clear all filters' })
-  expect(clear.getAttribute('href')).toBe('#/panda?bypass_default=true&score_filter=hidden')
+  expect(clear.getAttribute('href')).toBe('#/panda?bypass_default=true&score_filter=hidden&unseen=false')
 
   await userEvent.click(screen.getByRole('button', { name: /Categories|Category/ }))
   const option = (await screen.findAllByRole('menuitemcheckbox'))[0]
   await userEvent.click(option)
-  await waitFor(() => expect(window.location.hash).toMatch(/^#\/panda\?q=s&category=[^&]+&score_filter=hidden$/))
+  await waitFor(() => expect(window.location.hash).toMatch(/^#\/panda\?q=s&category=[^&]+&score_filter=hidden&unseen=false$/))
   await userEvent.keyboard('{Escape}')
 
-  window.location.hash = '#/panda?score_filter=hidden'
+  window.location.hash = '#/panda?score_filter=hidden&unseen=false'
   await renderedNext()
   await userEvent.click(screen.getByRole('button', { name: /^Options/ }))
   await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Include expunged' }))
-  await waitForHash('#/panda?include_expunged=true&score_filter=hidden')
+  await waitForHash('#/panda?include_expunged=true&score_filter=hidden&unseen=false')
 
   await userEvent.click(screen.getByRole('radio', { name: 'Unseen' }))
-  await waitForHash('#/panda?include_expunged=true&score_filter=hidden&unseen=true')
-  await userEvent.click(screen.getByRole('radio', { name: 'All' }))
   await waitForHash('#/panda?include_expunged=true&score_filter=hidden')
+  await userEvent.click(screen.getByRole('radio', { name: 'All' }))
+  await waitForHash('#/panda?include_expunged=true&score_filter=hidden&unseen=false')
   await renderedNext()
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
-  await waitForHash('#/panda?cursor=next-token&include_expunged=true&score_filter=hidden')
+  await waitForHash('#/panda?cursor=next-token&include_expunged=true&score_filter=hidden&unseen=false')
   await screen.findByRole('heading', { name: 'next-token 2' })
   await userEvent.click(screen.getByRole('radio', { name: 'Not for me' }))
   await waitForHash('#/panda?include_expunged=true&verdict=not_for_me')
@@ -165,9 +165,9 @@ async function renderedNext() {
 
 test('Next records the displays as no evidence only in the "Hidden only" state', async () => {
   for (const [hash, body] of [
-    ['#/panda?score_filter=hidden', '{"gallery_ids":[5,3],"score_filter":"hidden"}'],
-    ['#/panda?score_filter=all', '{"gallery_ids":[5,3]}'],
-    ['#/panda', '{"gallery_ids":[5,3]}'],
+    ['#/panda?score_filter=hidden&unseen=false', '{"gallery_ids":[5,3],"score_filter":"hidden"}'],
+    ['#/panda?score_filter=all&unseen=false', '{"gallery_ids":[5,3]}'],
+    ['#/panda?unseen=false', '{"gallery_ids":[5,3]}'],
   ]) {
     scoreFilter = {}
     await renderAt(hash)
@@ -181,7 +181,7 @@ test('Next records the displays as no evidence only in the "Hidden only" state',
 
 test('a "Not for me" verdict in the state "Filter on" leaves the card in its position and loads nothing', async () => {
   scoreFilter = { threshold_tenths: 0 }
-  await renderAt('#/panda')
+  await renderAt('#/panda?unseen=false')
   const before = catalogURLs().length
   const list = screen.getByRole('list', { name: 'Panda galleries' })
   const first = within(list).getAllByRole('listitem')[0]
@@ -200,32 +200,32 @@ function emptyState() {
 test('an empty unseen page without a cursor says that the score filter hides the rest and offers "Show hidden only"', async () => {
   empty = true
   scoreFilter = { hidden_unseen: true }
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('No unseen Panda galleries.')
   expect(screen.getByText('The score filter hides the unseen galleries that remain.')).toBeTruthy()
   expect(screen.queryByText(/You have seen every Panda gallery/)).toBeNull()
   const links = within(emptyState()).getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])
-  expect(links).toEqual([['Show hidden only', '#/panda?score_filter=hidden&unseen=true'], ['Show all galleries', '#/panda']])
+  expect(links).toEqual([['Show hidden only', '#/panda?score_filter=hidden'], ['Show all galleries', '#/panda?unseen=false']])
 
   cleanup()
   scoreFilter = {}
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   expect(screen.getByText(/You have seen every Panda gallery/)).toBeTruthy()
   expect(screen.queryByRole('link', { name: 'Show hidden only' })).toBeNull()
 
   cleanup()
   scoreFilter = { hidden_unseen: true }
-  await renderAt('#/panda?q=x&unseen=true')
+  await renderAt('#/panda?q=x')
   expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('No unseen Panda galleries match.')
   expect(screen.getByText('The score filter hides the unseen galleries that remain.')).toBeTruthy()
   expect(screen.queryByText('Try different titles, tags, or categories, or show all galleries.')).toBeNull()
-  expect(screen.getByRole('link', { name: 'Show hidden only' }).getAttribute('href')).toBe('#/panda?q=x&score_filter=hidden&unseen=true')
+  expect(screen.getByRole('link', { name: 'Show hidden only' }).getAttribute('href')).toBe('#/panda?q=x&score_filter=hidden')
 })
 
 test('an empty unseen page at a cursor keeps its text, whatever the score filter says', async () => {
   empty = true
   scoreFilter = { hidden_unseen: true }
-  await renderAt('#/panda?cursor=c&unseen=true')
+  await renderAt('#/panda?cursor=c')
   expect(screen.getByText('Galleries that arrived during this visit wait with the newest unseen galleries.')).toBeTruthy()
   expect(screen.getByRole('link', { name: 'Newest unseen galleries' })).toBeTruthy()
   expect(screen.queryByRole('link', { name: 'Show hidden only' })).toBeNull()
@@ -234,7 +234,7 @@ test('an empty unseen page at a cursor keeps its text, whatever the score filter
 
 test('an empty "Hidden only" listing says that the score filter hides nothing here and offers "Filter on"', async () => {
   empty = true
-  for (const [hash, filterOn] of [['#/panda?score_filter=hidden', '#/panda'], ['#/panda?score_filter=hidden&unseen=true', '#/panda?unseen=true']]) {
+  for (const [hash, filterOn] of [['#/panda?score_filter=hidden&unseen=false', '#/panda?unseen=false'], ['#/panda?score_filter=hidden', '#/panda']]) {
     await renderAt(hash)
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('No hidden Panda galleries.')
     expect(screen.getByText('The score filter hides no gallery that matches this view, search and filters.')).toBeTruthy()
@@ -245,9 +245,9 @@ test('an empty "Hidden only" listing says that the score filter hides nothing he
 
 test('the catch-up confirmation names the galleries of the score filter that it also covers', async () => {
   for (const [hash, filter, phrase] of [
-    ['#/panda?unseen=true', {}, 'galleries that the score filter hides'],
-    ['#/panda?score_filter=hidden&unseen=true', {}, 'galleries that the score filter does not hide'],
-    ['#/panda?unseen=true', undefined, ''],
+    ['#/panda', {}, 'galleries that the score filter hides'],
+    ['#/panda?score_filter=hidden', {}, 'galleries that the score filter does not hide'],
+    ['#/panda', undefined, ''],
   ] as const) {
     scoreFilter = filter
     await renderAt(hash)

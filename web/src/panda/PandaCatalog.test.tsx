@@ -25,7 +25,7 @@ function catalogRequests() {
 }
 
 beforeEach(() => {
-  window.history.replaceState(null, '', '#/panda')
+  window.history.replaceState(null, '', '#/panda?unseen=false')
   catalogVersion = 1
   offline = false
   defaultFilter = { query: '', categories: [] }
@@ -72,7 +72,7 @@ test('browses collected covers with local search, expunged filter, and cursor pa
   await waitFor(() => expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=p%3Afate&cursor=&page_size=8&include_expunged=true'))
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
   await screen.findByRole('heading', { name: 'p:fate 1 page 2' })
-  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=next-token&include_expunged=true')
+  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=next-token&include_expunged=true&unseen=false')
   expect(screen.getByRole('button', { name: 'Next' }).hasAttribute('disabled')).toBe(true)
   // Cursor links work after reloading, without an in-memory history of pages.
   cleanup()
@@ -80,7 +80,7 @@ test('browses collected covers with local search, expunged filter, and cursor pa
   await screen.findByRole('heading', { name: 'p:fate 1 page 2' })
   fireEvent.click(screen.getByRole('link', { name: 'Previous' }))
   await screen.findByRole('heading', { name: 'p:fate 1 page 1' })
-  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=previous-token&include_expunged=true')
+  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=previous-token&include_expunged=true&unseen=false')
   fireEvent.change(screen.getByRole('combobox'), { target: { value: '-language:translated' } })
   fireEvent.submit(screen.getByRole('search'))
   await screen.findByRole('heading', { name: '-language:translated 1 page 1' })
@@ -122,7 +122,7 @@ test('reloads only on request and keeps collection tools on dedicated pages', as
 
 test('edits a shared default separately from the current query and applies it only on save', async () => {
   defaultFilter = { query: '-l:japanese$', categories: ['manga'] }
-  window.history.replaceState(null, '', '#/panda?q=artist%3Aname&cursor=next-token&category=doujinshi')
+  window.history.replaceState(null, '', '#/panda?q=artist%3Aname&cursor=next-token&category=doujinshi&unseen=false')
   render(<App />)
   await screen.findByRole('heading', { name: 'artist:name 1 page 2' })
   expect(screen.getByRole('button', { name: 'Default filter Active' })).toBeTruthy()
@@ -148,7 +148,7 @@ test('edits a shared default separately from the current query and applies it on
 
 test('preserves category and default bypass URL filters across search, paging, back, and clear', async () => {
   defaultFilter = { query: '-l:japanese$', categories: ['manga', 'doujinshi'] }
-  window.history.replaceState(null, '', '#/panda?category=manga&category=doujinshi&include_expunged=true')
+  window.history.replaceState(null, '', '#/panda?category=manga&category=doujinshi&include_expunged=true&unseen=false')
   render(<App />)
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
   await userEvent.click(screen.getByRole('link', { name: 'Bypass default' }))
@@ -158,13 +158,13 @@ test('preserves category and default bypass URL filters across search, paging, b
   await screen.findByRole('heading', { name: 'new search 1 page 1' })
   fireEvent.keyDown(window, { key: 'ArrowRight' })
   await screen.findByRole('heading', { name: 'new search 1 page 2' })
-  expect(window.location.hash).toBe('#/panda?q=new+search&cursor=next-token&include_expunged=true&category=manga&category=doujinshi&bypass_default=true')
+  expect(window.location.hash).toBe('#/panda?q=new+search&cursor=next-token&include_expunged=true&category=manga&category=doujinshi&bypass_default=true&unseen=false')
   act(() => window.history.back())
-  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=new+search&include_expunged=true&category=manga&category=doujinshi&bypass_default=true'))
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=new+search&include_expunged=true&category=manga&category=doujinshi&bypass_default=true&unseen=false'))
   await screen.findByRole('heading', { name: 'new search 1 page 1' })
   await userEvent.click(screen.getByRole('link', { name: 'Clear all filters' }))
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
-  expect(window.location.hash).toBe('#/panda?bypass_default=true')
+  expect(window.location.hash).toBe('#/panda?bypass_default=true&unseen=false')
   expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false&bypass_default=true')
   expect(defaultFilter).toEqual({ query: '-l:japanese$', categories: ['manga', 'doujinshi'] })
   await userEvent.click(screen.getByRole('link', { name: 'Apply default' }))
@@ -208,15 +208,15 @@ test('a plain click on Next pages in place, and a modified click keeps the nativ
   render(<App />)
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
   const next = screen.getByRole('link', { name: 'Next' })
-  expect(next.getAttribute('href')).toBe('#/panda?cursor=next-token')
+  expect(next.getAttribute('href')).toBe('#/panda?cursor=next-token&unseen=false')
   expect(fireEvent.click(next)).toBe(false)
   await screen.findByRole('heading', { name: 'Upload 1 page 2' })
-  expect(window.location.hash).toBe('#/panda?cursor=next-token')
+  expect(window.location.hash).toBe('#/panda?cursor=next-token&unseen=false')
   fireEvent.click(screen.getByRole('link', { name: 'Previous' }))
   await screen.findByRole('heading', { name: 'Upload 1 page 1' })
   expect(fireEvent.click(screen.getByRole('link', { name: 'Next' }), { ctrlKey: true })).toBe(true)
   // The native navigation lands after the click; let it finish here instead of in the next test.
-  await waitFor(() => expect(window.location.hash).toBe('#/panda?cursor=next-token'))
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?cursor=next-token&unseen=false'))
 })
 
 const pageIDs: Record<string, number[]> = { '': [5, 3, 4], 'previous-token': [5, 3, 4], 'next-token': [2, 1], 'empty-token': [] }
@@ -248,7 +248,7 @@ function serveRecords(record: () => Promise<Response>) {
 }
 
 /** Renders the catalog at `hash` once a native link click of an earlier test has finished navigating. */
-async function renderAt(hash = '#/panda') {
+async function renderAt(hash = '#/panda?unseen=false') {
   await new Promise((resolve) => setTimeout(resolve, 0))
   window.history.replaceState(null, '', hash)
   render(<App />)
@@ -265,7 +265,7 @@ test('Next and its shortcuts record the displayed galleries in page order withou
   await renderAt()
   await screen.findByRole('heading', { name: 'Upload first 4' })
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
-  expect(window.location.hash).toBe('#/panda?cursor=next-token')
+  expect(window.location.hash).toBe('#/panda?cursor=next-token&unseen=false')
   await screen.findByRole('heading', { name: 'Upload next-token 1' })
   expect(pending).toHaveLength(1)
   expect(displayRequests()[0][1]).toMatchObject({ method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' } })
@@ -288,16 +288,16 @@ test('Next and its shortcuts record the displayed galleries in page order withou
   fireEvent.submit(screen.getByRole('search'))
   await screen.findByRole('heading', { name: 'p:fate first 5' })
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
-  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=next-token')
+  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=next-token&unseen=false')
   await screen.findByRole('heading', { name: 'p:fate next-token 2' })
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
-  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=last-token'))
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=last-token&unseen=false'))
   expect(recordedIDs()).toEqual([[5, 3, 4], [5, 3, 4], [5, 3, 4], [5, 3, 4], [2, 1]])
 })
 
 test('only going to the next page records', async () => {
   serveRecords(async () => new Response(null, { status: 204 }))
-  await renderAt('#/panda?cursor=next-token')
+  await renderAt('#/panda?cursor=next-token&unseen=false')
   await screen.findByRole('heading', { name: 'Upload next-token 2' })
   fireEvent.click(screen.getByRole('link', { name: 'Previous' }))
   await screen.findByRole('heading', { name: 'Upload previous-token 5' })
@@ -328,7 +328,7 @@ test('only going to the next page records', async () => {
 
 test('Next on a page without galleries moves on without a record', async () => {
   serveRecords(async () => new Response(null, { status: 204 }))
-  await renderAt('#/panda?cursor=empty-token')
+  await renderAt('#/panda?cursor=empty-token&unseen=false')
   fireEvent.click(await screen.findByRole('link', { name: 'Next' }))
   await screen.findByRole('heading', { name: 'Upload next-token 2' })
   expect(displayRequests()).toHaveLength(0)
@@ -373,7 +373,7 @@ test('leaving the Panda catalog drops the record-failure alert', async () => {
   expect((await screen.findByRole('alert')).textContent).toContain('Could not mark a page as seen.')
   act(() => { window.location.hash = '#/panda/lookup' })
   await screen.findByRole('heading', { name: 'Gallery lookup' })
-  act(() => { window.location.hash = '#/panda?cursor=next-token' })
+  act(() => { window.location.hash = '#/panda?cursor=next-token&unseen=false' })
   await screen.findByRole('heading', { name: 'Upload next-token 2' })
   expect(screen.queryByRole('alert')).toBeNull()
 })
@@ -400,13 +400,9 @@ function serveViews({ unseenEmpty = false, unreachable = false } = {}) {
   })
 }
 
-function hashParams() {
-  return [...new URLSearchParams(window.location.hash.split('?')[1] ?? '')]
-}
-
-test('the view control switches views from any page without recording, and #/panda opens all galleries', async () => {
+test('the view control switches views from any page without recording, and #/panda opens unseen galleries', async () => {
   serveViews()
-  await renderAt('#/panda?q=s&cursor=next-token&category=manga')
+  await renderAt('#/panda?q=s&cursor=next-token&category=manga&unseen=false')
   await screen.findByRole('heading', { name: 's all next-token 2' })
   expect(screen.getByRole('radio', { name: 'All' }).getAttribute('aria-checked')).toBe('true')
   expect(screen.getByRole('radio', { name: 'Unseen' }).getAttribute('aria-checked')).toBe('false')
@@ -414,113 +410,113 @@ test('the view control switches views from any page without recording, and #/pan
   expect(screen.getByRole('link', { name: 'Panda', current: 'page' }).getAttribute('href')).toBe('#/panda')
 
   await userEvent.click(screen.getByRole('radio', { name: 'Unseen' }))
-  expect(window.location.hash).toBe('#/panda?q=s&category=manga&unseen=true')
+  expect(window.location.hash).toBe('#/panda?q=s&category=manga')
   await screen.findByRole('heading', { name: 's unseen first 5' })
   expect(String(catalogRequests().at(-1)?.[0])).toMatch(/&unseen=true$/)
   expect(screen.getByRole('radio', { name: 'Unseen' }).getAttribute('aria-checked')).toBe('true')
 
-  act(() => { window.location.hash = '#/panda?q=s&cursor=next-token&category=manga&unseen=true' })
+  act(() => { window.location.hash = '#/panda?q=s&cursor=next-token&category=manga' })
   await screen.findByRole('heading', { name: 's unseen next-token 2' })
   await userEvent.click(screen.getByRole('radio', { name: 'All' }))
-  expect(window.location.hash).toBe('#/panda?q=s&category=manga')
+  expect(window.location.hash).toBe('#/panda?q=s&category=manga&unseen=false')
   await screen.findByRole('heading', { name: 's all first 5' })
   expect(displayRequests()).toHaveLength(0)
   expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
 
   cleanup()
   await renderAt('#/panda')
-  await screen.findByRole('heading', { name: 'Upload all first 5' })
-  expect(screen.getByRole('radio', { name: 'All' }).getAttribute('aria-checked')).toBe('true')
-  expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false')
+  await screen.findByRole('heading', { name: 'Upload unseen first 5' })
+  expect(screen.getByRole('radio', { name: 'Unseen' }).getAttribute('aria-checked')).toBe('true')
+  expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false&unseen=true')
 })
 
-test('every listing change in the unseen view keeps unseen=true', async () => {
+test('every listing change in the unseen view stays in the unseen view', async () => {
   serveViews()
   defaultFilter = { query: '-l:japanese$', categories: [] }
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'Upload unseen first 5' })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'p:fate' } })
   fireEvent.submit(screen.getByRole('search'))
   await screen.findByRole('heading', { name: 'p:fate unseen first 5' })
-  expect(window.location.hash).toBe('#/panda?q=p%3Afate&unseen=true')
+  expect(window.location.hash).toBe('#/panda?q=p%3Afate')
 
   await userEvent.click(screen.getByRole('button', { name: 'Categories' }))
   await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Manga' }))
-  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&category=manga&unseen=true'))
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&category=manga'))
   await userEvent.keyboard('{Escape}')
 
   await userEvent.click(screen.getByRole('link', { name: 'Bypass default' }))
-  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&category=manga&bypass_default=true&unseen=true'))
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&category=manga&bypass_default=true'))
   await userEvent.click(await screen.findByRole('link', { name: 'Apply default' }))
-  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&category=manga&unseen=true'))
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&category=manga'))
 
   await screen.findByRole('heading', { name: 'p:fate unseen first 5' })
   await userEvent.click(screen.getByRole('button', { name: /^Options/ }))
   await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Include expunged' }))
-  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&include_expunged=true&category=manga&unseen=true'))
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?q=p%3Afate&include_expunged=true&category=manga'))
 
   await screen.findByRole('heading', { name: 'p:fate unseen first 5' })
   fireEvent.click(await screen.findByRole('link', { name: 'Next' }))
-  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=next-token&include_expunged=true&category=manga&unseen=true')
+  expect(window.location.hash).toBe('#/panda?q=p%3Afate&cursor=next-token&include_expunged=true&category=manga')
   await screen.findByRole('heading', { name: 'p:fate unseen next-token 2' })
 
   offline = true
   await userEvent.click(screen.getByRole('button', { name: /^Options/ }))
   await userEvent.click(screen.getByRole('menuitem', { name: 'Reload results' }))
   expect((await screen.findByRole('alert')).textContent).toContain('Results are stale.')
-  expect(screen.getByRole('link', { name: 'Newest galleries' }).getAttribute('href')).toBe('#/panda?q=p%3Afate&include_expunged=true&category=manga&unseen=true')
+  expect(screen.getByRole('link', { name: 'Newest galleries' }).getAttribute('href')).toBe('#/panda?q=p%3Afate&include_expunged=true&category=manga')
   offline = false
 
   await userEvent.click(screen.getByRole('link', { name: 'Clear all filters' }))
-  await waitFor(() => expect(window.location.hash).toBe('#/panda?bypass_default=true&unseen=true'))
-  expect(hashParams().at(-1)).toEqual(['unseen', 'true'])
+  await waitFor(() => expect(window.location.hash).toBe('#/panda?bypass_default=true'))
+  await screen.findByRole('heading', { name: 'Upload unseen first 5' })
 })
 
 test('Next in the unseen view records the page and ends in an empty state with a way on', async () => {
   serveViews()
-  await renderAt('#/panda?cursor=next-token&unseen=true')
+  await renderAt('#/panda?cursor=next-token')
   await screen.findByRole('heading', { name: 'Upload unseen next-token 2' })
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
-  expect(window.location.hash).toBe('#/panda?cursor=last-token&unseen=true')
+  expect(window.location.hash).toBe('#/panda?cursor=last-token')
   await screen.findByRole('heading', { name: 'No more unseen Panda galleries.' })
   expect(recordedIDs()).toEqual([[2, 1]])
   expect(screen.getByText('Galleries that arrived during this visit wait with the newest unseen galleries.')).toBeTruthy()
-  expect(screen.getByRole('link', { name: 'Newest unseen galleries' }).getAttribute('href')).toBe('#/panda?unseen=true')
-  expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda')
+  expect(screen.getByRole('link', { name: 'Newest unseen galleries' }).getAttribute('href')).toBe('#/panda')
+  expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda?unseen=false')
   expect(screen.getByRole('button', { name: 'Next' }).hasAttribute('disabled')).toBe(true)
   expect(screen.getByRole('button', { name: 'Previous' }).hasAttribute('disabled')).toBe(true)
   expect(screen.queryByRole('alert')).toBeNull()
 
-  act(() => { window.location.hash = '#/panda?q=s&cursor=last-token&category=manga&unseen=true' })
+  act(() => { window.location.hash = '#/panda?q=s&cursor=last-token&category=manga' })
   await screen.findByRole('heading', { name: 'No more unseen Panda galleries match.' })
-  expect(screen.getByRole('link', { name: 'Newest unseen galleries' }).getAttribute('href')).toBe('#/panda?q=s&category=manga&unseen=true')
-  expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda?q=s&category=manga')
+  expect(screen.getByRole('link', { name: 'Newest unseen galleries' }).getAttribute('href')).toBe('#/panda?q=s&category=manga')
+  expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda?q=s&category=manga&unseen=false')
   expect(screen.queryByText('No Panda galleries yet.')).toBeNull()
 })
 
 test('an empty unseen view says whether a search or filter narrows it', async () => {
   serveViews({ unseenEmpty: true })
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'No unseen Panda galleries.' })
   expect(screen.getByText('You have seen every Panda gallery. New galleries appear here once feeds are collected.')).toBeTruthy()
-  expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda')
+  expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda?unseen=false')
   expect(screen.queryByText('No Panda galleries yet.')).toBeNull()
 
-  act(() => { window.location.hash = '#/panda?q=s&unseen=true' })
+  act(() => { window.location.hash = '#/panda?q=s' })
   await screen.findByRole('heading', { name: 'No unseen Panda galleries match.' })
   expect(screen.getByText('Try different titles, tags, or categories, or show all galleries.')).toBeTruthy()
-  expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda?q=s')
+  expect(screen.getByRole('link', { name: 'Show all galleries' }).getAttribute('href')).toBe('#/panda?q=s&unseen=false')
 
   cleanup()
   defaultFilter = { query: '-l:japanese$', categories: [] }
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'No unseen Panda galleries match.' })
   expect(screen.queryByText('No Panda galleries yet.')).toBeNull()
 })
 
 test('a fresh visit to the unseen view with the collector unreachable shows the catalog unavailable', async () => {
   serveViews({ unreachable: true })
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   expect((await screen.findByRole('alert')).textContent).toContain('Panda catalog unavailable.')
   expect(screen.queryByRole('list', { name: 'Panda galleries' })).toBeNull()
 })
@@ -557,7 +553,7 @@ async function openCatchUp() {
 
 test('Catch up… opens a confirmation in the unseen view only, and Cancel sends nothing', async () => {
   serveCatchUp()
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'Upload unseen first 5' })
   const dialog = await openCatchUp()
   expect(dialog.textContent).toContain(`This page and every older Panda gallery, back from ${newestDate}, become seen`)
@@ -568,20 +564,20 @@ test('Catch up… opens a confirmation in the unseen view only, and Cancel sends
   expect(catchUpRequests()).toHaveLength(0)
   expect(displayRequests()).toHaveLength(0)
 
-  act(() => { window.location.hash = '#/panda' })
+  act(() => { window.location.hash = '#/panda?unseen=false' })
   await screen.findByRole('heading', { name: 'Upload all first 5' })
   expect(screen.queryByRole('button', { name: 'Catch up…' })).toBeNull()
 })
 
 test('Catch up… is disabled without galleries and while results are stale', async () => {
   serveViews({ unseenEmpty: true })
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'No unseen Panda galleries.' })
   expect(screen.getByRole('button', { name: 'Catch up…' }).hasAttribute('disabled')).toBe(true)
 
   cleanup()
   const state = serveCatchUp()
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'Upload unseen first 5' })
   expect(screen.getByRole('button', { name: 'Catch up…' }).hasAttribute('disabled')).toBe(false)
   state.catalogFails = true
@@ -593,10 +589,10 @@ test('Catch up… is disabled without galleries and while results are stale', as
 
 test('the confirmation cannot catch up once the hash leaves the unseen view', async () => {
   serveCatchUp()
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'Upload unseen first 5' })
   await openCatchUp()
-  act(() => { window.location.hash = '#/panda' })
+  act(() => { window.location.hash = '#/panda?unseen=false' })
   await screen.findByRole('heading', { name: 'Upload all first 5', hidden: true })
   const dialog = screen.getByRole('alertdialog')
   expect(within(dialog).getByRole('button', { name: 'Catch up' }).hasAttribute('disabled')).toBe(true)
@@ -605,18 +601,18 @@ test('the confirmation cannot catch up once the hash leaves the unseen view', as
 
 test('Catch up marks from the newest gallery and loads the newest unseen galleries, with or without a cursor', async () => {
   serveCatchUp()
-  await renderAt('#/panda?q=s&cursor=next-token&category=manga&unseen=true')
+  await renderAt('#/panda?q=s&cursor=next-token&category=manga')
   await screen.findByRole('heading', { name: 's unseen next-token 2' })
   let dialog = await openCatchUp()
   for (const key of ['{ArrowRight}', '{ArrowLeft}', 'a', 'd']) await userEvent.keyboard(key)
-  expect(window.location.hash).toBe('#/panda?q=s&cursor=next-token&category=manga&unseen=true')
+  expect(window.location.hash).toBe('#/panda?q=s&cursor=next-token&category=manga')
   let before = catalogRequests().length
   await userEvent.click(within(dialog).getByRole('button', { name: 'Catch up' }))
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   expect(catchUpRequests()).toHaveLength(1)
   expect(catchUpRequests()[0][1]?.method).toBe('POST')
   expect(JSON.parse(String(catchUpRequests()[0][1]?.body))).toEqual({ gallery_id: 2 })
-  expect(window.location.hash).toBe('#/panda?q=s&category=manga&unseen=true')
+  expect(window.location.hash).toBe('#/panda?q=s&category=manga')
   await screen.findByRole('heading', { name: 's unseen first 5' })
   expect(catalogRequests()[before][0]).toBe('/api/collector/catalog?q=s&cursor=&page_size=8&include_expunged=false&category=manga&unseen=true')
 
@@ -631,7 +627,7 @@ test('Catch up marks from the newest gallery and loads the newest unseen galleri
 
 test('a pending catch-up locks the confirmation, and a failure keeps it open with the error', async () => {
   const pending = holdCatchUps()
-  await renderAt('#/panda?cursor=next-token&unseen=true')
+  await renderAt('#/panda?cursor=next-token')
   await screen.findByRole('heading', { name: 'Upload unseen next-token 2' })
   let dialog = await openCatchUp()
   await userEvent.click(within(dialog).getByRole('button', { name: 'Catch up' }))
@@ -646,7 +642,7 @@ test('a pending catch-up locks the confirmation, and a failure keeps it open wit
   const alert = await within(dialog).findByRole('alert')
   expect(alert.textContent).toContain('Catch-up failed. Nothing was marked as seen.')
   expect(alert.textContent).toContain('This gallery is no longer in the Panda catalog. Reload and try again.')
-  expect(window.location.hash).toBe('#/panda?cursor=next-token&unseen=true')
+  expect(window.location.hash).toBe('#/panda?cursor=next-token')
   expect(screen.getByRole('heading', { name: 'Upload unseen next-token 2', hidden: true })).toBeTruthy()
   expect(catalogRequests()).toHaveLength(before)
 
@@ -661,7 +657,7 @@ test('a pending catch-up locks the confirmation, and a failure keeps it open wit
   await act(async () => { pending[2].resolve(new Response(null, { status: 204 })) })
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   await screen.findByRole('heading', { name: 'Upload unseen first 5' })
-  expect(window.location.hash).toBe('#/panda?unseen=true')
+  expect(window.location.hash).toBe('#/panda')
 
   // A failure followed by Cancel leaves no alert for the next opening.
   dialog = await openCatchUp()
@@ -678,15 +674,15 @@ test('a pending catch-up locks the confirmation, and a failure keeps it open wit
 
 test('a catch-up that succeeds after the hash changed opens the newest unseen galleries it was confirmed from', async () => {
   const pending = holdCatchUps()
-  await renderAt('#/panda?unseen=true')
+  await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'Upload unseen first 5' })
   const dialog = await openCatchUp()
   await userEvent.click(within(dialog).getByRole('button', { name: 'Catch up' }))
   await waitFor(() => expect(pending).toHaveLength(1))
-  act(() => { window.location.hash = '#/panda?cursor=next-token&unseen=true' })
+  act(() => { window.location.hash = '#/panda?cursor=next-token' })
   await screen.findByRole('heading', { name: 'Upload unseen next-token 2', hidden: true })
   await act(async () => { pending[0].resolve(new Response(null, { status: 204 })) })
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
-  expect(window.location.hash).toBe('#/panda?unseen=true')
+  expect(window.location.hash).toBe('#/panda')
   await screen.findByRole('heading', { name: 'Upload unseen first 5' })
 })

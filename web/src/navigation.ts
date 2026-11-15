@@ -93,11 +93,11 @@ export function listingLink(search: string, page = 1, categories: string[] = [],
   return `#/galleries${params.size ? `?${params}` : ''}`
 }
 
-// A verdict wins over unseen: the two views can't be combined.
+// Unseen is the default view; a verdict wins over `unseen=false`.
 function pandaView(params: URLSearchParams): PandaView {
   const verdict = params.get('verdict')
   if (isVerdictView(verdict)) return verdict
-  return params.get('unseen') === 'true' ? 'unseen' : 'all'
+  return params.get('unseen') === 'false' ? 'all' : 'unseen'
 }
 
 // Verdict views never apply the score filter, so a link with one holds no filter state.
@@ -106,7 +106,7 @@ function pandaScoreFilter(params: URLSearchParams): PandaScoreFilter {
   return (value === 'all' || value === 'hidden') && !isVerdictView(params.get('verdict')) ? value : 'apply'
 }
 
-export function pandaListingLink({ search, cursor, includeExpunged, categories = [], bypassDefault, view, scoreFilter }: Partial<PandaListing>) {
+export function pandaListingLink({ search, cursor, includeExpunged, categories = [], bypassDefault, view = 'unseen', scoreFilter }: Partial<PandaListing>) {
   const params = new URLSearchParams()
   if (search) params.set('q', search)
   if (cursor) params.set('cursor', cursor)
@@ -114,7 +114,7 @@ export function pandaListingLink({ search, cursor, includeExpunged, categories =
   for (const category of categories) params.append('category', category)
   if (bypassDefault) params.set('bypass_default', 'true')
   if (scoreFilter && scoreFilter !== 'apply' && !isVerdictView(view)) params.set('score_filter', scoreFilter)
-  if (view === 'unseen') params.set('unseen', 'true')
+  if (view === 'all') params.set('unseen', 'false')
   else if (isVerdictView(view)) params.set('verdict', view)
   return `#/panda${params.size ? `?${params}` : ''}`
 }
