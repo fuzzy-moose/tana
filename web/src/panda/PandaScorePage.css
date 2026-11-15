@@ -7,6 +7,9 @@
 .score-weights .rt-TableCell, .score-weights .rt-TableColumnHeaderCell { white-space: nowrap; }
 .score-weights .score-label-cell { width: 100%; max-width: 0; min-width: var(--score-label-min-width); }
 
+/* Radix Themes tables have no stripes. */
+.score-weights .rt-TableBody .rt-TableRow:nth-child(even) { background-color: var(--gray-a2); }
+
 /* The rows share the list's columns through a subgrid; the list sets --score-columns to the number of cells after the label. */
 .score-rows {
   display: grid;

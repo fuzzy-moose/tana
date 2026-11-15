@@ -409,42 +409,50 @@ function PinForm({ disabled, change, onAdd }: {
   </form></Flex>
 }
 
-/** A row of the "Pinned weights" list: its field saves another weight for the pin, beside the weight of the value in the new model. */
-function PinnedWeight({ pin, modelWeight, disabled, onSave, onRemove }: {
-  pin: ScorePin, modelWeight: number | undefined, disabled: boolean, onSave: (weight: number) => void, onRemove: () => void,
+/** A row of the "Pinned weights" table: its field saves another weight for the pin, beside the weight of the value in the new model. */
+function PinnedWeight({ pin, modelWeight, showModel, disabled, onSave, onRemove }: {
+  pin: ScorePin, modelWeight: number | undefined, showModel: boolean, disabled: boolean, onSave: (weight: number) => void, onRemove: () => void,
 }) {
   const [text, setText] = usePinText(pin)
   const weight = parseNumber(text)
   const changed = weight !== pin.weight
   const save = () => { if (weight !== null && changed && !disabled) onSave(weight) }
   const label = weightLabel(pin)
-  return <li>
-    <Text size="2" className="score-label" title={label} data-pin-label="">{label}</Text>
-    <TextField.Root size="1" type="number" step="any" aria-label={`Weight of pin ${label}`} style={{ width: '6rem' }}
-      value={text} onChange={(event) => setText(event.target.value)}
-      onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); save() } }} />
-    {changed
-      ? <IconButton size="1" variant="soft" aria-label="Save" title="Save the weight" disabled={weight === null || disabled} onClick={save}><CheckIcon /></IconButton>
-      : <span className="score-pin-slot" />}
-    {modelWeight === undefined
-      ? <span />
-      : <Text size="2" color="gray" title="Weight in the new model">Model {formatWeight(modelWeight)}</Text>}
-    <Button size="1" variant="soft" color="gray" disabled={disabled} onClick={onRemove}>Remove</Button>
-  </li>
+  return <Table.Row>
+    <Table.Cell className="score-label-cell"><span className="score-label" title={label} data-pin-label="">{label}</span></Table.Cell>
+    {showModel && <Table.Cell justify="end">{modelWeight === undefined ? '–' : formatWeight(modelWeight)}</Table.Cell>}
+    <Table.Cell><Flex gap="1" align="center">
+      <TextField.Root size="1" type="number" step="any" aria-label={`Weight of pin ${label}`} style={{ width: '6rem' }}
+        value={text} onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); save() } }} />
+      {changed
+        ? <IconButton size="1" variant="soft" aria-label="Save" title="Save the weight" disabled={weight === null || disabled} onClick={save}><CheckIcon /></IconButton>
+        : <span className="score-pin-slot" />}
+      <Button size="1" variant="soft" color="gray" disabled={disabled} onClick={onRemove}>Remove</Button>
+    </Flex></Table.Cell>
+  </Table.Row>
 }
 
 function PinnedWeights({ pins, modelPins, active, disabled, change, onPin }: {
   pins: ScorePin[], modelPins: ScorePin[], active: boolean, disabled: boolean, change: ChangeState,
   onPin: (action: PinChange, operation: PinRequest, onSaved?: () => void) => void,
 }) {
+  const modelWeight = (pin: ScorePin) => findPin(modelPins, pin.kind, pin.label)?.model_weight
+  const showModel = pins.some((pin) => modelWeight(pin) !== undefined)
   return <Section id="panda-score-pins" title="Pinned weights">
     {!active && <Text as="p" size="2" color="gray">No score model is active: pinned weights have no effect.</Text>}
     {pins.length === 0
       ? <Text as="p" size="2" color="gray">No pinned weights.</Text>
-      : <ul className="rt-reset score-rows" style={{ '--score-columns': 4 } as CSSProperties}>{pins.map((pin) => <PinnedWeight key={pin.id} pin={pin}
-        modelWeight={findPin(modelPins, pin.kind, pin.label)?.model_weight} disabled={disabled}
-        onSave={(weight) => onPin('pin-list', savePin({ kind: pin.kind, value: pin.label, weight }))}
-        onRemove={() => onPin('pin-list', removePin(pin.id))} />)}</ul>}
+      : <Table.Root size="1" variant="surface" className="score-weights">
+        <Table.Header><Table.Row>
+          <Table.ColumnHeaderCell>Tag, uploader or category</Table.ColumnHeaderCell>
+          {showModel && <Table.ColumnHeaderCell justify="end">Model weight</Table.ColumnHeaderCell>}
+          <Table.ColumnHeaderCell>Pin</Table.ColumnHeaderCell>
+        </Table.Row></Table.Header>
+        <Table.Body>{pins.map((pin) => <PinnedWeight key={pin.id} pin={pin} modelWeight={modelWeight(pin)} showModel={showModel} disabled={disabled}
+          onSave={(weight) => onPin('pin-list', savePin({ kind: pin.kind, value: pin.label, weight }))}
+          onRemove={() => onPin('pin-list', removePin(pin.id))} />)}</Table.Body>
+      </Table.Root>}
     <ChangeResult change={change} actions={['pin-list']} />
     <PinForm disabled={disabled} change={change} onAdd={(operation, onSaved) => onPin('pin-form', operation, onSaved)} />
   </Section>

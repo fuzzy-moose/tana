@@ -56,7 +56,7 @@ function evidence() {
 }
 
 function rows() {
-  return within(screen.getByRole('table')).getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell').slice(0, 6).map((cell) => cell.textContent))
+  return within(newModel().getByRole('table')).getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell').slice(0, 6).map((cell) => cell.textContent))
 }
 
 beforeEach(() => {
@@ -132,7 +132,7 @@ test('the shown weights stay shown after an override calculates again', async ()
   render(<App />)
   await screen.findByText('50 of 3,100 weights, strongest first.')
   await userEvent.click(screen.getByRole('button', { name: 'Show more' }))
-  await userEvent.click(within(within(screen.getByRole('table')).getByText('tag:value 60').closest('tr')!).getByRole('button', { name: 'Always hide' }))
+  await userEvent.click(within(within(newModel().getByRole('table')).getByText('tag:value 60').closest('tr')!).getByRole('button', { name: 'Always hide' }))
   await screen.findByText('Always hide tag:value 60')
   expect(previewBodies()).toHaveLength(2)
   expect(rows()).toHaveLength(100)
@@ -157,7 +157,7 @@ test('the weights filter searches every weight of the preview by its label, igno
   expect(rows().map(([label]) => label)).toEqual(['tag:value 11', ...Array.from({ length: 10 }, (_, index) => `tag:value ${110 + index}`)])
   expect(screen.getByText('11 of 11 matching weights, strongest first. Only the 120 strongest of 3,100 weights are searched.')).toBeTruthy()
   await typeFilter(filterWeights(), 'zzz')
-  expect(screen.queryByRole('table')).toBeNull()
+  expect(newModel().queryByRole('table')).toBeNull()
   expect(screen.getByText('No weights match. Only the 120 strongest of 3,100 weights are searched.')).toBeTruthy()
   await typeFilter(filterWeights(), '   ')
   expect(screen.getByText('50 of 3,100 weights, strongest first.')).toBeTruthy()
@@ -219,7 +219,7 @@ test('warns about few verdicts and still shows the table', async () => {
   respond(Response.json(preview({ evidence: { ...preview().evidence, few_verdicts: true } })))
   render(<App />)
   expect((await screen.findByText(/Few verdicts\./)).textContent).toBe('Few verdicts. Weights and error rates from so little evidence are unreliable.')
-  expect(screen.getByRole('table')).toBeTruthy()
+  expect(newModel().getByRole('table')).toBeTruthy()
 })
 
 test.each([
@@ -233,7 +233,7 @@ test.each([
   const section = within(screen.getByRole('region', { name: 'New model' }))
   const messages = ['No verdicts yet.', 'No "Not for me" verdicts yet.', 'No acceptable galleries yet.']
   for (const other of messages) expect(section.queryAllByText((text) => text.startsWith(other))).toHaveLength(other === message ? 1 : 0)
-  expect(screen.queryByRole('table')).toBeNull()
+  expect(newModel().queryByRole('table')).toBeNull()
   expect(screen.queryByText(/Few verdicts/)).toBeNull()
   expect(within(screen.getByRole('region', { name: 'Active model' })).getByText(/threshold -0\.5/)).toBeTruthy()
 })
@@ -420,7 +420,7 @@ test('a failed apply keeps the candidate and the field, and calculates again onl
   expect(alert.textContent).toMatch(/^Could not apply the model\. The request could not be confirmed\./)
   expect(previewBodies()).toHaveLength(1)
   expect(field('Threshold').value).toBe('-0.2')
-  expect(screen.getByRole('table')).toBeTruthy()
+  expect(newModel().getByRole('table')).toBeTruthy()
   await userEvent.click(screen.getByRole('button', { name: 'Apply model and threshold' }))
   await newModel().findByText('Could not apply the model. This calculation is no longer available. Check the new calculation and apply again.')
   await newModel().findByText('Suggested: -0.3')
@@ -521,7 +521,7 @@ function listedOverrides() {
 }
 
 function weightRow(label: string) {
-  return within(within(screen.getByRole('table')).getByText(label).closest('tr')!)
+  return within(within(newModel().getByRole('table')).getByText(label).closest('tr')!)
 }
 
 function pressed(label: string, rule: 'Always hide' | 'Never hide') {
@@ -674,8 +674,8 @@ function pinsSection() {
 }
 
 function listedPins() {
-  const list = pinsSection().queryByRole('list')
-  return list ? within(list).getAllByRole('listitem').map((item) => `${item.querySelector('[data-pin-label]')?.textContent} ${(within(item).getByRole('spinbutton') as HTMLInputElement).value}`) : []
+  const table = pinsSection().queryByRole('table')
+  return table ? within(table).getAllByRole('row').slice(1).map((item) => `${item.querySelector('[data-pin-label]')?.textContent} ${(within(item).getByRole('spinbutton') as HTMLInputElement).value}`) : []
 }
 
 function listField(label: string) {
@@ -683,7 +683,7 @@ function listField(label: string) {
 }
 
 function listRow(label: string) {
-  return within(listField(label).closest('li')!)
+  return within(listField(label).closest('tr')!)
 }
 
 function pinField(label: string) {
@@ -795,7 +795,7 @@ test('each label of the table carries its full label as title, and the pin butto
   render(<App />)
   await screen.findByRole('region', { name: 'Pinned weights' })
   for (const label of ['female:glasses', 'Uploader Some uploader', 'Category Doujinshi']) {
-    expect(within(screen.getByRole('table')).getByText(label).getAttribute('title')).toBe(label)
+    expect(within(newModel().getByRole('table')).getByText(label).getAttribute('title')).toBe(label)
   }
   for (const [name, title] of [['Pin', 'Pin the entered weight'], ['Ignore', 'Ignore: pin the weight 0'], ['Remove pin', 'Remove pin']]) {
     const icon = button(weightRow('female:glasses'), name)
@@ -820,7 +820,7 @@ test('Remove in the list removes that pin', async () => {
   respond(Response.json(preview({ pins: [glassesPin, uploaderPin] })), noContent(), Response.json(preview({ pins: [glassesPin] })))
   render(<App />)
   await screen.findByRole('region', { name: 'Pinned weights' })
-  await userEvent.click(within(pinsSection().getByText('Uploader Some uploader').closest('li')!).getByRole('button', { name: 'Remove' }))
+  await userEvent.click(within(pinsSection().getByText('Uploader Some uploader').closest('tr')!).getByRole('button', { name: 'Remove' }))
   await waitFor(() => expect(previewBodies()).toHaveLength(2))
   expect(changeCalls()).toEqual([['/api/collector/catalog/score/pins/4', 'DELETE', undefined]])
   expect(listedPins()).toEqual(['female:glasses 2'])
@@ -838,9 +838,10 @@ test('each row of the list edits its pin and shows the weight of its value in th
     expect(listRow(label).getByRole('button', { name: 'Remove' })).toBeTruthy()
     expect(listRow(label).queryByRole('button', { name: 'Save' })).toBeNull()
   }
-  expect(listRow('female:glasses').getByTitle('Weight in the new model').textContent).toBe('Model -0.50')
-  expect(listRow('Uploader Some uploader').getByText('Model +0.50')).toBeTruthy()
-  expect(listRow('Category Cosplay').queryByText(/Model/)).toBeNull()
+  expect(pinsSection().getByRole('columnheader', { name: 'Model weight' })).toBeTruthy()
+  expect(listRow('female:glasses').getByText('-0.50')).toBeTruthy()
+  expect(listRow('Uploader Some uploader').getByText('+0.50')).toBeTruthy()
+  expect(listRow('Category Cosplay').getByText('–')).toBeTruthy()
   expect(pinsSection().queryByRole('button', { name: 'Ignore' })).toBeNull()
 })
 
@@ -853,9 +854,9 @@ test('a pin new in this visit shows its model weight in the list once the calcul
   await userEvent.type(pinField('Uploader Some uploader'), '-1.5{Enter}')
   await waitFor(() => expect(previewBodies()).toHaveLength(2))
   expect(listedPins()).toEqual(['Uploader Some uploader -1.5'])
-  expect(listRow('Uploader Some uploader').queryByText(/Model/)).toBeNull()
+  expect(pinsSection().queryByRole('columnheader', { name: 'Model weight' })).toBeNull()
   finishPreview(Response.json(preview({ pins: [{ ...uploaderPin, model_weight: 0.5 }] })))
-  expect(await listRow('Uploader Some uploader').findByText('Model +0.50')).toBeTruthy()
+  expect(await listRow('Uploader Some uploader').findByText('+0.50')).toBeTruthy()
 })
 
 test('Enter or Save in a row of the list saves the typed weight, and the row keeps its model weight', async () => {
@@ -872,7 +873,7 @@ test('Enter or Save in a row of the list saves the typed weight, and the row kee
   await waitFor(() => expect(previewBodies()).toHaveLength(2))
   expect(listField('female:glasses').value).toBe('3')
   expect(listRow('female:glasses').queryByRole('button', { name: 'Save' })).toBeNull()
-  expect(listRow('female:glasses').getByText('Model -0.50')).toBeTruthy()
+  expect(listRow('female:glasses').getByText('-0.50')).toBeTruthy()
   finishPreview(Response.json(preview({ pins: [{ ...glassesPin, weight: 3, model_weight: -0.5 }, uploaderPin] })))
   await waitFor(() => expect(button(newModel(), 'Apply model and threshold').disabled).toBe(false))
 
