@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import { AlertDialog, Button, Callout, DataList, Flex, Heading, Link, SegmentedControl, Spinner, Switch, Table, Text, TextField } from '@radix-ui/themes'
-import { ArrowLeftIcon, ExclamationTriangleIcon } from '@radix-ui/react-icons'
+import type { CSSProperties, ReactNode } from 'react'
+import { AlertDialog, Button, Callout, DataList, Flex, Heading, IconButton, Link, SegmentedControl, Spinner, Switch, Table, Text, TextField } from '@radix-ui/themes'
+import { ArrowLeftIcon, CheckIcon, Cross2Icon, DrawingPinIcon, ExclamationTriangleIcon, ValueNoneIcon } from '@radix-ui/react-icons'
 import { APIError } from '../api'
 import { formatDate } from '../collector/formatDate'
+import TagCompletionField from '../galleries/TagCompletionField'
 import { useMutation } from '../collector/useMutation'
+import { completePandaSearch } from './api'
 import { pandaCategories } from './categories'
 import { applyPandaScore, currentHiddenShare, formatWeight, hiddenShare, parseNumber, previewPandaScore, recentHiddenShare, removePandaScoreOverride, removePandaScorePin, savePandaAuthorBonus, savePandaScoreOverride, savePandaScorePin, savePandaScoreThreshold, scoreRuleNames, turnOffPandaScore } from './score'
 import type { NoScoreModel, ScoreCandidate, ScoreKind, ScoreOverride, ScorePin, ScorePreview, ScoreRule, ScoreWeight } from './score'
 import './PandaCatalog.css'
+import './PandaScorePage.css'
 
 const pageSize = 50
 
@@ -194,7 +197,7 @@ function OverrideButtons({ weight, overrides, disabled, onOverride }: {
   weight: ScoreWeight, overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
 }) {
   const current = overrides.find((override) => override.kind === weight.kind && override.label === weight.label)
-  return <Flex gap="1" justify="end" wrap="wrap">{rules.map((rule) => {
+  return <Flex gap="1" justify="end">{rules.map((rule) => {
     const isPressed = current?.rule === rule
     return <Button key={rule} size="1" variant={isPressed ? 'solid' : 'soft'} color={isPressed ? undefined : 'gray'} aria-pressed={isPressed} disabled={disabled}
       onClick={() => onOverride(current && isPressed
@@ -203,39 +206,79 @@ function OverrideButtons({ weight, overrides, disabled, onOverride }: {
   })}</Flex>
 }
 
-/** The pin field and buttons of one tag, uploader or category. */
-function PinControls({ kind, label, pin, disabled, onPin }: {
-  kind: ScoreKind, label: string, pin: ScorePin | undefined, disabled: boolean, onPin: (operation: PinRequest) => void,
-}) {
+/** The text of a pin's weight field: it follows the pin whenever the pin changes, and keeps the user's text otherwise. */
+function usePinText(pin: ScorePin | undefined): [string, (text: string) => void] {
   const [text, setText] = useState(pin ? String(pin.weight) : '')
-  // The field follows the pin whenever it changes, and keeps the user's text otherwise.
   const pinKey = pin ? `${pin.id}:${pin.weight}` : ''
   const [shownPin, setShownPin] = useState(pinKey)
   if (shownPin !== pinKey) {
     setShownPin(pinKey)
     setText(pin ? String(pin.weight) : '')
   }
+  return [text, setText]
+}
+
+/** The pin field and buttons of one tag, uploader or category. */
+function PinControls({ kind, label, pin, disabled, onPin }: {
+  kind: ScoreKind, label: string, pin: ScorePin | undefined, disabled: boolean, onPin: (operation: PinRequest) => void,
+}) {
+  const [text, setText] = usePinText(pin)
   const weight = parseNumber(text)
   const pinWeight = () => { if (weight !== null && !disabled) onPin(savePin({ kind, value: label, weight })) }
-  return <Flex gap="1" justify="end" align="center" wrap="wrap">
+  return <Flex gap="1" align="center">
     <TextField.Root size="1" type="number" step="any" aria-label={`Pinned weight of ${weightLabel({ kind, label })}`} style={{ width: '6rem' }}
       value={text} onChange={(event) => setText(event.target.value)}
       onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); pinWeight() } }} />
-    <Button size="1" variant="soft" disabled={weight === null || disabled} onClick={pinWeight}>Pin</Button>
-    <Button size="1" variant="soft" color="gray" disabled={disabled} onClick={() => onPin(savePin({ kind, value: label, weight: 0 }))}>Ignore</Button>
-    {pin && <Button size="1" variant="soft" color="gray" disabled={disabled} onClick={() => onPin(removePin(pin.id))}>Remove pin</Button>}
+    <IconButton size="1" variant="soft" aria-label="Pin" title="Pin the entered weight" disabled={weight === null || disabled} onClick={pinWeight}><DrawingPinIcon /></IconButton>
+    <IconButton size="1" variant="soft" color="gray" aria-label="Ignore" title="Ignore: pin the weight 0" disabled={disabled}
+      onClick={() => onPin(savePin({ kind, value: label, weight: 0 }))}><ValueNoneIcon /></IconButton>
+    {pin
+      ? <IconButton size="1" variant="soft" color="gray" aria-label="Remove pin" title="Remove pin" disabled={disabled} onClick={() => onPin(removePin(pin.id))}><Cross2Icon /></IconButton>
+      : <span className="score-pin-slot" />}
   </Flex>
 }
 
-function Weights({ weights, count, overrides, disabled, onOverride, pins, pinDisabled, onPin, shown, onShown }: {
+/**
+ * A filter text and the number of shown entries of a list, kept while the list stays mounted.
+ * A new filter text shows the first page of its matches again.
+ */
+function useFilteredList<T>(entries: T[], label: (entry: T) => string) {
+  const [filter, setFilterText] = useState('')
+  const [shown, setShown] = useState(pageSize)
+  const needle = filter.trim().toLowerCase()
+  const matches = needle === '' ? entries : entries.filter((entry) => label(entry).toLowerCase().includes(needle))
+  return {
+    filter, filtering: needle !== '', matches, visible: matches.slice(0, shown), more: shown < matches.length,
+    setFilter: (text: string) => { setFilterText(text); setShown(pageSize) },
+    showMore: () => setShown(shown + pageSize),
+  }
+}
+
+function FilterField({ label, placeholder, value, onChange }: { label: string, placeholder: string, value: string, onChange: (text: string) => void }) {
+  return <TextField.Root size="2" aria-label={label} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />
+}
+
+/** The count line or the empty message of a list, with the scope of the filter when the preview carries fewer entries than exist. */
+function CountLine({ list, carried, all, noun, order, empty, scope }: {
+  list: { filtering: boolean, matches: unknown[], visible: unknown[] }, carried: number, all: number, noun: string, order: string, empty: string, scope: string,
+}) {
+  const text = !list.filtering
+    ? `${list.visible.length.toLocaleString()} of ${all.toLocaleString()} ${noun}, ${order}.`
+    : list.matches.length === 0 ? empty : `${list.visible.length.toLocaleString()} of ${list.matches.length.toLocaleString()} matching ${noun}, ${order}.`
+  return <Text as="p" size="2" color="gray">{text}{list.filtering && carried < all && ` ${scope}`}</Text>
+}
+
+function Weights({ weights, count, overrides, disabled, onOverride, pins, pinDisabled, onPin }: {
   weights: ScoreWeight[], count: number, overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
   pins: ScorePin[], pinDisabled: boolean, onPin: (operation: PinRequest) => void,
-  shown: number, onShown: (shown: number) => void,
 }) {
-  const visible = weights.slice(0, shown)
+  const list = useFilteredList(weights, weightLabel)
+  const { visible } = list
   return <Flex direction="column" gap="3">
-    <Text as="p" size="2" color="gray">{visible.length.toLocaleString()} of {count.toLocaleString()} weights, strongest first.</Text>
-    <Table.Root size="1" variant="surface">
+    <FilterField label="Filter weights" placeholder="Filter by tag, uploader or category" value={list.filter} onChange={list.setFilter} />
+    <CountLine list={list} carried={weights.length} all={count} noun="weights" order="strongest first" empty="No weights match."
+      scope={`Only the ${weights.length.toLocaleString()} strongest of ${count.toLocaleString()} weights are searched.`} />
+    {(!list.filtering || visible.length > 0) && <Table.Root size="1" variant="surface" className="score-weights">
       <Table.Header><Table.Row>
         <Table.ColumnHeaderCell>Tag, uploader or category</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell justify="end">Weight</Table.ColumnHeaderCell>
@@ -244,20 +287,20 @@ function Weights({ weights, count, overrides, disabled, onOverride, pins, pinDis
         <Table.ColumnHeaderCell justify="end">Neutral</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell justify="end">Active weight</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell justify="end">Override</Table.ColumnHeaderCell>
-        <Table.ColumnHeaderCell justify="end">Pin</Table.ColumnHeaderCell>
+        <Table.ColumnHeaderCell>Pin</Table.ColumnHeaderCell>
       </Table.Row></Table.Header>
       <Table.Body>{visible.map((weight) => <Table.Row key={`${weight.kind}:${weight.label}`}>
-        <Table.Cell>{weightLabel(weight)}</Table.Cell>
+        <Table.Cell className="score-label-cell"><span className="score-label" title={weightLabel(weight)}>{weightLabel(weight)}</span></Table.Cell>
         <Table.Cell justify="end">{formatWeight(weight.weight)}</Table.Cell>
         <Table.Cell justify="end">{weight.interesting.toLocaleString()}</Table.Cell>
         <Table.Cell justify="end">{weight.not_for_me.toLocaleString()}</Table.Cell>
         <Table.Cell justify="end">{weight.neutral.toLocaleString()}</Table.Cell>
         <Table.Cell justify="end">{weight.active_weight === null ? '–' : formatWeight(weight.active_weight)}</Table.Cell>
         <Table.Cell justify="end"><OverrideButtons weight={weight} overrides={overrides} disabled={disabled} onOverride={onOverride} /></Table.Cell>
-        <Table.Cell justify="end"><PinControls kind={weight.kind} label={weight.label} pin={findPin(pins, weight.kind, weight.label)} disabled={pinDisabled} onPin={onPin} /></Table.Cell>
+        <Table.Cell><PinControls kind={weight.kind} label={weight.label} pin={findPin(pins, weight.kind, weight.label)} disabled={pinDisabled} onPin={onPin} /></Table.Cell>
       </Table.Row>)}</Table.Body>
-    </Table.Root>
-    {shown < weights.length && <Button variant="soft" color="gray" onClick={() => onShown(shown + pageSize)}>Show more</Button>}
+    </Table.Root>}
+    {list.more && <Button variant="soft" color="gray" onClick={list.showMore}>Show more</Button>}
   </Flex>
 }
 
@@ -295,7 +338,9 @@ function OverrideForm({ disabled, change, onAdd }: {
         </>
         : <>
           <Text as="label" htmlFor="panda-score-override-value" size="2" weight="medium">{kind === 'tag' ? 'Tag (namespace:value)' : 'Uploader (exactly as Panda writes it)'}</Text>
-          <TextField.Root id="panda-score-override-value" value={text} onChange={(event) => setText(event.target.value)} />
+          {kind === 'tag'
+            ? <TagCompletionField id="panda-score-override-value" value={text} onChange={setText} complete={completePandaSearch} insert="tag" />
+            : <TextField.Root id="panda-score-override-value" value={text} onChange={(event) => setText(event.target.value)} />}
         </>}
     </Flex>
     <Flex><Button type="submit" disabled={value === '' || disabled}>Add override</Button></Flex>
@@ -350,7 +395,9 @@ function PinForm({ disabled, change, onAdd }: {
         </>
         : <>
           <Text as="label" htmlFor="panda-score-pin-value" size="2" weight="medium">{kind === 'tag' ? 'Tag (namespace:value)' : 'Uploader (exactly as Panda writes it)'}</Text>
-          <TextField.Root id="panda-score-pin-value" value={text} onChange={(event) => setText(event.target.value)} />
+          {kind === 'tag'
+            ? <TagCompletionField id="panda-score-pin-value" value={text} onChange={setText} complete={completePandaSearch} insert="tag" />
+            : <TextField.Root id="panda-score-pin-value" value={text} onChange={(event) => setText(event.target.value)} />}
         </>}
     </Flex>
     <Flex direction="column" gap="1" maxWidth="160px">
@@ -362,18 +409,42 @@ function PinForm({ disabled, change, onAdd }: {
   </form></Flex>
 }
 
-function PinnedWeights({ pins, active, disabled, change, onPin }: {
-  pins: ScorePin[], active: boolean, disabled: boolean, change: ChangeState,
+/** A row of the "Pinned weights" list: its field saves another weight for the pin, beside the weight of the value in the new model. */
+function PinnedWeight({ pin, modelWeight, disabled, onSave, onRemove }: {
+  pin: ScorePin, modelWeight: number | undefined, disabled: boolean, onSave: (weight: number) => void, onRemove: () => void,
+}) {
+  const [text, setText] = usePinText(pin)
+  const weight = parseNumber(text)
+  const changed = weight !== pin.weight
+  const save = () => { if (weight !== null && changed && !disabled) onSave(weight) }
+  const label = weightLabel(pin)
+  return <li>
+    <Text size="2" className="score-label" title={label} data-pin-label="">{label}</Text>
+    <TextField.Root size="1" type="number" step="any" aria-label={`Weight of pin ${label}`} style={{ width: '6rem' }}
+      value={text} onChange={(event) => setText(event.target.value)}
+      onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); save() } }} />
+    {changed
+      ? <IconButton size="1" variant="soft" aria-label="Save" title="Save the weight" disabled={weight === null || disabled} onClick={save}><CheckIcon /></IconButton>
+      : <span className="score-pin-slot" />}
+    {modelWeight === undefined
+      ? <span />
+      : <Text size="2" color="gray" title="Weight in the new model">Model {formatWeight(modelWeight)}</Text>}
+    <Button size="1" variant="soft" color="gray" disabled={disabled} onClick={onRemove}>Remove</Button>
+  </li>
+}
+
+function PinnedWeights({ pins, modelPins, active, disabled, change, onPin }: {
+  pins: ScorePin[], modelPins: ScorePin[], active: boolean, disabled: boolean, change: ChangeState,
   onPin: (action: PinChange, operation: PinRequest, onSaved?: () => void) => void,
 }) {
   return <Section id="panda-score-pins" title="Pinned weights">
     {!active && <Text as="p" size="2" color="gray">No score model is active: pinned weights have no effect.</Text>}
     {pins.length === 0
       ? <Text as="p" size="2" color="gray">No pinned weights.</Text>
-      : <Flex asChild direction="column" gap="2"><ul className="rt-reset">{pins.map((pin) => <Flex asChild key={pin.id} align="center" gap="3" wrap="wrap"><li>
-        <Text size="2" data-pin-label="">{weightLabel(pin)} {formatWeight(pin.weight)}</Text>
-        <Button size="1" variant="soft" color="gray" disabled={disabled} onClick={() => onPin('pin-list', removePin(pin.id))}>Remove</Button>
-      </li></Flex>)}</ul></Flex>}
+      : <ul className="rt-reset score-rows" style={{ '--score-columns': 4 } as CSSProperties}>{pins.map((pin) => <PinnedWeight key={pin.id} pin={pin}
+        modelWeight={findPin(modelPins, pin.kind, pin.label)?.model_weight} disabled={disabled}
+        onSave={(weight) => onPin('pin-list', savePin({ kind: pin.kind, value: pin.label, weight }))}
+        onRemove={() => onPin('pin-list', removePin(pin.id))} />)}</ul>}
     <ChangeResult change={change} actions={['pin-list']} />
     <PinForm disabled={disabled} change={change} onAdd={(operation, onSaved) => onPin('pin-form', operation, onSaved)} />
   </Section>
@@ -399,20 +470,26 @@ function FavoriteAuthors({ preview, bonusVersion, pins, disabled, pinDisabled, c
   preview: ScorePreview, bonusVersion: number, pins: ScorePin[], disabled: boolean, pinDisabled: boolean, change: ChangeState,
   onBonus: (bonus: number | null) => void, onPin: (operation: PinRequest) => void,
 }) {
-  const [shown, setShown] = useState(pageSize)
   const authors = preview.favorite_authors
+  const list = useFilteredList(authors, (author) => author.label)
+  const all = preview.favorite_author_count
   return <Section id="panda-score-authors" title="Favorite authors">
     <Text as="p" size="2">{preview.favorite_author_count.toLocaleString()} favorite authors: artist tags that at least 2 Panda favorites carry.</Text>
     {!preview.active && <Text as="p" size="2" color="gray">No score model is active: the author bonus has no effect.</Text>}
     <AuthorBonus key={bonusVersion} bonus={preview.author_bonus} disabled={disabled} onSave={onBonus} />
     <ChangeResult change={change} actions={['bonus', 'pin-author']} />
-    {authors.length > 0 && <Flex asChild direction="column" gap="2"><ul className="rt-reset">{authors.slice(0, shown).map((author) => <Flex asChild key={author.label} align="center" gap="3" wrap="wrap"><li>
-      <Text size="2" data-author-cell="">{author.label}</Text>
+    {authors.length > 0 && <>
+      <FilterField label="Filter favorite authors" placeholder="Filter by artist" value={list.filter} onChange={list.setFilter} />
+      <CountLine list={list} carried={authors.length} all={all} noun="favorite authors" order="most favorites first" empty="No favorite authors match."
+        scope={`Only the ${authors.length.toLocaleString()} authors with the most favorites of ${all.toLocaleString()} are searched.`} />
+    </>}
+    {list.visible.length > 0 && <ul className="rt-reset score-rows" style={{ '--score-columns': 3 } as CSSProperties}>{list.visible.map((author) => <li key={author.label}>
+      <Text size="2" className="score-label" title={author.label} data-author-cell="">{author.label}</Text>
       <Text size="2" color="gray" data-author-cell="">{author.favorites.toLocaleString()} favorites</Text>
       <Text size="2" data-author-cell="">{author.weight === null ? '–' : formatWeight(author.weight)}</Text>
       <PinControls kind="tag" label={author.label} pin={findPin(pins, 'tag', author.label)} disabled={pinDisabled} onPin={onPin} />
-    </li></Flex>)}</ul></Flex>}
-    {shown < authors.length && <Flex><Button variant="soft" color="gray" onClick={() => setShown(shown + pageSize)}>Show more</Button></Flex>}
+    </li>)}</ul>}
+    {list.more && <Flex><Button variant="soft" color="gray" onClick={list.showMore}>Show more</Button></Flex>}
   </Section>
 }
 
@@ -422,8 +499,6 @@ interface PreviewProps {
   onFavorites: (favorites: boolean) => void
   thresholds: Thresholds
   onThresholds: (thresholds: Thresholds) => void
-  shown: number
-  onShown: (shown: number) => void
   change: ChangeState
   onChange: (action: Change, operation: (signal: AbortSignal) => Promise<void>, onSaved?: () => void) => void
   pins: ScorePin[]
@@ -431,7 +506,7 @@ interface PreviewProps {
   bonusVersion: number
 }
 
-function Preview({ preview, loading, onFavorites, thresholds, onThresholds, shown, onShown, change, onChange, pins, onPin, bonusVersion }: PreviewProps) {
+function Preview({ preview, loading, onFavorites, thresholds, onThresholds, change, onChange, pins, onPin, bonusVersion }: PreviewProps) {
   const { evidence, candidate, active } = preview
   const synced = evidence.favorites_synced_at
   const counts: { label: string, value: ReactNode }[] = [
@@ -474,13 +549,13 @@ function Preview({ preview, loading, onFavorites, thresholds, onThresholds, show
         onApply={(tenths) => onChange('apply', (signal) => applyPandaScore(candidate.id, tenths, signal))} />}
       <ChangeResult change={change} actions={['override-row', 'pin-row']} />
       {candidate
-        ? <Weights weights={candidate.weights} count={candidate.weight_count} overrides={preview.overrides} shown={shown} onShown={onShown}
+        ? <Weights weights={candidate.weights} count={candidate.weight_count} overrides={preview.overrides}
           disabled={change.pending || loading} onOverride={(operation) => onChange('override-row', operation)}
           pins={pins} pinDisabled={change.pending} onPin={(operation) => onPin('pin-row', operation)} />
         : preview.no_model && <Text as="p" size="2">{noModelMessages[preview.no_model]}</Text>}
     </Section>
     <Overrides overrides={preview.overrides} disabled={change.pending || loading} change={change} onOverride={onChange} />
-    <PinnedWeights pins={pins} active={active !== null} disabled={change.pending} change={change} onPin={onPin} />
+    <PinnedWeights pins={pins} modelPins={preview.pins} active={active !== null} disabled={change.pending} change={change} onPin={onPin} />
     <FavoriteAuthors preview={preview} bonusVersion={bonusVersion} pins={pins} disabled={change.pending || loading} pinDisabled={change.pending} change={change}
       onBonus={(bonus) => onChange('bonus', (signal) => savePandaAuthorBonus(bonus, signal))} onPin={(operation) => onPin('pin-author', operation)} />
   </>
@@ -495,8 +570,6 @@ export default function PandaScorePage() {
   // A new request object calculates again, also with an unchanged favorites setting.
   const [request, setRequest] = useState<{ favorites: boolean | null }>({ favorites: null })
   const [thresholds, setThresholds] = useState<Thresholds>({ candidate: null, active: null })
-  // Kept across calculations, so a row changed past the first page stays in view.
-  const [shown, setShown] = useState(pageSize)
   // Set by a successful change: the next preview restarts both threshold fields.
   const restart = useRef(false)
   // Set by a successful bonus change: the next preview starts the bonus field again.
@@ -573,7 +646,7 @@ export default function PandaScorePage() {
     </Callout.Root>}
     {loading && !preview && <Text as="p" size="2" color="gray" role="status">Calculating…</Text>}
     {preview && <Preview
-      preview={preview} loading={loading} thresholds={thresholds} onThresholds={setThresholds} shown={shown} onShown={setShown}
+      preview={preview} loading={loading} thresholds={thresholds} onThresholds={setThresholds}
       onFavorites={(favorites) => { change.clear(); load(favorites) }}
       change={{ pending: change.pending, error: change.error, notice: change.notice, action }}
       onChange={(next, operation, onSaved) => runChange(next, operation, preview.favorites, changeNotices[next], onSaved)}

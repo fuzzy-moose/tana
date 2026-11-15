@@ -72,6 +72,8 @@ export interface ScorePin {
   kind: ScoreKind
   label: string
   weight: number
+  /** The weight that the new model calculated for the value; only the pins of a preview carry it. */
+  model_weight?: number
 }
 
 /** An artist tag that at least 2 Panda favorites carry, with its effective weight. */

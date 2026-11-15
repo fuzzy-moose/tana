@@ -2,16 +2,21 @@ package catalog
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
+	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
 func TestPreviewListsThePins(t *testing.T) {
 	db, s := openCatalog(t)
 	seedScoreEvidence(t, db, s)
+	// Gallery 11 has no verdict, so no evidence gallery carries other:lonely.
+	retain(t, db, panda.Metadata{ID: 11, Posted: 11, Tags: []string{"other:lonely"}}, true)
 	preview := previewScore(t, s, false)
 	body, err := json.Marshal(preview)
 	if err != nil {
@@ -25,9 +30,76 @@ func TestPreviewListsThePins(t *testing.T) {
 		setPin(t, s, collectorapi.ScoreKindCategory, "Manga", 2),
 		setPin(t, s, collectorapi.ScoreKindTag, "male:hat", 1.5),
 		setPin(t, s, collectorapi.ScoreKindUploader, "Bad One", -3),
+		setPin(t, s, collectorapi.ScoreKindTag, "other:lonely", 1),
 	}
-	if got := previewScore(t, s, false).Pins; !reflect.DeepEqual(got, want) {
+	stored, err := json.Marshal(want[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(stored), "model_weight") {
+		t.Fatalf("stored pin JSON has a model weight: %s", stored)
+	}
+	for i := range want[:3] {
+		weight := weightOf(t, preview, want[i].Kind, want[i].Label)
+		want[i].ModelWeight = &weight
+	}
+	preview = previewScore(t, s, false)
+	if got := preview.Pins; !reflect.DeepEqual(got, want) {
 		t.Fatalf("pins = %+v, want %+v", got, want)
+	}
+	body, err = json.Marshal(preview.Pins)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(body), `"model_weight":`); got != 3 {
+		t.Fatalf("preview pins JSON has %d model weights, want 3: %s", got, body)
+	}
+}
+
+func TestPreviewWithoutCandidateGivesNoPinAModelWeight(t *testing.T) {
+	db, s := openCatalog(t)
+	seedVerdicts(t, db, s, 1, 3, collectorapi.VerdictInteresting, "Bad One", "Manga", "male:hat")
+	setPin(t, s, collectorapi.ScoreKindTag, "male:hat", 1)
+	setPin(t, s, collectorapi.ScoreKindUploader, "Bad One", 1)
+	preview := previewScore(t, s, false)
+	if preview.Candidate != nil {
+		t.Fatalf("preview has a candidate: %+v", preview.Candidate)
+	}
+	for _, pin := range preview.Pins {
+		if pin.ModelWeight != nil {
+			t.Fatalf("pin %+v has model weight %g", pin, *pin.ModelWeight)
+		}
+	}
+}
+
+func TestPinModelWeightComesFromAllWeights(t *testing.T) {
+	db, s := openCatalog(t)
+	fillers := make([]string, 0, scorePreviewWeights+10)
+	for i := range scorePreviewWeights + 10 {
+		fillers = append(fillers, fmt.Sprintf("other:filler %d", i))
+	}
+	// The fillers weigh like the artist tags of seedScoreEvidence; other:weak,
+	// on one "Not for me" and two "Interesting" galleries, weighs less.
+	seedVerdicts(t, db, s, 1, 3, collectorapi.VerdictNotForMe, "", "", append([]string{"female:glasses"}, fillers...)...)
+	seedVerdicts(t, db, s, 4, 1, collectorapi.VerdictNotForMe, "", "", "female:glasses", "other:weak")
+	seedVerdicts(t, db, s, 5, 1, collectorapi.VerdictNotForMe, "", "", "female:glasses")
+	seedVerdicts(t, db, s, 6, 2, collectorapi.VerdictInteresting, "", "", "male:hat", "other:weak")
+	seedVerdicts(t, db, s, 8, 3, collectorapi.VerdictInteresting, "", "", "male:hat")
+	setPin(t, s, collectorapi.ScoreKindTag, "other:weak", 5)
+
+	preview := previewScore(t, s, false)
+	if got := len(preview.Candidate.Weights); got != scorePreviewWeights {
+		t.Fatalf("candidate lists %d weights, want %d", got, scorePreviewWeights)
+	}
+	if _, ok := findWeight(preview, collectorapi.ScoreKindTag, "other:weak"); ok {
+		t.Fatal("candidate lists other:weak")
+	}
+	weight := preview.Pins[0].ModelWeight
+	if weight == nil {
+		t.Fatalf("pin %+v has no model weight", preview.Pins[0])
+	}
+	if weakest := preview.Candidate.Weights[scorePreviewWeights-1].Weight; *weight <= 0 || *weight >= math.Abs(weakest) {
+		t.Fatalf("model weight = %g, want between 0 and %g", *weight, math.Abs(weakest))
 	}
 }
 

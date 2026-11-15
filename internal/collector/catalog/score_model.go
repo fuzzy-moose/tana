@@ -138,6 +138,13 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 	if preview.Candidate != nil {
 		candidateWeights = weights
 	}
+	// All weights of the candidate, not only those it lists: a pin is
+	// typically set on a value with a weak weight.
+	for i, pin := range filter.pins {
+		if weight, ok := candidateWeights[pin.value()]; ok {
+			preview.Pins[i].ModelWeight = &weight
+		}
+	}
 	preview.FavoriteAuthorCount = len(authors)
 	preview.FavoriteAuthors = make([]collectorapi.ScoreFavoriteAuthor, 0, min(len(authors), scorePreviewAuthors))
 	for _, author := range authors[:min(len(authors), scorePreviewAuthors)] {

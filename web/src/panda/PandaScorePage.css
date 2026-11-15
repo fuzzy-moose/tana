@@ -1,0 +1,21 @@
+/* Every entry of the score page's lists stays on one line; below this label width a list scrolls sideways inside its frame. */
+.score-weights, .score-rows { --score-label-min-width: 12rem; }
+
+.score-label { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* A table cell that does not wrap grows to its content: max-width 0 lets the label cell shrink, width 100% hands it the free width. */
+.score-weights .rt-TableCell, .score-weights .rt-TableColumnHeaderCell { white-space: nowrap; }
+.score-weights .score-label-cell { width: 100%; max-width: 0; min-width: var(--score-label-min-width); }
+
+/* The rows share the list's columns through a subgrid; the list sets --score-columns to the number of cells after the label. */
+.score-rows {
+  display: grid;
+  grid-template-columns: minmax(var(--score-label-min-width), 1fr) repeat(var(--score-columns), max-content);
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+  overflow-x: auto;
+}
+.score-rows > li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; white-space: nowrap; }
+
+/* Keeps the place of "Remove pin" in a row without a pin, so the pin fields of all rows stand in one column. */
+.score-pin-slot { flex: none; width: var(--space-5); }

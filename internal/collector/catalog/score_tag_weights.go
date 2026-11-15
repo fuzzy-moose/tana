@@ -7,7 +7,8 @@ import (
 )
 
 // ScoreTagWeights returns, for each element of tags in the same order, whether
-// the Panda catalog has the tag, matched like a pin's tag, its effective
+// the Panda catalog has the tag, matched by parseScoreTarget with its
+// namespace as sent (a short form is not expanded), its effective
 // weight under the active model, or under no model while none is active, and
 // its pin.
 func (s *Service) ScoreTagWeights(ctx context.Context, tags []string) (collectorapi.ScoreTagWeights, error) {

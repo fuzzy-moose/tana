@@ -82,12 +82,15 @@ type ScoreOverride struct {
 	Rule  string `json:"rule"`
 }
 
-// ScorePin is one pinned weight, labelled like an override.
+// ScorePin is one pinned weight, labelled like an override. ModelWeight is set
+// in a preview only: the weight the candidate calculated for the pin's value,
+// nil without one.
 type ScorePin struct {
-	ID     int64   `json:"id"`
-	Kind   string  `json:"kind"`
-	Label  string  `json:"label"`
-	Weight float64 `json:"weight"`
+	ID          int64    `json:"id"`
+	Kind        string   `json:"kind"`
+	Label       string   `json:"label"`
+	Weight      float64  `json:"weight"`
+	ModelWeight *float64 `json:"model_weight,omitempty"`
 }
 
 // The reasons a preview offers no model: no verdicts at all, no "Not for me"

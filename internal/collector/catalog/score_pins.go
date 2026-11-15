@@ -30,7 +30,7 @@ func (s *Service) SetScorePin(ctx context.Context, kind, value string, weight fl
 	if math.IsNaN(weight) || math.Abs(weight) > maxScoreWeight {
 		return collectorapi.ScorePin{}, ErrInvalidScorePin
 	}
-	target, ok := parseScoreTarget(kind, value)
+	target, ok := parseSavedScoreTarget(kind, value)
 	if !ok {
 		return collectorapi.ScorePin{}, ErrInvalidScorePin
 	}
@@ -92,11 +92,17 @@ func scorePins(ctx context.Context, tx pgx.Tx) ([]scorePin, error) {
 func pinnedWeights(pins []scorePin) map[scoreValue]float64 {
 	weights := make(map[scoreValue]float64, len(pins))
 	for _, pin := range pins {
-		value := scoreValue{kind: pin.Kind, tagID: pin.TagID}
-		if pin.Kind != collectorapi.ScoreKindTag {
-			value.value = pin.Label
-		}
-		weights[value] = pin.Weight
+		weights[pin.value()] = pin.Weight
 	}
 	return weights
+}
+
+// value is the pinned value: a tag by its catalog tag, an uploader or a
+// category by its label.
+func (pin scorePin) value() scoreValue {
+	value := scoreValue{kind: pin.Kind, tagID: pin.TagID}
+	if pin.Kind != collectorapi.ScoreKindTag {
+		value.value = pin.Label
+	}
+	return value
 }

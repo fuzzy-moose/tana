@@ -19,35 +19,6 @@
 .gallery-toolbar > :not(.gallery-search) { flex-shrink: 0; }
 .gallery-toolbar > .rt-Button { margin: 0; }
 .gallery-search { flex: 1 1 200px; min-width: 200px; max-width: 480px; margin-left: auto; }
-.gallery-search-input { position: relative; flex: 1; min-width: 0; }
-
-.gallery-tag-suggestions {
-  position: absolute;
-  inset: calc(100% + var(--space-1)) 0 auto;
-  z-index: 5;
-  max-height: min(360px, 50dvh);
-  overflow-y: auto;
-  margin: 0;
-  padding: var(--space-1);
-  list-style: none;
-  border: 1px solid var(--gray-a6);
-  border-radius: var(--radius-3);
-  background: var(--color-panel-solid);
-  box-shadow: var(--shadow-4);
-}
-
-.gallery-tag-suggestions li {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-2);
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-
-.gallery-tag-suggestions li[aria-selected="true"] { background: var(--accent-a4); }
-.gallery-tag-suggestions .rt-Badge { flex-shrink: 0; }
 
 .gallery-viewport {
   position: relative;

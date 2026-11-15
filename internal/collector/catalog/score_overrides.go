@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
+	"github.com/fuzzy-moose/tana/internal/gallerysearch"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
@@ -29,7 +30,7 @@ func (s *Service) SetScoreOverride(ctx context.Context, kind, value, rule string
 	if rule != collectorapi.ScoreRuleAlwaysHide && rule != collectorapi.ScoreRuleNeverHide {
 		return ErrInvalidScoreOverride
 	}
-	target, ok := parseScoreTarget(kind, value)
+	target, ok := parseSavedScoreTarget(kind, value)
 	if !ok {
 		return ErrInvalidScoreOverride
 	}
@@ -58,10 +59,11 @@ type scoreTarget struct {
 	kind, namespace, value string
 }
 
-// parseScoreTarget applies the value rules of overrides and pins: the value is
-// trimmed, a tag is namespace:value folded like replaceTags, a category is a
-// Panda gallery category, and an uploader is kept as given. ok is false for an
-// invalid kind or value.
+// parseScoreTarget applies the value rules of overrides and pins, before a
+// tag's namespace short form is expanded: the value is trimmed, a tag is
+// namespace:value folded like replaceTags, a category is a Panda gallery
+// category, and an uploader is kept as given. ok is false for an invalid kind
+// or value.
 func parseScoreTarget(kind, value string) (target scoreTarget, ok bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -85,6 +87,18 @@ func parseScoreTarget(kind, value string) (target scoreTarget, ok bool) {
 		return scoreTarget{kind: kind, value: value}, true
 	}
 	return scoreTarget{}, false
+}
+
+// parseSavedScoreTarget is parseScoreTarget for saving an override or a pin:
+// a tag's namespace that is a short form of the search language becomes its
+// full namespace. Panda has no namespace named like a short form, so the
+// expansion is unconditional.
+func parseSavedScoreTarget(kind, value string) (scoreTarget, bool) {
+	target, ok := parseScoreTarget(kind, value)
+	if full := gallerysearch.NamespaceShortForms[target.namespace]; ok && target.kind == collectorapi.ScoreKindTag && full != "" {
+		target.namespace = full
+	}
+	return target, ok
 }
 
 // RemoveScoreOverride deletes the override with the ID, if it exists.
