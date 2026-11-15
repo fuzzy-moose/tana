@@ -29,21 +29,15 @@ func (s *Service) SetScoreOverride(ctx context.Context, kind, value, rule string
 	if rule != collectorapi.ScoreRuleAlwaysHide && rule != collectorapi.ScoreRuleNeverHide {
 		return ErrInvalidScoreOverride
 	}
-	value = strings.TrimSpace(value)
-	if value == "" {
+	target, ok := parseScoreTarget(kind, value)
+	if !ok {
 		return ErrInvalidScoreOverride
 	}
-	switch kind {
-	case collectorapi.ScoreKindTag:
-		namespace, tag, found := strings.Cut(value, ":")
-		namespace, tag = strings.TrimSpace(namespace), strings.TrimSpace(tag)
-		if !found || namespace == "" || tag == "" {
-			return ErrInvalidScoreOverride
-		}
+	if target.kind == collectorapi.ScoreKindTag {
 		result, err := s.db.Exec(ctx, `INSERT INTO panda_score_overrides (kind, tag_id, rule, created_at)
 			SELECT 'tag', id, $3, now() FROM catalog_tags WHERE namespace = $1 AND value_lower = $2
 			ON CONFLICT (tag_id) WHERE kind = 'tag' DO UPDATE SET rule = excluded.rule`,
-			strings.ToLower(namespace), strings.ToLower(strings.ReplaceAll(tag, "_", " ")), rule)
+			target.namespace, target.value, rule)
 		if err != nil {
 			return err
 		}
@@ -51,19 +45,46 @@ func (s *Service) SetScoreOverride(ctx context.Context, kind, value, rule string
 			return ErrTagNotFound
 		}
 		return nil
+	}
+	_, err := s.db.Exec(ctx, `INSERT INTO panda_score_overrides (kind, value, rule, created_at) VALUES ($1, $2, $3, now())
+		ON CONFLICT (kind, value) WHERE kind <> 'tag' DO UPDATE SET rule = excluded.rule`, target.kind, target.value, rule)
+	return err
+}
+
+// scoreTarget is the tag, uploader or category that an override or a pin
+// names. For a tag, namespace and value are the lowercase keys of
+// catalog_tags (namespace, value_lower).
+type scoreTarget struct {
+	kind, namespace, value string
+}
+
+// parseScoreTarget applies the value rules of overrides and pins: the value is
+// trimmed, a tag is namespace:value folded like replaceTags, a category is a
+// Panda gallery category, and an uploader is kept as given. ok is false for an
+// invalid kind or value.
+func parseScoreTarget(kind, value string) (target scoreTarget, ok bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return scoreTarget{}, false
+	}
+	switch kind {
+	case collectorapi.ScoreKindTag:
+		namespace, tag, found := strings.Cut(value, ":")
+		namespace, tag = strings.TrimSpace(namespace), strings.TrimSpace(tag)
+		if !found || namespace == "" || tag == "" {
+			return scoreTarget{}, false
+		}
+		return scoreTarget{kind, strings.ToLower(namespace), strings.ToLower(strings.ReplaceAll(tag, "_", " "))}, true
 	case collectorapi.ScoreKindCategory:
 		categories, err := panda.NormalizeCategories([]string{value})
 		if err != nil {
-			return ErrInvalidScoreOverride
+			return scoreTarget{}, false
 		}
-		value = categories[0]
+		return scoreTarget{kind: kind, value: categories[0]}, true
 	case collectorapi.ScoreKindUploader:
-	default:
-		return ErrInvalidScoreOverride
+		return scoreTarget{kind: kind, value: value}, true
 	}
-	_, err := s.db.Exec(ctx, `INSERT INTO panda_score_overrides (kind, value, rule, created_at) VALUES ($1, $2, $3, now())
-		ON CONFLICT (kind, value) WHERE kind <> 'tag' DO UPDATE SET rule = excluded.rule`, kind, value, rule)
-	return err
+	return scoreTarget{}, false
 }
 
 // RemoveScoreOverride deletes the override with the ID, if it exists.

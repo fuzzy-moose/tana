@@ -153,13 +153,19 @@ A user action that makes every Panda gallery at or before a catalog position see
 A set of weights for tags, uploaders, and Panda gallery categories, calculated from the user's evidence (Panda gallery verdicts, displayed Panda galleries, and optionally Panda favorites), together with a score threshold. At most one model is active.
 
 **Panda gallery score**:
-The sum of the weights of a gallery's tags, uploader, and category in the active Panda score model.
+The sum of the weights of a gallery's tags, uploader, and category under the active Panda score model. A pinned weight replaces the model's weight of its value, and the tag of a favorite author weighs at least the author bonus.
 
 **Score threshold**:
 The score below which the score filter hides a gallery.
 
 **Score override**:
 A user rule, "always hide" or "never hide", for one tag, uploader, or Panda gallery category.
+
+**Pinned weight**:
+A weight that the user sets by hand for one tag, uploader, or Panda gallery category, also for a value that has no weight in the model. It belongs to no Panda score model and stays until the user removes it. A pinned weight of 0 ignores the value.
+
+**Favorite author**:
+An `artist` tag carried by at least two Panda favorites whose tags the Panda catalog has, as of the last completed Panda favorite sync. A gallery in several Panda favorite collections counts once. The author bonus is the one weight that the user sets as the minimum for the tag of every favorite author. It is off until set, and a pinned weight on the tag wins.
 
 **Score filter**:
 The hiding of Panda galleries in the catalog listing by the active Panda score model, the score overrides, and the user's own verdicts. It is in force while a model is active or an override exists.

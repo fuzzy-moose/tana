@@ -135,3 +135,57 @@ test('a card fits its strip again when a tag gains or loses its mark, not for a 
   rerender(card([tag('glasses'), tag('sole female')]))
   expect(observed).toHaveLength(3)
 })
+
+const items = () => within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
+
+test('cards mark a pinned tag with a pin, coloured by its weight', () => {
+  render(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [
+    { ...tag('liked', 0.9), source: 'pin' }, { ...tag('disliked', -0.9), source: 'pin' }, { ...tag('neutral', 0), source: 'pin' },
+  ] }} /></Theme>)
+  expect(stripTags()).toEqual([['Pinned: liked', 'green'], ['Pinned: disliked', 'red'], ['Pinned: neutral', 'gray']])
+  for (const item of items()) {
+    expect(item.querySelectorAll('svg')).toHaveLength(1)
+    expect(item.querySelector('.rt-Badge')?.firstElementChild?.tagName.toLowerCase()).toBe('svg')
+  }
+  expect(screen.queryByRole('button')).toBeNull()
+})
+
+test('cards star a favorite author unless the tag is pinned, and an override shows only its own mark', () => {
+  const { rerender } = render(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [
+    { ...tag('bonus', 0.9), favorite_author: true, source: 'author_bonus' }, { ...tag('model', -0.5), favorite_author: true }, { ...tag('pinned', 0.1), source: 'pin' },
+  ] }} /></Theme>)
+  expect(stripTags()).toEqual([['Favorite author: bonus', 'green'], ['Favorite author: model', 'red'], ['Pinned: pinned', 'gray']])
+  const [bonus, model, pinned] = items()
+  for (const item of [bonus, model]) {
+    expect(item.querySelectorAll('svg')).toHaveLength(1)
+    expect(item.querySelector('.rt-Badge')?.firstElementChild?.tagName.toLowerCase()).toBe('svg')
+  }
+  expect(bonus.querySelector('svg')!.innerHTML).toBe(model.querySelector('svg')!.innerHTML)
+  const pinIcon = pinned.querySelector('svg')!.innerHTML
+  expect(bonus.querySelector('svg')!.innerHTML).not.toBe(pinIcon)
+  rerender(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [
+    { ...tag('both', 0.9), favorite_author: true, source: 'pin' },
+    { ...overrideTag('hidden', 'always_hide', 0.9), source: 'pin' }, { ...overrideTag('kept', 'never_hide'), favorite_author: true },
+    tag('plain'),
+  ] }} /></Theme>)
+  expect(stripTags()).toEqual([['Pinned: both', 'green'], ['Always hide: hidden', 'red'], ['Never hide: kept', 'green'], ['plain', 'gray']])
+  const [both, hidden, kept, plain] = items()
+  expect(both.querySelector('svg')!.innerHTML).toBe(pinIcon)
+  for (const item of [both, hidden, kept]) expect(item.querySelectorAll('svg')).toHaveLength(1)
+  expect(plain.querySelector('svg')).toBeNull()
+})
+
+test('details name the source of a pinned or bonus weight', () => {
+  render(<PandaDetails gallery={{ ...collectedGallery, score: { value: 2, weights: [
+    { kind: 'tag', label: 'female:glasses', weight: 1.2, source: 'pin' },
+    { kind: 'uploader', label: 'Some uploader', weight: -0.5, source: 'pin' },
+    { kind: 'category', label: 'Doujinshi', weight: 0, source: 'pin' },
+    { kind: 'tag', label: 'artist:someone', weight: 0.8, source: 'author_bonus' },
+    { kind: 'tag', label: 'female:sole female', weight: 0.3 },
+  ] } }} />)
+  expect(screen.getByText('+1.20 female:glasses (pinned)')).toBeTruthy()
+  expect(screen.getByText('-0.50 Uploader Some uploader (pinned)')).toBeTruthy()
+  expect(screen.getByText('0.00 Category Doujinshi (pinned)')).toBeTruthy()
+  expect(screen.getByText('+0.80 artist:someone (author bonus)')).toBeTruthy()
+  expect(screen.getByText('+0.30 female:sole female')).toBeTruthy()
+})

@@ -36,6 +36,10 @@ function preview(overrides: Partial<ScorePreview>): ScorePreview {
     candidate: null,
     active: null,
     overrides: [],
+    pins: [],
+    author_bonus: null,
+    favorite_author_count: 0,
+    favorite_authors: [],
     recent: { ...recent, active: { first_bucket: -2, counts: [2, 2, 4] } },
     ...overrides,
   }

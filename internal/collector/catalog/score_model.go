@@ -16,6 +16,10 @@ import (
 // scorePreviewWeights is the number of the strongest weights a preview returns.
 const scorePreviewWeights = 500
 
+// scorePreviewAuthors is the number of the favorite authors with the most
+// favorites that a preview returns.
+const scorePreviewAuthors = 500
+
 // PreviewScoreModel calculates a candidate score model from the evidence and
 // stores it as the one candidate, replacing every other model that is not
 // active. Without a model it stores none and names the side that is missing.
@@ -74,6 +78,19 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 		preview.Overrides = append(preview.Overrides, override.ScoreOverride)
 	}
 	slices.SortFunc(preview.Overrides, func(a, b collectorapi.ScoreOverride) int { return cmp.Compare(a.ID, b.ID) })
+	preview.Pins = make([]collectorapi.ScorePin, 0, len(filter.pins))
+	for _, pin := range filter.pins {
+		preview.Pins = append(preview.Pins, pin.ScorePin)
+	}
+	preview.AuthorBonus = filter.authorBonus
+	authors, err := favoriteAuthors(ctx, tx)
+	if err != nil {
+		return preview, err
+	}
+	rule := &weightRule{pins: pinnedWeights(filter.pins), authorBonus: filter.authorBonus, favoriteAuthors: make(map[int64]bool, len(authors))}
+	for _, author := range authors {
+		rule.favoriteAuthors[author.tagID] = true
+	}
 	var activeWeights map[scoreValue]float64
 	if active != nil {
 		preview.Active = &collectorapi.ScoreActive{
@@ -110,12 +127,29 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 		if err != nil {
 			return preview, err
 		}
-		tenths := heldOutTenths(galleries, total, values)
+		tenths := heldOutTenths(galleries, total, values, rule)
 		if candidate.HeldOut, err = filter.heldOut(ctx, tx, predicate, predicateArgs, galleries, tenths); err != nil {
 			return preview, err
 		}
 		candidate.SuggestedThresholdTenths = suggestedThreshold(candidate.HeldOut.Interesting)
 		preview.Candidate = &candidate
+	}
+	var candidateWeights map[scoreValue]float64
+	if preview.Candidate != nil {
+		candidateWeights = weights
+	}
+	preview.FavoriteAuthorCount = len(authors)
+	preview.FavoriteAuthors = make([]collectorapi.ScoreFavoriteAuthor, 0, min(len(authors), scorePreviewAuthors))
+	for _, author := range authors[:min(len(authors), scorePreviewAuthors)] {
+		listed := collectorapi.ScoreFavoriteAuthor{Label: author.label, Favorites: author.favorites}
+		weight, ok := rule.effective(scoreValue{kind: collectorapi.ScoreKindTag, tagID: author.tagID}, func(value scoreValue) (float64, bool) {
+			weight, ok := candidateWeights[value]
+			return weight, ok
+		})
+		if ok {
+			listed.Weight = &weight
+		}
+		preview.FavoriteAuthors = append(preview.FavoriteAuthors, listed)
 	}
 	var candidateID *int64
 	if preview.Candidate != nil {
@@ -144,6 +178,35 @@ func modelWeights(ctx context.Context, tx pgx.Tx, modelID int64) (map[scoreValue
 		weights[value] = weight
 	}
 	return weights, rows.Err()
+}
+
+// favoriteAuthor is a row of favorite_authors with the label of its tag.
+type favoriteAuthor struct {
+	tagID     int64
+	label     string
+	favorites int
+}
+
+// favoriteAuthors reads every favorite author with namespace:value in the
+// tag's stored spelling, more favorites first, then by label.
+func favoriteAuthors(ctx context.Context, tx pgx.Tx) ([]favoriteAuthor, error) {
+	rows, err := tx.Query(ctx, `SELECT fa.tag_id, t.namespace || ':' || t.value, fa.favorites
+		FROM favorite_authors fa JOIN catalog_tags t ON t.id = fa.tag_id`)
+	if err != nil {
+		return nil, err
+	}
+	authors, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (favoriteAuthor, error) {
+		var author favoriteAuthor
+		err := row.Scan(&author.tagID, &author.label, &author.favorites)
+		return author, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(authors, func(a, b favoriteAuthor) int {
+		return cmp.Or(cmp.Compare(b.favorites, a.favorites), strings.Compare(a.label, b.label))
+	})
+	return authors, nil
 }
 
 // classifiedGallery is an evidence gallery that also says whether it counts

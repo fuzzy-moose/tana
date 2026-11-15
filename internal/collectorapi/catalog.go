@@ -48,8 +48,14 @@ type CatalogTag struct {
 	Namespace string `json:"namespace"`
 	Value     string `json:"value"`
 	Term      string `json:"term"`
-	// Weight is the tag's weight in the active Panda score model.
+	// Weight is the tag's effective weight under the active Panda score model.
 	Weight *float64 `json:"weight,omitempty"`
+	// Source names where Weight comes from when the model did not calculate
+	// it: ScoreSourcePin, ScoreSourceAuthorBonus, or empty.
+	Source string `json:"source,omitempty"`
+	// FavoriteAuthor says that the tag is a favorite author. It is set only
+	// while a Panda score model is active, like Weight.
+	FavoriteAuthor bool `json:"favorite_author,omitempty"`
 	// Override is the rule of the tag's score override: ScoreRuleAlwaysHide
 	// or ScoreRuleNeverHide.
 	Override string `json:"override,omitempty"`

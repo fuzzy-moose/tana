@@ -218,6 +218,16 @@ func (s *store) savePage(ctx context.Context, current job, page panda.FavoritesP
 		if err := q.CommitFavorites(ctx, id); err != nil {
 			return err
 		}
+		// Only a completed sync refreshes the favorite authors, and only a
+		// full one removes an author (ADR 0019).
+		if err := q.SaveFavoriteAuthors(ctx); err != nil {
+			return err
+		}
+		if current.Full {
+			if err := q.RemoveFormerFavoriteAuthors(ctx); err != nil {
+				return err
+			}
+		}
 		if err := q.CompleteCategory(ctx, dbgen.CompleteCategoryParams{ID: id, SyncedAt: &at}); err != nil {
 			return err
 		}

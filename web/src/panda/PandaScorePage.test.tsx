@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import App from '../App'
-import type { ScorePreview, ScoreWeight } from './score'
+import type { ScoreFavoriteAuthor, ScorePin, ScorePreview, ScoreWeight } from './score'
 
 vi.mock('../collector/FavoriteSyncAction', () => ({ default: () => null }))
 
@@ -30,6 +30,10 @@ function preview(overrides: Partial<ScorePreview> = {}): ScorePreview {
     },
     active: { calculated_at: '2026-10-01T10:00:00Z', favorites: true, threshold_tenths: -5 },
     overrides: [],
+    pins: [],
+    author_bonus: null,
+    favorite_author_count: 0,
+    favorite_authors: [],
     recent: { total: 0, interesting: 0, not_for_me: 0, never_hidden: 0, always_hidden: 0, candidate: histogram, active: histogram },
     ...overrides,
   }
@@ -577,5 +581,389 @@ test('a failed override change shows a message, keeps the state and calculates n
   expect(form().queryByRole('alert')).toBeNull()
   expect(pressed('Uploader Some uploader', 'Never hide')).toBe('false')
   expect(listedOverrides()).toEqual(['Always hide female:glasses'])
+  expect(previewBodies()).toHaveLength(1)
+})
+
+function pinsSection() {
+  return within(screen.getByRole('region', { name: 'Pinned weights' }))
+}
+
+function listedPins() {
+  const list = pinsSection().queryByRole('list')
+  return list ? within(list).getAllByRole('listitem').map((item) => item.querySelector('[data-pin-label]')?.textContent) : []
+}
+
+function pinField(label: string) {
+  return screen.getByRole('spinbutton', { name: `Pinned weight of ${label}` }) as HTMLInputElement
+}
+
+function button(scope: ReturnType<typeof within>, name: string) {
+  return scope.getByRole('button', { name }) as HTMLButtonElement
+}
+
+const glassesPin: ScorePin = { id: 3, kind: 'tag', label: 'female:glasses', weight: 2 }
+const uploaderPin: ScorePin = { id: 4, kind: 'uploader', label: 'Some uploader', weight: -1.5 }
+
+test('a row shows the calculated weight and the pin, and the list shows every pin', async () => {
+  const elsewhere: ScorePin = { id: 5, kind: 'category', label: 'Cosplay', weight: 0 }
+  respond(Response.json(preview({ pins: [glassesPin, elsewhere] })))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  expect(rows()[0]).toEqual(['female:glasses', '-1.42', '2', '31', '12', '-1.10'])
+  expect(pinField('female:glasses').value).toBe('2')
+  expect(weightRow('female:glasses').getByRole('button', { name: 'Remove pin' })).toBeTruthy()
+  expect(pinField('Uploader Some uploader').value).toBe('')
+  expect(button(weightRow('Uploader Some uploader'), 'Pin').disabled).toBe(true)
+  expect(weightRow('Uploader Some uploader').queryByRole('button', { name: 'Remove pin' })).toBeNull()
+  expect(listedPins()).toEqual(['female:glasses +2.00', 'Category Cosplay +0.00'])
+  expect(pinsSection().getAllByRole('button', { name: 'Remove' })).toHaveLength(2)
+  expect(pinsSection().queryByText(/No score model is active/)).toBeNull()
+})
+
+test('the pinned weights show also without a candidate, and say without an active model that they have no effect', async () => {
+  respond(Response.json(preview({ candidate: null, no_model: 'no_verdicts', active: null })))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  expect(pinsSection().getByText('No score model is active: pinned weights have no effect.')).toBeTruthy()
+  expect(pinsSection().getByText('No pinned weights.')).toBeTruthy()
+  expect(listedPins()).toEqual([])
+})
+
+test('Pin, Ignore and Remove pin change the pin at once, keep the threshold and calculate again', async () => {
+  respond(
+    Response.json(measured({ favorites: false })),
+    Response.json(uploaderPin), Response.json(measured({ favorites: false, pins: [uploaderPin] })),
+    Response.json({ ...glassesPin, weight: 0 }), Response.json(measured({ favorites: false, pins: [uploaderPin, { ...glassesPin, weight: 0 }] })),
+  )
+  let finishPreview!: (response: Response) => void
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  await enter('Threshold', '-0.2')
+  await userEvent.type(pinField('Uploader Some uploader'), '-1.5')
+  await userEvent.click(button(weightRow('Uploader Some uploader'), 'Pin'))
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
+  expect(listedPins()).toEqual(['Uploader Some uploader -1.50'])
+  await userEvent.click(button(weightRow('female:glasses'), 'Ignore'))
+  await waitFor(() => expect(previewBodies()).toHaveLength(3))
+  await waitFor(() => expect(listedPins()).toEqual(['Uploader Some uploader -1.50', 'female:glasses +0.00']))
+  expect(pinField('female:glasses').value).toBe('0')
+
+  fetchMock.mockResolvedValueOnce(noContent())
+  fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishPreview = resolve }))
+  await userEvent.click(button(weightRow('Uploader Some uploader'), 'Remove pin'))
+  await waitFor(() => expect(listedPins()).toEqual(['female:glasses +0.00']))
+  expect(pinField('Uploader Some uploader').value).toBe('')
+  expect(weightRow('Uploader Some uploader').queryByRole('button', { name: 'Remove pin' })).toBeNull()
+  finishPreview(Response.json(measured({ favorites: false, pins: [{ ...glassesPin, weight: 0 }] })))
+  await waitFor(() => expect(previewBodies()).toHaveLength(4))
+
+  expect(changeCalls()).toEqual([
+    ['/api/collector/catalog/score/pins', 'POST', '{"kind":"uploader","value":"Some uploader","weight":-1.5}'],
+    ['/api/collector/catalog/score/pins', 'POST', '{"kind":"tag","value":"female:glasses","weight":0}'],
+    ['/api/collector/catalog/score/pins/4', 'DELETE', undefined],
+  ])
+  expect(previewBodies()).toEqual(['{"favorites":null}', '{"favorites":null}', '{"favorites":null}', '{"favorites":null}'])
+  await waitFor(() => expect(button(newModel(), 'Apply model and threshold').disabled).toBe(false))
+  expect(field('Threshold').value).toBe('-0.2')
+})
+
+test('a saved pin replaces the pin of its value or is added before the calculation answers', async () => {
+  let finishFirst!: (response: Response) => void
+  let finishSecond!: (response: Response) => void
+  respond(Response.json(preview({ pins: [glassesPin] })), Response.json({ ...glassesPin, weight: 3 }))
+  fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishFirst = resolve }))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  await userEvent.clear(pinField('female:glasses'))
+  await userEvent.type(pinField('female:glasses'), '3')
+  await userEvent.click(button(weightRow('female:glasses'), 'Pin'))
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
+  expect(listedPins()).toEqual(['female:glasses +3.00'])
+  expect(pinField('female:glasses').value).toBe('3')
+
+  respond(Response.json(uploaderPin))
+  fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishSecond = resolve }))
+  await userEvent.type(pinField('Uploader Some uploader'), '-1.5')
+  await userEvent.click(button(weightRow('Uploader Some uploader'), 'Pin'))
+  await waitFor(() => expect(previewBodies()).toHaveLength(3))
+  expect(listedPins()).toEqual(['female:glasses +3.00', 'Uploader Some uploader -1.50'])
+  expect(pinField('Uploader Some uploader').value).toBe('-1.5')
+  expect(weightRow('Uploader Some uploader').getByRole('button', { name: 'Remove pin' })).toBeTruthy()
+
+  const pins = [{ ...glassesPin, weight: 3 }, uploaderPin]
+  finishFirst(Response.json(preview({ pins: [{ ...glassesPin, weight: 3 }] })))
+  finishSecond(Response.json(preview({ pins })))
+  await waitFor(() => expect(button(newModel(), 'Apply model and threshold').disabled).toBe(false))
+  expect(listedPins()).toEqual(['female:glasses +3.00', 'Uploader Some uploader -1.50'])
+})
+
+test('Remove in the list removes that pin', async () => {
+  respond(Response.json(preview({ pins: [glassesPin, uploaderPin] })), noContent(), Response.json(preview({ pins: [glassesPin] })))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  await userEvent.click(within(pinsSection().getByText('Uploader Some uploader -1.50').closest('li')!).getByRole('button', { name: 'Remove' }))
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
+  expect(changeCalls()).toEqual([['/api/collector/catalog/score/pins/4', 'DELETE', undefined]])
+  expect(listedPins()).toEqual(['female:glasses +2.00'])
+})
+
+test('pins stay usable during the calculation that follows, and the newest calculation wins', async () => {
+  let finishFirst!: (response: Response) => void
+  let finishSecond!: (response: Response) => void
+  respond(Response.json(measured()), Response.json(glassesPin))
+  fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishFirst = resolve }))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  await userEvent.type(pinField('female:glasses'), '2')
+  await userEvent.click(button(weightRow('female:glasses'), 'Pin'))
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
+  expect(button(newModel(), 'Apply model and threshold').disabled).toBe(true)
+  expect(button(weightRow('Uploader Some uploader'), 'Ignore').disabled).toBe(false)
+
+  respond(Response.json({ ...uploaderPin, weight: 0 }))
+  fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishSecond = resolve }))
+  await userEvent.click(button(weightRow('Uploader Some uploader'), 'Ignore'))
+  await waitFor(() => expect(previewBodies()).toHaveLength(3))
+  expect(changeCalls()).toHaveLength(2)
+  finishSecond(Response.json(switched()))
+  await newModel().findByText('Suggested: -0.3')
+  finishFirst(Response.json(measured({ candidate: { ...measured().candidate!, suggested_threshold_tenths: -1 } })))
+  await waitFor(() => expect(button(newModel(), 'Apply model and threshold').disabled).toBe(false))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(newModel().getByText('Suggested: -0.3')).toBeTruthy()
+  expect(newModel().queryByText('Suggested: -0.1')).toBeNull()
+})
+
+test('a failed pin change shows a message beside the control, keeps the pins and calculates nothing', async () => {
+  respond(
+    Response.json(preview({ pins: [glassesPin] })),
+    Response.json({ error: 'collector_unavailable' }, { status: 502 }),
+    Response.json({ error: 'collector_unavailable' }, { status: 502 }),
+  )
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  await userEvent.click(button(weightRow('Uploader Some uploader'), 'Ignore'))
+  expect((await newModel().findByRole('alert')).textContent).toMatch(/^Could not change the pin\. The request could not be confirmed\./)
+  expect(pinsSection().queryByRole('alert')).toBeNull()
+  expect(listedPins()).toEqual(['female:glasses +2.00'])
+  expect(pinField('Uploader Some uploader').value).toBe('')
+
+  await userEvent.click(button(pinsSection(), 'Remove'))
+  expect((await pinsSection().findByRole('alert')).textContent).toMatch(/^Could not change the pin\. The request could not be confirmed\./)
+  expect(newModel().queryByRole('alert')).toBeNull()
+  expect(listedPins()).toEqual(['female:glasses +2.00'])
+  expect(pinField('female:glasses').value).toBe('2')
+  expect(previewBodies()).toHaveLength(1)
+})
+
+function pinForm() {
+  return within(screen.getByRole('form', { name: 'Add pin' }))
+}
+
+test('the pin form pins a tag, an uploader or a category, also without a candidate or an active model', async () => {
+  const otherPin: ScorePin = { id: 8, kind: 'tag', label: 'other:tag', weight: 0 }
+  const someonePin: ScorePin = { id: 9, kind: 'uploader', label: 'Someone', weight: -1.5 }
+  const cosplayPin: ScorePin = { id: 10, kind: 'category', label: 'Cosplay', weight: 2 }
+  const empty = preview({ candidate: null, no_model: 'no_verdicts', active: null })
+  let finishPreview!: (response: Response) => void
+  respond(Response.json(empty), Response.json(otherPin))
+  fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishPreview = resolve }))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  const add = () => button(pinForm(), 'Add pin')
+  const value = () => pinForm().getByRole('textbox', { name: 'Tag (namespace:value)' }) as HTMLInputElement
+  const weight = () => pinForm().getByRole('spinbutton', { name: 'Weight' }) as HTMLInputElement
+  expect(pinForm().getByRole('heading', { name: 'Add pin' })).toBeTruthy()
+  expect(weight().step).toBe('any')
+  expect(add().disabled).toBe(true)
+  await userEvent.type(value(), '   ')
+  await userEvent.type(weight(), '0')
+  expect(add().disabled).toBe(true)
+  await userEvent.type(value(), 'other:tag  ')
+  await userEvent.clear(weight())
+  expect(add().disabled).toBe(true)
+  await userEvent.type(weight(), '0')
+  await userEvent.click(add())
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
+  expect(listedPins()).toEqual(['other:tag +0.00'])
+  expect(value().value).toBe('')
+  expect(weight().value).toBe('')
+  finishPreview(Response.json({ ...empty, pins: [otherPin] }))
+
+  respond(Response.json(someonePin), Response.json({ ...empty, pins: [otherPin, someonePin] }))
+  await userEvent.click(pinForm().getByRole('radio', { name: 'Uploader' }))
+  await userEvent.type(pinForm().getByRole('textbox', { name: 'Uploader (exactly as Panda writes it)' }), ' Someone ')
+  await userEvent.type(weight(), '-1.5')
+  await userEvent.click(add())
+  await waitFor(() => expect(previewBodies()).toHaveLength(3))
+  await waitFor(() => expect(listedPins()).toEqual(['other:tag +0.00', 'Uploader Someone -1.50']))
+
+  respond(Response.json(cosplayPin), Response.json({ ...empty, pins: [otherPin, someonePin, cosplayPin] }))
+  await userEvent.click(pinForm().getByRole('radio', { name: 'Category' }))
+  expect(pinForm().queryByRole('textbox')).toBeNull()
+  await userEvent.selectOptions(pinForm().getByRole('combobox', { name: 'Category' }), 'Cosplay')
+  await userEvent.type(weight(), '2')
+  await userEvent.click(add())
+  await waitFor(() => expect(previewBodies()).toHaveLength(4))
+  await waitFor(() => expect(listedPins()).toEqual(['other:tag +0.00', 'Uploader Someone -1.50', 'Category Cosplay +2.00']))
+  expect(changeCalls()).toEqual([
+    ['/api/collector/catalog/score/pins', 'POST', '{"kind":"tag","value":"other:tag","weight":0}'],
+    ['/api/collector/catalog/score/pins', 'POST', '{"kind":"uploader","value":"Someone","weight":-1.5}'],
+    ['/api/collector/catalog/score/pins', 'POST', '{"kind":"category","value":"Cosplay","weight":2}'],
+  ])
+})
+
+test('a failed pin from the form shows a message in the form, keeps the fields and the pins, and calculates nothing', async () => {
+  respond(
+    Response.json(preview({ pins: [glassesPin] })),
+    Response.json({ error: 'tag_not_found' }, { status: 404 }),
+    Response.json({ error: 'invalid_pin' }, { status: 400 }),
+  )
+  render(<App />)
+  await screen.findByRole('region', { name: 'Pinned weights' })
+  const value = () => pinForm().getByRole('textbox') as HTMLInputElement
+  const weight = () => pinForm().getByRole('spinbutton', { name: 'Weight' }) as HTMLInputElement
+  await userEvent.type(value(), 'no:such tag')
+  await userEvent.type(weight(), '1.5')
+  await userEvent.click(button(pinForm(), 'Add pin'))
+  expect((await pinForm().findByRole('alert')).textContent).toBe('Could not change the pin. No gallery in the Panda catalog has this tag.')
+  expect(value().value).toBe('no:such tag')
+  expect(weight().value).toBe('1.5')
+
+  await userEvent.clear(value())
+  await userEvent.type(value(), 'nonamespace')
+  await userEvent.click(button(pinForm(), 'Add pin'))
+  await waitFor(() => expect(pinForm().getByRole('alert').textContent).toBe('Could not change the pin. Enter a tag as namespace:value, an uploader name, or a Panda gallery category.'))
+  expect(value().value).toBe('nonamespace')
+  expect(weight().value).toBe('1.5')
+  expect(listedPins()).toEqual(['female:glasses +2.00'])
+  expect(pinsSection().getAllByRole('alert')).toHaveLength(1)
+  expect(newModel().queryByRole('alert')).toBeNull()
+  expect(previewBodies()).toHaveLength(1)
+})
+
+function authorsSection() {
+  return within(screen.getByRole('region', { name: 'Favorite authors' }))
+}
+
+function listedAuthors() {
+  const list = authorsSection().queryByRole('list')
+  return list ? within(list).getAllByRole('listitem').map((item) => [...item.querySelectorAll('[data-author-cell]')].map((cell) => cell.textContent)) : []
+}
+
+function author(index: number, overrides: Partial<ScoreFavoriteAuthor> = {}): ScoreFavoriteAuthor {
+  return { label: `artist:author ${index}`, favorites: 2, weight: null, ...overrides }
+}
+
+test('lists the favorite authors in the preview order, also without a candidate', async () => {
+  respond(Response.json(preview({
+    candidate: null, no_model: 'no_verdicts', favorite_author_count: 1234,
+    favorite_authors: [author(0, { label: 'artist:most', favorites: 31, weight: 1.5 }), author(1, { label: 'artist:fewer', favorites: 2, weight: null })],
+  })))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Favorite authors' })
+  expect(authorsSection().getByText('1,234 favorite authors: artist tags that at least 2 Panda favorites carry.')).toBeTruthy()
+  expect(listedAuthors()).toEqual([['artist:most', '31 favorites', '+1.50'], ['artist:fewer', '2 favorites', '–']])
+  expect(authorsSection().queryByText(/No score model is active/)).toBeNull()
+})
+
+test('shows 50 favorite authors at first and 50 more per click', async () => {
+  respond(Response.json(preview({ favorite_author_count: 120, favorite_authors: Array.from({ length: 120 }, (_, index) => author(index)) })))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Favorite authors' })
+  expect(listedAuthors()).toHaveLength(50)
+  await userEvent.click(button(authorsSection(), 'Show more'))
+  expect(listedAuthors()).toHaveLength(100)
+  await userEvent.click(button(authorsSection(), 'Show more'))
+  expect(listedAuthors()).toHaveLength(120)
+  expect(listedAuthors()[119][0]).toBe('artist:author 119')
+  expect(authorsSection().queryByRole('button', { name: 'Show more' })).toBeNull()
+})
+
+test('without an active model the section says that the author bonus has no effect', async () => {
+  respond(Response.json(preview({ candidate: null, no_model: 'no_verdicts', active: null })))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Favorite authors' })
+  expect(authorsSection().getByText('No score model is active: the author bonus has no effect.')).toBeTruthy()
+})
+
+test('Save bonus and Turn off bonus change the bonus, keep the threshold and calculate again', async () => {
+  respond(
+    Response.json(measured()),
+    noContent(), Response.json(measured({ author_bonus: 1.5 })),
+    noContent(), Response.json(measured()),
+  )
+  render(<App />)
+  await screen.findByRole('region', { name: 'Favorite authors' })
+  const bonus = () => authorsSection().getByRole('spinbutton', { name: 'Author bonus' }) as HTMLInputElement
+  expect(bonus().value).toBe('')
+  expect(bonus().step).toBe('0.1')
+  expect(authorsSection().getByText('The author bonus is off.')).toBeTruthy()
+  expect(authorsSection().queryByRole('button', { name: 'Turn off bonus' })).toBeNull()
+  expect(button(authorsSection(), 'Save bonus').disabled).toBe(true)
+  await userEvent.type(bonus(), '0')
+  expect(button(authorsSection(), 'Save bonus').disabled).toBe(true)
+  await userEvent.clear(bonus())
+  await userEvent.type(bonus(), '-1')
+  expect(button(authorsSection(), 'Save bonus').disabled).toBe(true)
+
+  await enter('Threshold', '-0.2')
+  await userEvent.clear(bonus())
+  await userEvent.type(bonus(), '1.50')
+  await userEvent.click(button(authorsSection(), 'Save bonus'))
+  await authorsSection().findByText("Each favorite author's tag weighs at least +1.50.")
+  expect(bonus().value).toBe('1.5')
+  expect(field('Threshold').value).toBe('-0.2')
+
+  await userEvent.click(button(authorsSection(), 'Turn off bonus'))
+  await authorsSection().findByText('The author bonus is off.')
+  expect(bonus().value).toBe('')
+  expect(field('Threshold').value).toBe('-0.2')
+  expect(changeCalls()).toEqual([
+    ['/api/collector/catalog/score/author-bonus', 'PUT', '{"bonus":1.5}'],
+    ['/api/collector/catalog/score/author-bonus', 'PUT', '{"bonus":null}'],
+  ])
+  expect(previewBodies()).toEqual(['{"favorites":null}', '{"favorites":true}', '{"favorites":true}'])
+})
+
+test('a failed bonus change shows a message in the section and calculates nothing', async () => {
+  respond(Response.json(preview()), Response.json({ error: 'invalid_author_bonus' }, { status: 400 }))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Favorite authors' })
+  await userEvent.type(authorsSection().getByRole('spinbutton', { name: 'Author bonus' }), '9999')
+  await userEvent.click(button(authorsSection(), 'Save bonus'))
+  expect((await authorsSection().findByRole('alert')).textContent).toBe('Could not save the author bonus. Enter a number above 0.')
+  expect(authorsSection().getByText('The author bonus is off.')).toBeTruthy()
+  expect(previewBodies()).toHaveLength(1)
+})
+
+test('the pin controls of an author pin its tag before the calculation answers', async () => {
+  const authorPin: ScorePin = { id: 11, kind: 'tag', label: 'artist:most', weight: 2.5 }
+  respond(
+    Response.json(preview({ favorite_author_count: 1, favorite_authors: [author(0, { label: 'artist:most', favorites: 31, weight: 1.5 })] })),
+    Response.json(authorPin),
+  )
+  fetchMock.mockReturnValueOnce(new Promise(() => {}))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Favorite authors' })
+  await userEvent.type(pinField('artist:most'), '2.5')
+  await userEvent.click(button(authorsSection(), 'Pin'))
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
+  expect(listedPins()).toEqual(['artist:most +2.50'])
+  expect(authorsSection().getByRole('button', { name: 'Remove pin' })).toBeTruthy()
+  expect(changeCalls()).toEqual([['/api/collector/catalog/score/pins', 'POST', '{"kind":"tag","value":"artist:most","weight":2.5}']])
+})
+
+test('a failed pin change from the author list shows its message in the section', async () => {
+  respond(
+    Response.json(preview({ favorite_author_count: 1, favorite_authors: [author(0)] })),
+    Response.json({ error: 'collector_unavailable' }, { status: 502 }),
+  )
+  render(<App />)
+  await screen.findByRole('region', { name: 'Favorite authors' })
+  await userEvent.click(button(authorsSection(), 'Ignore'))
+  expect((await authorsSection().findByRole('alert')).textContent).toMatch(/^Could not change the pin\. The request could not be confirmed\./)
+  expect(pinsSection().queryByRole('alert')).toBeNull()
+  expect(newModel().queryByRole('alert')).toBeNull()
   expect(previewBodies()).toHaveLength(1)
 })

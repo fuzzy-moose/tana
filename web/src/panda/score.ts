@@ -3,6 +3,8 @@ import { collectorMessages } from '../collector/api'
 
 export type ScoreKind = 'tag' | 'uploader' | 'category'
 export type ScoreRule = 'always_hide' | 'never_hide'
+/** Where a weight comes from when the model does not calculate it. */
+export type ScoreSource = 'pin' | 'author_bonus'
 export type NoScoreModel = 'no_verdicts' | 'no_not_for_me' | 'no_acceptable'
 
 /** The names of the score override rules, as the user reads them. */
@@ -64,6 +66,21 @@ export interface ScoreOverride {
   rule: ScoreRule
 }
 
+/** A pinned weight: it replaces the calculated weight of its value. */
+export interface ScorePin {
+  id: number
+  kind: ScoreKind
+  label: string
+  weight: number
+}
+
+/** An artist tag that at least 2 Panda favorites carry, with its effective weight. */
+export interface ScoreFavoriteAuthor {
+  label: string
+  favorites: number
+  weight: number | null
+}
+
 export interface RecentCatalog {
   total: number
   interesting: number
@@ -81,6 +98,10 @@ export interface ScorePreview {
   no_model?: NoScoreModel
   active: ActiveScoreModel | null
   overrides: ScoreOverride[]
+  pins: ScorePin[]
+  author_bonus: number | null
+  favorite_author_count: number
+  favorite_authors: ScoreFavoriteAuthor[]
   recent: RecentCatalog
 }
 
@@ -126,6 +147,48 @@ export const savePandaScoreOverride = (override: { kind: ScoreKind, value: strin
 
 export const removePandaScoreOverride = (id: number, signal: AbortSignal) => request<void>(`/api/collector/catalog/score/overrides/${id}`, { method: 'DELETE', signal }, overrideMessages)
 
+const pinMessages = {
+  ...collectorMessages,
+  tag_not_found: 'No gallery in the Panda catalog has this tag.',
+  invalid_pin: 'Enter a tag as namespace:value, an uploader name, or a Panda gallery category.',
+}
+
+/** Saves a pin and answers it as stored. */
+export const savePandaScorePin = (pin: { kind: ScoreKind, value: string, weight: number }, signal: AbortSignal) => request<ScorePin>('/api/collector/catalog/score/pins', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: pin.kind, value: pin.value, weight: pin.weight }), signal,
+}, pinMessages)
+
+export const removePandaScorePin = (id: number, signal: AbortSignal) => request<void>(`/api/collector/catalog/score/pins/${id}`, { method: 'DELETE', signal }, pinMessages)
+
+/** The answer for one sent tag: whether the Panda catalog has it, its effective weight and its pin. */
+export interface ScoreTagWeight {
+  tag: string
+  known: boolean
+  weight: number | null
+  pin?: ScorePin
+}
+
+/** The effective weights of a list of tags, and whether a score model is active. */
+export interface ScoreTagWeights {
+  active: boolean
+  tags: ScoreTagWeight[]
+}
+
+/** Each tag is sent as `namespace:value`; the answer has one entry per tag, in the sent order. */
+export const getPandaTagWeights = (tags: string[], signal: AbortSignal) => request<ScoreTagWeights>('/api/collector/catalog/score/tags', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tags }), signal,
+}, collectorMessages)
+
+const bonusMessages = {
+  ...collectorMessages,
+  invalid_author_bonus: 'Enter a number above 0.',
+}
+
+/** `bonus` null turns the author bonus off. */
+export const savePandaAuthorBonus = (bonus: number | null, signal: AbortSignal) => request<void>('/api/collector/catalog/score/author-bonus', {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bonus }), signal,
+}, bonusMessages)
+
 function countBelow(histogram: ScoreHistogram | null, thresholdTenths: number) {
   if (!histogram) return 0
   return histogram.counts.reduce((sum, count, index) => histogram.first_bucket + index < thresholdTenths ? sum + count : sum, 0)
@@ -149,4 +212,14 @@ export function currentHiddenShare(preview: ScorePreview) {
   if (active) return recentHiddenShare(recent, recent.active, active.threshold_tenths)
   if (overrides.length === 0) return 0
   return recentHiddenShare(recent, null, 0)
+}
+
+/** A weight with its sign and two decimals, or a dash when there is none. */
+export const formatWeight = (weight: number | null) => weight === null ? '–' : `${weight >= 0 ? '+' : ''}${weight.toFixed(2)}`
+
+/** The field's number, or null when it holds no number. */
+export function parseNumber(text: string) {
+  if (text.trim() === '') return null
+  const value = Number(text)
+  return Number.isFinite(value) ? value : null
 }

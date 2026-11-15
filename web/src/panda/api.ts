@@ -3,7 +3,7 @@ import { collectorMessages } from '../collector/api'
 import type { SearchCompletion, TagSuggestion } from '../galleries/api'
 import { isVerdictView } from '../navigation'
 import type { PandaListing, PandaScoreFilter } from '../navigation'
-import type { ScoreRule } from './score'
+import type { ScoreRule, ScoreSource } from './score'
 
 export type PandaVerdict = 'interesting' | 'not_for_me'
 
@@ -14,6 +14,9 @@ export interface PandaSummaryTag extends TagSuggestion {
   weight?: number
   /** The rule of the tag's score override. */
   override?: ScoreRule
+  source?: ScoreSource
+  /** The tag names a favorite author. */
+  favorite_author?: boolean
 }
 
 export interface PandaGallery {
@@ -37,6 +40,7 @@ export interface PandaScoreWeight {
   kind: 'tag' | 'uploader' | 'category'
   label: string
   weight: number
+  source?: ScoreSource
 }
 
 /** What the score filter knows about a gallery; the verdict rule is left to the card's own verdict. */

@@ -170,6 +170,46 @@ func HandleRemoveScoreOverride(service *catalog.Service) http.Handler {
 	})
 }
 
+// HandleSetScorePin answers with the stored pin. A body without a weight, or
+// with a null weight, is an invalid pin.
+func HandleSetScorePin(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Kind   string   `json:"kind"`
+			Value  string   `json:"value"`
+			Weight *float64 `json:"weight"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if input.Weight == nil {
+			catalogError(w, r, catalog.ErrInvalidScorePin)
+			return
+		}
+		pin, err := service.SetScorePin(r.Context(), input.Kind, input.Value, *input.Weight)
+		if err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, pin)
+	})
+}
+
+func HandleRemoveScorePin(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			catalogError(w, r, catalog.ErrInvalidScorePin)
+			return
+		}
+		if err := service.RemoveScorePin(r.Context(), id); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 func HandlePreviewScoreModel(service *catalog.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var options collectorapi.ScorePreviewOptions
@@ -218,6 +258,43 @@ func HandleSetScoreThreshold(service *catalog.Service) http.Handler {
 	})
 }
 
+// HandleSetAuthorBonus sets the author bonus; a null or absent bonus turns it
+// off.
+func HandleSetAuthorBonus(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Bonus *float64 `json:"bonus"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.SetAuthorBonus(r.Context(), input.Bonus); err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// HandleScoreTagWeights answers with the effective weight and the pin of each
+// sent tag, in the sent order.
+func HandleScoreTagWeights(service *catalog.Service) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Tags []string `json:"tags"`
+		}
+		if !server.DecodeJSON(w, r, &input) {
+			return
+		}
+		weights, err := service.ScoreTagWeights(r.Context(), input.Tags)
+		if err != nil {
+			catalogError(w, r, err)
+			return
+		}
+		server.WriteJSON(w, http.StatusOK, weights)
+	})
+}
+
 func HandleRemoveScoreModel(service *catalog.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := service.RemoveScoreModel(r.Context()); err != nil {
@@ -240,6 +317,10 @@ func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_verdict"})
 	case errors.Is(err, catalog.ErrInvalidScoreOverride):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_override"})
+	case errors.Is(err, catalog.ErrInvalidScorePin):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_pin"})
+	case errors.Is(err, catalog.ErrInvalidAuthorBonus):
+		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_author_bonus"})
 	case errors.Is(err, catalog.ErrTagNotFound):
 		server.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "tag_not_found"})
 	case errors.Is(err, catalog.ErrInvalidScoreThreshold):

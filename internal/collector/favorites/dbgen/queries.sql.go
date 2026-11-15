@@ -521,6 +521,18 @@ func (q *Queries) ReconcileFavorites(ctx context.Context, categoryID int64) erro
 	return err
 }
 
+const removeFormerFavoriteAuthors = `-- name: RemoveFormerFavoriteAuthors :exec
+DELETE FROM favorite_authors a
+WHERE (SELECT count(DISTINCT f.gallery_id) FROM favorites f
+    JOIN catalog_gallery_tags gt ON gt.gallery_id = f.gallery_id
+    WHERE gt.tag_id = a.tag_id) < 2
+`
+
+func (q *Queries) RemoveFormerFavoriteAuthors(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, removeFormerFavoriteAuthors)
+	return err
+}
+
 const renameCategory = `-- name: RenameCategory :exec
 UPDATE favorite_categories SET name = $1 WHERE id = $2
 `
@@ -608,6 +620,25 @@ func (q *Queries) SaveFavorite(ctx context.Context, arg SaveFavoriteParams) erro
 		arg.Token,
 		arg.AddedAt,
 	)
+	return err
+}
+
+const saveFavoriteAuthors = `-- name: SaveFavoriteAuthors :exec
+INSERT INTO favorite_authors (tag_id, favorites)
+SELECT t.id, count(DISTINCT f.gallery_id)
+FROM favorites f
+JOIN catalog_gallery_tags gt ON gt.gallery_id = f.gallery_id
+JOIN catalog_tags t ON t.id = gt.tag_id
+WHERE t.namespace = 'artist'
+GROUP BY t.id
+HAVING count(DISTINCT f.gallery_id) >= 2
+ON CONFLICT (tag_id) DO UPDATE SET favorites = excluded.favorites
+`
+
+// A favorite author is an artist tag that at least 2 distinct favorite
+// galleries carry in the catalog, counted over every stored collection.
+func (q *Queries) SaveFavoriteAuthors(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, saveFavoriteAuthors)
 	return err
 }
 

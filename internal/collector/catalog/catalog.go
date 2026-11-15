@@ -255,10 +255,11 @@ func catalogPredicate(ctx context.Context, tx pgx.Tx, options collectorapi.Catal
 // tags. While the score filter is not in force, these are its first tags in
 // namespace order. While it is in force, all tags of the item are ranked
 // first: the tags with a tag score override, "never hide" before "always
-// hide", then the tags with a weight in the active model by the absolute value
-// of their weight, the strongest first, then all other tags; ties keep
-// namespace order. Each tag carries its override rule and its weight, if it
-// has them. Uploader and category weights and overrides play no part.
+// hide", then the tags with an effective weight under the active model by the
+// absolute value of their weight, the strongest first, then all other tags;
+// ties keep namespace order. Each tag carries its override rule and its weight
+// with its source, if it has them, and with an active model whether it is a
+// favorite author. Uploader and category weights and overrides play no part.
 func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogItem, filter scoreFilter) error {
 	byID := make(map[int64]*collectorapi.CatalogItem, len(items))
 	ids := make([]int64, 0, len(items))
@@ -267,12 +268,14 @@ func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogI
 		ids = append(ids, items[i].GalleryID)
 	}
 	args := pgdb.Args{ids}
-	weight := "NULL::float8"
+	weight, source, favorite := "NULL::float8", "''", "false"
 	if filter.model != nil {
 		// A scalar probe per tag, as in scoreSum, keeps the plan independent of
 		// the statistics of a model that was just applied.
-		weight = `(SELECT w.weight FROM panda_score_weights w
-			WHERE w.model_id = ` + args.Add(filter.model.id) + `::bigint AND w.kind = 'tag' AND w.tag_id = gt.tag_id)`
+		modelID := args.Add(filter.model.id) + "::bigint"
+		weight = filter.weightSQL(modelID, collectorapi.ScoreKindTag, "gt.tag_id")
+		source = filter.sourceSQL(modelID, collectorapi.ScoreKindTag, "gt.tag_id")
+		favorite = favoriteAuthorSQL("gt.tag_id")
 	}
 	rules := make(map[int64]string)
 	for _, override := range filter.overrides {
@@ -282,7 +285,7 @@ func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogI
 	}
 	// Namespace order comes from the database's collation, so the ranking
 	// below keeps the row order for ties.
-	rows, err := tx.Query(ctx, `SELECT gt.gallery_id, gt.tag_id, t.namespace, t.value, `+weight+`
+	rows, err := tx.Query(ctx, `SELECT gt.gallery_id, gt.tag_id, t.namespace, t.value, `+weight+`, `+source+`, `+favorite+`
 		FROM catalog_gallery_tags gt JOIN catalog_tags t ON t.id = gt.tag_id
 		WHERE gt.gallery_id = ANY($1::bigint[]) ORDER BY t.namespace, t.value_lower`, args...)
 	if err != nil {
@@ -293,7 +296,7 @@ func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogI
 	for rows.Next() {
 		var id, tagID int64
 		var tag collectorapi.CatalogTag
-		if err := rows.Scan(&id, &tagID, &tag.Namespace, &tag.Value, &tag.Weight); err != nil {
+		if err := rows.Scan(&id, &tagID, &tag.Namespace, &tag.Value, &tag.Weight, &tag.Source, &tag.FavoriteAuthor); err != nil {
 			return err
 		}
 		tag.Override = rules[tagID]

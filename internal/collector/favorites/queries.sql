@@ -152,3 +152,22 @@ WHERE state = 'failed' AND (SELECT baseline_state FROM favorite_download_setting
 
 -- name: ClearBanRetries :exec
 UPDATE favorite_syncs SET retry_at = NULL WHERE state = 'running' AND strpos(last_error, sqlc.arg(ban_error)) > 0;
+
+-- name: SaveFavoriteAuthors :exec
+-- A favorite author is an artist tag that at least 2 distinct favorite
+-- galleries carry in the catalog, counted over every stored collection.
+INSERT INTO favorite_authors (tag_id, favorites)
+SELECT t.id, count(DISTINCT f.gallery_id)
+FROM favorites f
+JOIN catalog_gallery_tags gt ON gt.gallery_id = f.gallery_id
+JOIN catalog_tags t ON t.id = gt.tag_id
+WHERE t.namespace = 'artist'
+GROUP BY t.id
+HAVING count(DISTINCT f.gallery_id) >= 2
+ON CONFLICT (tag_id) DO UPDATE SET favorites = excluded.favorites;
+
+-- name: RemoveFormerFavoriteAuthors :exec
+DELETE FROM favorite_authors a
+WHERE (SELECT count(DISTINCT f.gallery_id) FROM favorites f
+    JOIN catalog_gallery_tags gt ON gt.gallery_id = f.gallery_id
+    WHERE gt.tag_id = a.tag_id) < 2;

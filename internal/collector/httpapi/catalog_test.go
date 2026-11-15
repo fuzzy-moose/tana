@@ -238,6 +238,138 @@ func TestScoreOverrideValidation(t *testing.T) {
 	}
 }
 
+func TestScorePinValidation(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	service := catalog.New(db, "https://favorites.example.test")
+	mux := http.NewServeMux()
+	mux.Handle("POST /api/catalog/score/pins", HandleSetScorePin(service))
+	mux.Handle("DELETE /api/catalog/score/pins/{id}", HandleRemoveScorePin(service))
+	const path = "/api/catalog/score/pins"
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+		want   int
+		code   string
+	}{
+		{http.MethodPost, path, `{"kind":"uploader","value":"Some One"}`, http.StatusBadRequest, "invalid_pin"},
+		{http.MethodPost, path, `{"kind":"uploader","value":"Some One","weight":null}`, http.StatusBadRequest, "invalid_pin"},
+		{http.MethodPost, path, `{"kind":"title","value":"x","weight":1}`, http.StatusBadRequest, "invalid_pin"},
+		{http.MethodPost, path, `{"kind":"tag","value":"female:glasses","weight":1}`, http.StatusNotFound, "tag_not_found"},
+		{http.MethodPost, path, `{"kind":"uploader","value":"Some One","weight":1,"unknown":true}`, http.StatusBadRequest, "invalid_json"},
+		{http.MethodDelete, path + "/3", "", http.StatusNoContent, ""},
+		{http.MethodDelete, path + "/0", "", http.StatusBadRequest, "invalid_pin"},
+		{http.MethodDelete, path + "/x", "", http.StatusBadRequest, "invalid_pin"},
+	} {
+		t.Run(tc.method+" "+tc.path+" "+tc.body, func(t *testing.T) {
+			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
+			if response.Code != tc.want {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			if tc.code == "" {
+				if response.Body.Len() != 0 {
+					t.Fatalf("body = %q", response.Body.String())
+				}
+				return
+			}
+			var result map[string]string
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result["error"] != tc.code {
+				t.Fatalf("response = %s, %v", response.Body.String(), err)
+			}
+		})
+	}
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"kind":"uploader","value":" Some One ","weight":-2.5}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	var pin map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &pin); err != nil || response.Code != http.StatusOK {
+		t.Fatalf("response = %d %s, %v", response.Code, response.Body.String(), err)
+	}
+	if id, _ := pin["id"].(float64); id <= 0 || len(pin) != 4 || pin["kind"] != "uploader" || pin["label"] != "Some One" || pin["weight"] != -2.5 {
+		t.Fatalf("pin = %v", pin)
+	}
+}
+
+func TestScoreTagWeightsRoute(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	handler := HandleScoreTagWeights(catalog.New(db, "https://favorites.example.test"))
+	for _, tc := range []struct {
+		body string
+		want int
+	}{
+		{`{"tags":["female:glasses"]}`, http.StatusOK},
+		{`{"tags":["female:glasses"],"unknown":true}`, http.StatusBadRequest},
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/api/catalog/score/tags", strings.NewReader(tc.body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != tc.want {
+			t.Fatalf("%s: response = %d %s", tc.body, response.Code, response.Body.String())
+		}
+		if tc.want != http.StatusOK {
+			var result map[string]string
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result["error"] != "invalid_json" {
+				t.Fatalf("response = %s, %v", response.Body.String(), err)
+			}
+			continue
+		}
+		var result struct {
+			Active *bool                        `json:"active"`
+			Tags   []map[string]json.RawMessage `json:"tags"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Active == nil || *result.Active || len(result.Tags) != 1 {
+			t.Fatalf("response = %s, %v", response.Body.String(), err)
+		}
+		entry := result.Tags[0]
+		if len(entry) != 3 || string(entry["tag"]) != `"female:glasses"` || string(entry["known"]) != "false" || string(entry["weight"]) != "null" {
+			t.Fatalf("entry = %s", response.Body.String())
+		}
+	}
+}
+
+func TestAuthorBonusValidation(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	handler := HandleSetAuthorBonus(catalog.New(db, "https://favorites.example.test"))
+	for _, tc := range []struct {
+		body string
+		want int
+		code string
+	}{
+		{`{"bonus":1.5}`, http.StatusNoContent, ""},
+		{`{"bonus":null}`, http.StatusNoContent, ""},
+		{`{}`, http.StatusNoContent, ""},
+		{`{"bonus":0}`, http.StatusBadRequest, "invalid_author_bonus"},
+		{`{"bonus":-1}`, http.StatusBadRequest, "invalid_author_bonus"},
+		{`{"bonus":2e300}`, http.StatusBadRequest, "invalid_author_bonus"},
+		{`{"bonus":1,"unknown":true}`, http.StatusBadRequest, "invalid_json"},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPut, "/api/catalog/score/author-bonus", strings.NewReader(tc.body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != tc.want {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			if tc.code == "" {
+				if response.Body.Len() != 0 {
+					t.Fatalf("body = %q", response.Body.String())
+				}
+				return
+			}
+			var result map[string]string
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result["error"] != tc.code {
+				t.Fatalf("response = %s, %v", response.Body.String(), err)
+			}
+		})
+	}
+}
+
 func TestScorePreviewValidation(t *testing.T) {
 	db := pgtest.Open(t, storage.Migrations())
 	handler := HandlePreviewScoreModel(catalog.New(db, "https://favorites.example.test"))

@@ -23,6 +23,12 @@ const (
 	ScoreRuleNeverHide  = "never_hide"
 )
 
+// The sources of an effective weight that the model did not calculate.
+const (
+	ScoreSourcePin         = "pin"
+	ScoreSourceAuthorBonus = "author_bonus"
+)
+
 // ScoreRuleBelowThreshold is the rule of a catalog item whose score is below
 // the active model's threshold.
 const ScoreRuleBelowThreshold = "below_threshold"
@@ -57,12 +63,14 @@ type CatalogItemScore struct {
 	Weights  []CatalogScoreWeight `json:"weights,omitempty"`
 }
 
-// CatalogScoreWeight is the active weight of one tag, uploader or category of
-// a catalog item, labelled like an override.
+// CatalogScoreWeight is the effective weight of one tag, uploader or category
+// of a catalog item under the active model, labelled like an override. Source
+// names where the weight comes from when the model did not calculate it.
 type CatalogScoreWeight struct {
 	Kind   string  `json:"kind"`
 	Label  string  `json:"label"`
 	Weight float64 `json:"weight"`
+	Source string  `json:"source,omitempty"`
 }
 
 // ScoreOverride is one stored override. Label is namespace:value for a tag
@@ -72,6 +80,14 @@ type ScoreOverride struct {
 	Kind  string `json:"kind"`
 	Label string `json:"label"`
 	Rule  string `json:"rule"`
+}
+
+// ScorePin is one pinned weight, labelled like an override.
+type ScorePin struct {
+	ID     int64   `json:"id"`
+	Kind   string  `json:"kind"`
+	Label  string  `json:"label"`
+	Weight float64 `json:"weight"`
 }
 
 // The reasons a preview offers no model: no verdicts at all, no "Not for me"
@@ -92,7 +108,9 @@ type ScorePreviewOptions struct {
 }
 
 // ScorePreview is a calculated candidate, or the reason there is none, with
-// the evidence it came from and the current overrides.
+// the evidence it came from, the current overrides and the pins, by ID, the
+// author bonus (nil while it is off), the number of favorite authors and those
+// with the most favorites.
 type ScorePreview struct {
 	Favorites bool            `json:"favorites"`
 	Evidence  ScoreEvidence   `json:"evidence"`
@@ -100,7 +118,37 @@ type ScorePreview struct {
 	NoModel   string          `json:"no_model,omitempty"`
 	Active    *ScoreActive    `json:"active"`
 	Overrides []ScoreOverride `json:"overrides"`
+	Pins      []ScorePin      `json:"pins"`
 	Recent    ScoreRecent     `json:"recent"`
+
+	AuthorBonus         *float64              `json:"author_bonus"`
+	FavoriteAuthorCount int                   `json:"favorite_author_count"`
+	FavoriteAuthors     []ScoreFavoriteAuthor `json:"favorite_authors"`
+}
+
+// ScoreFavoriteAuthor is one favorite author: its tag as namespace:value,
+// the number of Panda favorites that carry it, and its effective weight
+// under the candidate, nil without one.
+type ScoreFavoriteAuthor struct {
+	Label     string   `json:"label"`
+	Favorites int      `json:"favorites"`
+	Weight    *float64 `json:"weight"`
+}
+
+// ScoreTagWeights answers a tag weight lookup. Active says whether a Panda
+// score model is active.
+type ScoreTagWeights struct {
+	Active bool             `json:"active"`
+	Tags   []ScoreTagWeight `json:"tags"`
+}
+
+// ScoreTagWeight is the answer for one sent tag. Known says whether the Panda
+// catalog has the tag. Weight is its effective weight, nil without one.
+type ScoreTagWeight struct {
+	Tag    string    `json:"tag"`
+	Known  bool      `json:"known"`
+	Weight *float64  `json:"weight"`
+	Pin    *ScorePin `json:"pin,omitempty"`
 }
 
 // ScoreActive describes the active model.
@@ -127,7 +175,9 @@ type ScoreRecent struct {
 
 // ScoreHistogram counts galleries by score: Counts[i] is the number of
 // galleries with floor(score * 10) == FirstBucket + i. A threshold of t tenths
-// hides the counts of all buckets below t.
+// hides the counts of all buckets below t. The first and the last bucket of a
+// histogram that reaches the window's edge (-1000.0 or 1000.0) also count the
+// scores beyond it.
 type ScoreHistogram struct {
 	FirstBucket int   `json:"first_bucket"`
 	Counts      []int `json:"counts"`
@@ -211,6 +261,60 @@ func (c *Client) SetScoreOverride(ctx context.Context, kind, value, rule string)
 // RemoveScoreOverride removes the override with the ID, if it exists.
 func (c *Client) RemoveScoreOverride(ctx context.Context, id int64) error {
 	return c.scoreRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/catalog/score/overrides/%d", id), nil)
+}
+
+// SetScorePin pins the weight of the tag, uploader or category, replacing its
+// pinned weight, and returns the stored pin.
+func (c *Client) SetScorePin(ctx context.Context, kind, value string, weight float64) (ScorePin, error) {
+	body, err := json.Marshal(struct {
+		Kind   string  `json:"kind"`
+		Value  string  `json:"value"`
+		Weight float64 `json:"weight"`
+	}{kind, value, weight})
+	if err != nil {
+		return ScorePin{}, err
+	}
+	var pin ScorePin
+	err = c.catalogJSONRequest(ctx, http.MethodPost, "/api/catalog/score/pins", bytes.NewReader(body), &pin)
+	return pin, err
+}
+
+// RemoveScorePin removes the pin with the ID, if it exists.
+func (c *Client) RemoveScorePin(ctx context.Context, id int64) error {
+	return c.scoreRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/catalog/score/pins/%d", id), nil)
+}
+
+// SetAuthorBonus sets the author bonus, a number above 0; nil turns it off.
+func (c *Client) SetAuthorBonus(ctx context.Context, bonus *float64) error {
+	body, err := json.Marshal(struct {
+		Bonus *float64 `json:"bonus"`
+	}{bonus})
+	if err != nil {
+		return err
+	}
+	return c.scoreRequest(ctx, http.MethodPut, "/api/catalog/score/author-bonus", bytes.NewReader(body))
+}
+
+// ScoreTagWeights returns the effective weight and the pin of each tag, in the
+// sent order.
+func (c *Client) ScoreTagWeights(ctx context.Context, tags []string) (ScoreTagWeights, error) {
+	if tags == nil {
+		tags = []string{}
+	}
+	body, err := json.Marshal(struct {
+		Tags []string `json:"tags"`
+	}{tags})
+	if err != nil {
+		return ScoreTagWeights{}, err
+	}
+	var weights ScoreTagWeights
+	if err := c.catalogJSONRequest(ctx, http.MethodPost, "/api/catalog/score/tags", bytes.NewReader(body), &weights); err != nil {
+		return ScoreTagWeights{}, err
+	}
+	if len(weights.Tags) != len(tags) {
+		return ScoreTagWeights{}, fmt.Errorf("tag weights: %d entries for %d tags", len(weights.Tags), len(tags))
+	}
+	return weights, nil
 }
 
 // PreviewScoreModel calculates a candidate score model and returns it with

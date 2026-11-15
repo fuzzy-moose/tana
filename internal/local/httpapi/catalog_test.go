@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -523,6 +524,174 @@ func TestLocalScoreOverrides(t *testing.T) {
 	}
 }
 
+func TestLocalScorePins(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES (2, 'token')"); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: 2, Title: "Gallery 2", Posted: 2, Tags: []string{"female:big hat"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.DiscardHandler)
+	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: catalog.New(db, "https://panda.test"), APIToken: "server-secret"})
+	var requests atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		collectorHandler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
+		return w
+	}
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "/api/collector/catalog/score/pins"
+	w := request(client, "POST", path, `{"kind":"tag","value":"female:big_hat","weight":1.5}`)
+	var pin map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &pin); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("post: %d %s, %v", w.Code, w.Body, err)
+	}
+	id, _ := pin["id"].(float64)
+	if id <= 0 || pin["kind"] != "tag" || pin["label"] != "female:big hat" || pin["weight"] != 1.5 {
+		t.Fatalf("pin = %v", pin)
+	}
+	for _, tc := range []struct {
+		body   string
+		status int
+		code   string
+	}{
+		{`{"kind":"tag","value":"female:glasses","weight":1}`, http.StatusNotFound, "tag_not_found"},
+		{`{"kind":"tag","value":"glasses","weight":1}`, http.StatusBadRequest, "invalid_pin"},
+	} {
+		if w := request(client, "POST", path, tc.body); w.Code != tc.status || !strings.Contains(w.Body.String(), tc.code) {
+			t.Fatalf("post %s: %d %s", tc.body, w.Code, w.Body)
+		}
+	}
+	if w := request(client, "DELETE", path+"/"+strconv.FormatInt(int64(id), 10), ""); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("delete: %d %s", w.Code, w.Body)
+	}
+	var count int
+	if err := db.QueryRow(t.Context(), "SELECT count(*) FROM panda_score_pins").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rows after delete = %d, %v", count, err)
+	}
+	before := requests.Load()
+	for _, invalid := range []string{"0", "-1", "x"} {
+		if w := request(client, "DELETE", path+"/"+invalid, ""); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_pin") {
+			t.Fatalf("delete %s: %d %s", invalid, w.Code, w.Body)
+		}
+	}
+	for _, body := range []string{`{"kind":"uploader","value":"Some One"}`, `{"kind":"uploader","value":"Some One","weight":null}`} {
+		if w := request(client, "POST", path, body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_pin") {
+			t.Fatalf("post %s: %d %s", body, w.Code, w.Body)
+		}
+	}
+	if requests.Load() != before {
+		t.Fatal("invalid requests reached the collector")
+	}
+	if err := db.QueryRow(t.Context(), "SELECT count(*) FROM panda_score_pins").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rows after invalid posts = %d, %v", count, err)
+	}
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request(wrong, "POST", path, `{"kind":"uploader","value":"Some One","weight":1}`); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("wrong token post: %d %s", w.Code, w.Body)
+	}
+	if w := request(wrong, "DELETE", path+"/1", ""); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("wrong token delete: %d %s", w.Code, w.Body)
+	}
+	for _, method := range []string{"POST", "DELETE"} {
+		target, body := path, `{"kind":"uploader","value":"Some One","weight":1}`
+		if method == "DELETE" {
+			target, body = path+"/1", ""
+		}
+		if w := request(nil, method, target, body); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
+			t.Fatalf("unconfigured %s: %d %s", method, w.Code, w.Body)
+		}
+	}
+}
+
+func TestLocalScoreTagWeights(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	service := catalog.New(db, "https://panda.test")
+	if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES (2, 'token')"); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: 2, Title: "Gallery 2", Posted: 2, Tags: []string{"female:big hat", "male:hat"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	pin, err := service.SetScorePin(t.Context(), collectorapi.ScoreKindTag, "female:big hat", 1.5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.DiscardHandler)
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: service, APIToken: "server-secret"}))
+	defer upstream.Close()
+	request := func(client *collectorapi.Client, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/api/collector/catalog/score/tags", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
+		return w
+	}
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const body = `{"tags":["female:big_hat","male:hat","other:none"]}`
+	w := request(client, body)
+	var weights struct {
+		Active bool                         `json:"active"`
+		Tags   []map[string]json.RawMessage `json:"tags"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &weights); err != nil || w.Code != http.StatusOK || weights.Active || len(weights.Tags) != 3 {
+		t.Fatalf("post: %d %s, %v", w.Code, w.Body, err)
+	}
+	var gotPin collectorapi.ScorePin
+	if err := json.Unmarshal(weights.Tags[0]["pin"], &gotPin); err != nil || gotPin != pin || string(weights.Tags[0]["weight"]) != "1.5" {
+		t.Fatalf("pinned tag = %s, %v", w.Body, err)
+	}
+	for _, entry := range weights.Tags[1:] {
+		if _, ok := entry["pin"]; ok {
+			t.Fatalf("unpinned tag = %s", w.Body)
+		}
+	}
+	if string(weights.Tags[1]["known"]) != "true" || string(weights.Tags[2]["known"]) != "false" {
+		t.Fatalf("known = %s", w.Body)
+	}
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request(wrong, body); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("wrong token: %d %s", w.Code, w.Body)
+	}
+	if w := request(nil, body); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
+		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestLocalCatalogScoreFilter(t *testing.T) {
 	db := pgtest.Open(t, storage.Migrations())
 	service := catalog.New(db, "https://panda.test")
@@ -693,6 +862,44 @@ func TestLocalScoreModel(t *testing.T) {
 	if err := defaults.Save(t.Context(), catalogfilter.Filter{}); err != nil {
 		t.Fatal(err)
 	}
+	pin, err := service.SetScorePin(t.Context(), collectorapi.ScoreKindTag, "male:hat", 2.5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := request(client, "POST", previewPath, `{"favorites":false}`)
+	var pinned struct {
+		Pins []map[string]any `json:"pins"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &pinned); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("preview with a pin: %d %s, %v", w.Code, w.Body, err)
+	}
+	if want := []map[string]any{{"id": float64(pin.ID), "kind": "tag", "label": "male:hat", "weight": 2.5}}; !reflect.DeepEqual(pinned.Pins, want) {
+		t.Fatalf("preview pins = %v, want %v", pinned.Pins, want)
+	}
+	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_authors (tag_id, favorites)
+		SELECT id, 4 FROM catalog_tags WHERE namespace = 'female' AND value = 'glasses'`); err != nil {
+		t.Fatal(err)
+	}
+	bonus := 3.0
+	if err := service.SetAuthorBonus(t.Context(), &bonus); err != nil {
+		t.Fatal(err)
+	}
+	w = request(client, "POST", previewPath, `{"favorites":false}`)
+	var authors map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &authors); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("preview with a favorite author: %d %s, %v", w.Code, w.Body, err)
+	}
+	if got, want := []any{authors["author_bonus"], authors["favorite_author_count"], authors["favorite_authors"]},
+		[]any{3.0, 1.0, []any{map[string]any{"label": "female:glasses", "favorites": 4.0, "weight": 3.0}}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("preview bonus, count and favorite authors = %v, want %v", got, want)
+	}
+	if err := service.SetAuthorBonus(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(t.Context(), "DELETE FROM favorite_authors"); err != nil {
+		t.Fatal(err)
+	}
+	result = preview(`{"favorites":false}`)
 
 	const applyPath = "/api/collector/catalog/score/apply"
 	const thresholdPath = "/api/collector/catalog/score/threshold"
@@ -864,4 +1071,200 @@ func TestLocalCatalogSummaryTagsRankWeightedTags(t *testing.T) {
 	if _, ok := second["weight"]; ok || second["value"] != "zed" {
 		t.Fatalf("second summary tag: %v", second)
 	}
+}
+
+func TestLocalCatalogMarksPinnedWeights(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	service := catalog.New(db, "https://panda.test")
+	galleries := map[int64][]string{7: {"artist:zed", "male:hat"}}
+	for id := int64(1); id <= 6; id++ {
+		galleries[id] = []string{"female:glasses"}
+		if id > 3 {
+			galleries[id] = []string{"male:hat"}
+		}
+	}
+	for id, tags := range galleries {
+		if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := db.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: "Gallery", Posted: id, Tags: tags}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id := int64(1); id <= 6; id++ {
+		verdict := collectorapi.VerdictNotForMe
+		if id > 3 {
+			verdict = collectorapi.VerdictInteresting
+		}
+		if err := service.SetVerdict(t.Context(), id, verdict); err != nil {
+			t.Fatal(err)
+		}
+	}
+	preview, err := service.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
+	if err != nil || preview.Candidate == nil {
+		t.Fatalf("preview: %+v, %v", preview, err)
+	}
+	if err := service.ApplyScoreModel(t.Context(), preview.Candidate.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetScorePin(t.Context(), collectorapi.ScoreKindTag, "artist:zed", 3); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.DiscardHandler)
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: service, APIToken: "server-secret"}))
+	defer upstream.Close()
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, httptest.NewRequest("GET", "/api/collector/catalog?score_filter=all", nil))
+	var page struct {
+		Items []struct {
+			GalleryID   int64            `json:"gallery_id"`
+			SummaryTags []map[string]any `json:"summary_tags"`
+			Score       struct {
+				Weights []map[string]any `json:"weights"`
+			} `json:"score"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("%d %s, %v", w.Code, w.Body, err)
+	}
+	for _, item := range page.Items {
+		if item.GalleryID != 7 {
+			continue
+		}
+		if len(item.SummaryTags) != 2 || len(item.Score.Weights) != 2 {
+			t.Fatalf("gallery 7: %+v", item)
+		}
+		for _, entries := range [][]map[string]any{item.SummaryTags, item.Score.Weights} {
+			pinned, other := entries[0], entries[1]
+			if pinned["source"] != "pin" || pinned["weight"] != 3.0 {
+				t.Fatalf("pinned entry: %v", pinned)
+			}
+			if _, ok := other["source"]; ok {
+				t.Fatalf("calculated entry: %v", other)
+			}
+		}
+		return
+	}
+	t.Fatalf("gallery 7 not listed: %s", w.Body)
+}
+
+func TestLocalAuthorBonus(t *testing.T) {
+	db := pgtest.Open(t, storage.Migrations())
+	service := catalog.New(db, "https://panda.test")
+	galleries := map[int64][]string{7: {"artist:zed", "male:hat"}}
+	for id := int64(1); id <= 6; id++ {
+		galleries[id] = []string{"female:glasses"}
+		if id > 3 {
+			galleries[id] = []string{"male:hat"}
+		}
+	}
+	for id, tags := range galleries {
+		if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := db.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: "Gallery", Posted: id, Tags: tags}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id := int64(1); id <= 6; id++ {
+		verdict := collectorapi.VerdictNotForMe
+		if id > 3 {
+			verdict = collectorapi.VerdictInteresting
+		}
+		if err := service.SetVerdict(t.Context(), id, verdict); err != nil {
+			t.Fatal(err)
+		}
+	}
+	preview, err := service.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
+	if err != nil || preview.Candidate == nil {
+		t.Fatalf("preview: %+v, %v", preview, err)
+	}
+	if err := service.ApplyScoreModel(t.Context(), preview.Candidate.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_authors (tag_id, favorites)
+		SELECT id, 2 FROM catalog_tags WHERE namespace = 'artist' AND value = 'zed'`); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.DiscardHandler)
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: service, APIToken: "server-secret"}))
+	defer upstream.Close()
+	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
+		return w
+	}
+	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "/api/collector/catalog/score/author-bonus"
+	if w := request(client, "PUT", path, `{"bonus":2.5}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("put: %d %s", w.Code, w.Body)
+	}
+	var bonus *float64
+	if err := db.QueryRow(t.Context(), "SELECT author_bonus FROM panda_score_settings").Scan(&bonus); err != nil || bonus == nil || *bonus != 2.5 {
+		t.Fatalf("stored bonus = %v, %v", bonus, err)
+	}
+	if w := request(client, "PUT", path, `{"bonus":0}`); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_author_bonus") {
+		t.Fatalf("invalid put: %d %s", w.Code, w.Body)
+	}
+	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request(wrong, "PUT", path, `{"bonus":1}`); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
+		t.Fatalf("wrong token put: %d %s", w.Code, w.Body)
+	}
+	if w := request(nil, "PUT", path, `{"bonus":1}`); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
+		t.Fatalf("unconfigured put: %d %s", w.Code, w.Body)
+	}
+
+	w := request(client, "GET", "/api/collector/catalog?score_filter=all", "")
+	var page struct {
+		Items []struct {
+			GalleryID   int64            `json:"gallery_id"`
+			SummaryTags []map[string]any `json:"summary_tags"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("%d %s, %v", w.Code, w.Body, err)
+	}
+	for _, item := range page.Items {
+		if item.GalleryID != 7 {
+			continue
+		}
+		for _, tag := range item.SummaryTags {
+			favorite, ok := tag["favorite_author"]
+			if tag["value"] == "zed" {
+				if favorite != true || tag["source"] != "author_bonus" || tag["weight"] != 2.5 {
+					t.Fatalf("favorite author tag: %v", tag)
+				}
+			} else if ok {
+				t.Fatalf("other tag: %v", tag)
+			}
+		}
+		return
+	}
+	t.Fatalf("gallery 7 not listed: %s", w.Body)
 }

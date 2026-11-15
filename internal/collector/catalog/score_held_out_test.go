@@ -177,3 +177,48 @@ func TestPreviewKeepsOnlyCandidateAndActiveWeights(t *testing.T) {
 		}
 	}
 }
+
+func TestHeldOutTenthsCountScoresBeyondTheWindowAtItsEdge(t *testing.T) {
+	const tagCount = 3000
+	var evidence []evidenceGallery
+	for id := int64(1); id <= 20; id++ {
+		gallery := evidenceGallery{galleryID: id, class: scoreNotForMe}
+		first := int64(1)
+		if id > 10 {
+			gallery.class, first = scoreInteresting, tagCount+1
+		}
+		for tagID := first; tagID < first+tagCount; tagID++ {
+			gallery.tagIDs = append(gallery.tagIDs, tagID)
+		}
+		evidence = append(evidence, gallery)
+	}
+	inside := evidenceGallery{galleryID: 21, class: scoreNeutral, tagIDs: []int64{1}}
+	evidence = append(evidence, inside)
+	total, values := tallyScoreCounts(evidence)
+
+	var train []evidenceGallery
+	for _, gallery := range evidence {
+		if gallery.galleryID%heldOutFolds != inside.galleryID%heldOutFolds {
+			train = append(train, gallery)
+		}
+	}
+	trainTotal, trainValues := tallyScoreCounts(train)
+	weight, ok := scoreWeight(trainTotal, trainValues[scoreValue{kind: collectorapi.ScoreKindTag, tagID: 1}])
+	if !ok {
+		t.Fatal("tag 1 has no weight in the fold of gallery 21")
+	}
+
+	got := heldOutTenths(evidence, total, values, nil)
+	for _, gallery := range evidence {
+		want := -scoreWindowTenths
+		switch {
+		case gallery.galleryID == inside.galleryID:
+			want = tenths(weight)
+		case gallery.class == scoreInteresting:
+			want = scoreWindowTenths
+		}
+		if got[gallery.galleryID] != want {
+			t.Errorf("gallery %d: %d, want %d", gallery.galleryID, got[gallery.galleryID], want)
+		}
+	}
+}

@@ -235,3 +235,28 @@ func TestScoreHistogram(t *testing.T) {
 		}
 	}
 }
+
+func TestPreviewRecentCountsScoresBeyondTheWindowAtItsEdge(t *testing.T) {
+	db, s := openCatalog(t)
+	seedScoreEvidence(t, db, s)
+	seedScoredGalleries(t, db)
+	applyCandidate(t, s, 0)
+	for tag, weight := range map[string]float64{"hat": 1e12, "glasses": -1001} {
+		if _, err := db.Exec(t.Context(), `UPDATE panda_score_weights w SET weight = $1
+			FROM panda_score_models m, catalog_tags tag
+			WHERE m.active AND w.model_id = m.id AND w.tag_id = tag.id AND tag.value_lower = $2`, weight, tag); err != nil {
+			t.Fatal(err)
+		}
+	}
+	preview := previewScore(t, s, false)
+	want := map[int]int{-scoreWindowTenths: 2, 0: 1, scoreWindowTenths: 1}
+	if got := histogramCounts(t, preview.Recent.Active); !reflect.DeepEqual(got, want) {
+		t.Fatalf("active counts = %v, want %v", got, want)
+	}
+	heldOut := preview.Candidate.HeldOut
+	for _, histogram := range []*collectorapi.ScoreHistogram{preview.Recent.Active, preview.Recent.Candidate, &heldOut.Interesting.Scores, &heldOut.NotForMe.Scores, &heldOut.Neutral.Scores} {
+		if len(histogram.Counts) > 2*scoreWindowTenths+1 {
+			t.Fatalf("histogram has %d counts", len(histogram.Counts))
+		}
+	}
+}

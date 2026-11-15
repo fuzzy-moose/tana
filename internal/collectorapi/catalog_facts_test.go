@@ -49,6 +49,36 @@ func TestCatalogFactsBatchesAndValidatesCompleteResponses(t *testing.T) {
 	}
 }
 
+func TestScoreTagWeightsRejectsAnAnswerOfAnotherLength(t *testing.T) {
+	client, err := NewClient("https://collector.test", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries int
+	client.http.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var input struct {
+			Tags []string `json:"tags"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || r.Method != http.MethodPost || r.URL.Path != "/api/catalog/score/tags" {
+			t.Fatalf("tags request = %s %s %+v, %v", r.Method, r.URL.Path, input, err)
+		}
+		weights := ScoreTagWeights{Tags: make([]ScoreTagWeight, entries)}
+		body, _ := json.Marshal(weights)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
+	})
+	tags := []string{"female:glasses", "male:hat"}
+	for _, n := range []int{1, 3} {
+		entries = n
+		if _, err := client.ScoreTagWeights(t.Context(), tags); err == nil {
+			t.Fatalf("accepted %d entries for %d tags", n, len(tags))
+		}
+	}
+	entries = 2
+	if weights, err := client.ScoreTagWeights(t.Context(), tags); err != nil || len(weights.Tags) != 2 {
+		t.Fatalf("weights = %+v, %v", weights, err)
+	}
+}
+
 func TestCatalogSendsIndependentDefaultFilters(t *testing.T) {
 	client, err := NewClient("https://collector.test", "secret")
 	if err != nil {

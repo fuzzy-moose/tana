@@ -49,3 +49,19 @@
   outline: 2px solid var(--accent-8);
   outline-offset: 2px;
 }
+
+.gallery-detail-tags > li {
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.gallery-detail-weight {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gallery-detail-unknown {
+  display: inline-flex;
+  color: var(--gray-9);
+}

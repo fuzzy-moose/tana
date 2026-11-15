@@ -1,25 +1,36 @@
 import { useState } from 'react'
 import { Badge, Flex, IconButton, Spinner, Text, VisuallyHidden } from '@radix-ui/themes'
-import { BookmarkFilledIcon, BookmarkIcon, ClockIcon, Cross2Icon, ExclamationTriangleIcon, EyeNoneIcon, EyeOpenIcon } from '@radix-ui/react-icons'
+import { BookmarkFilledIcon, BookmarkIcon, ClockIcon, Cross2Icon, DrawingPinFilledIcon, ExclamationTriangleIcon, EyeNoneIcon, EyeOpenIcon, StarFilledIcon } from '@radix-ui/react-icons'
 import GalleryBox from '../galleries/GalleryBox'
 import type { GalleryBoxTag } from '../galleries/GalleryBox'
 import { verdictLabels } from './api'
 import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaSummaryTag, PandaVerdict } from './api'
 import { scoreRuleNames } from './score'
+import type { ScoreSource } from './score'
 
 const weightPrefixes: Record<PandaScoreWeight['kind'], string> = { tag: '', uploader: 'Uploader ', category: 'Category ' }
+const sourceSuffixes: Record<ScoreSource, string> = { pin: ' (pinned)', author_bonus: ' (author bonus)' }
 
 /** The smallest absolute weight that colours a tag by its direction. */
 const clearTagWeight = 0.2
 
-/** Marks an override tag with its rule, or colours a tag green or red when its weight clearly likes or dislikes it; the order stays the catalog page's. */
-function stripTag({ weight, override, ...tag }: PandaSummaryTag): GalleryBoxTag {
+/** The colour of a tag whose weight clearly likes or dislikes it. */
+function weightColor(weight: number | undefined): GalleryBoxTag['color'] {
+  if (weight !== undefined && weight >= clearTagWeight) return 'green'
+  if (weight !== undefined && weight <= -clearTagWeight) return 'red'
+  return undefined
+}
+
+/** Gives a tag at most one mark: its override rule, else a pin, else a favorite author's star. An override colours by its rule, any other tag by its weight; the order stays the catalog page's. */
+function stripTag({ weight, override, source, favorite_author: favoriteAuthor, ...tag }: PandaSummaryTag): GalleryBoxTag {
   if (override) return { ...tag, color: override === 'never_hide' ? 'green' : 'red', mark: <>
     {override === 'never_hide' ? <EyeOpenIcon /> : <EyeNoneIcon />}<VisuallyHidden>{scoreRuleNames[override]}: </VisuallyHidden>
   </> }
-  if (weight !== undefined && weight >= clearTagWeight) return { ...tag, color: 'green' }
-  if (weight !== undefined && weight <= -clearTagWeight) return { ...tag, color: 'red' }
-  return tag
+  const color = weightColor(weight)
+  const mark = source === 'pin' ? <><DrawingPinFilledIcon /><VisuallyHidden>Pinned: </VisuallyHidden></>
+    : favoriteAuthor ? <><StarFilledIcon /><VisuallyHidden>Favorite author: </VisuallyHidden></>
+      : undefined
+  return { ...tag, color, mark }
 }
 
 /** The rule that decides whether the score filter hides the gallery: the verdict first, then the collector's rule. */
@@ -50,7 +61,7 @@ export function PandaDetails({ gallery, scoreFilter }: { gallery: PandaGallery, 
     </>}
     {score?.value !== undefined && <>
       <Text>Score {score.value.toFixed(2)}{scoreFilter?.threshold_tenths !== undefined && ` · Threshold ${(scoreFilter.threshold_tenths / 10).toFixed(1)}`}</Text>
-      {score.weights?.map((weight) => <Text key={`${weight.kind}:${weight.label}`}>{weight.weight > 0 ? '+' : ''}{weight.weight.toFixed(2)} {weightPrefixes[weight.kind]}{weight.label}</Text>)}
+      {score.weights?.map((weight) => <Text key={`${weight.kind}:${weight.label}`}>{weight.weight > 0 ? '+' : ''}{weight.weight.toFixed(2)} {weightPrefixes[weight.kind]}{weight.label}{weight.source && sourceSuffixes[weight.source]}</Text>)}
     </>}
     {rule && <Text>{rule}</Text>}
   </Flex>

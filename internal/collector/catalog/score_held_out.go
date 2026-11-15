@@ -19,11 +19,13 @@ const SuggestedInterestingLoss = 0.05
 // gallery is in fold gallery_id % heldOutFolds.
 const heldOutFolds = 5
 
-// heldOutTenths scores each evidence gallery, as floor(score * 10), with the
-// weights calculated from the evidence outside its fold. total and values are
-// the counts of all the evidence. A fold whose training evidence lacks one
-// side scores its galleries 0.
-func heldOutTenths(evidence []evidenceGallery, total scoreCounts, values map[scoreValue]scoreCounts) map[int64]int {
+// heldOutTenths scores each evidence gallery, as floor(score * 10) limited to
+// the window of the histograms, with the effective weights of its fold under
+// the rule, whose calculated weights are those from the evidence outside the
+// fold. total and values are the counts of all the evidence. A fold whose
+// training evidence lacks one side calculates no weight, so only the pins and
+// the author bonus score its galleries.
+func heldOutTenths(evidence []evidenceGallery, total scoreCounts, values map[scoreValue]scoreCounts, rule *weightRule) map[int64]int {
 	var folds [heldOutFolds][]evidenceGallery
 	for _, gallery := range evidence {
 		fold := gallery.galleryID % heldOutFolds
@@ -33,11 +35,11 @@ func heldOutTenths(evidence []evidenceGallery, total scoreCounts, values map[sco
 	for _, fold := range folds {
 		foldTotal, foldValues := tallyScoreCounts(fold)
 		train := total.minus(foldTotal)
+		calculated := func(value scoreValue) (float64, bool) {
+			return scoreWeight(train, values[value].minus(foldValues[value]))
+		}
 		weight := func(value scoreValue) float64 {
-			w, ok := scoreWeight(train, values[value].minus(foldValues[value]))
-			if !ok {
-				return 0
-			}
+			w, _ := rule.effective(value, calculated)
 			return w
 		}
 		for _, gallery := range fold {
@@ -51,10 +53,37 @@ func heldOutTenths(evidence []evidenceGallery, total scoreCounts, values map[sco
 			if gallery.category != "" {
 				score += weight(scoreValue{kind: collectorapi.ScoreKindCategory, value: gallery.category})
 			}
-			scores[gallery.galleryID] = int(math.Floor(score * 10))
+			scores[gallery.galleryID] = int(max(-scoreWindowTenths, min(scoreWindowTenths, math.Floor(score*10))))
 		}
 	}
 	return scores
+}
+
+// weightRule holds what the weight rule needs besides the calculated
+// weights: the pins, the author bonus (nil while it is off) and the
+// catalog_tags IDs of the favorite authors. A nil rule has none of them.
+type weightRule struct {
+	pins            map[scoreValue]float64
+	authorBonus     *float64
+	favoriteAuthors map[int64]bool
+}
+
+// effective is the Go side of the weight rule: the pin of the value, else for
+// the tag of a favorite author while the bonus is on the larger of its
+// calculated weight and the bonus, else its calculated weight. ok is false
+// when it has none.
+func (r *weightRule) effective(value scoreValue, calculated func(scoreValue) (float64, bool)) (weight float64, ok bool) {
+	if r == nil {
+		return calculated(value)
+	}
+	if pin, ok := r.pins[value]; ok {
+		return pin, true
+	}
+	weight, ok = calculated(value)
+	if r.authorBonus != nil && value.kind == collectorapi.ScoreKindTag && r.favoriteAuthors[value.tagID] && (!ok || weight < *r.authorBonus) {
+		return *r.authorBonus, true
+	}
+	return weight, ok
 }
 
 func (c scoreCounts) minus(other scoreCounts) scoreCounts {

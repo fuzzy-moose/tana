@@ -14,11 +14,13 @@ import (
 )
 
 // summaryTag is an expected summary tag: its namespace:value label, its
-// weight, nil for a tag without one, and its override rule.
+// weight, nil for a tag without one, its override rule and its weight's
+// source.
 type summaryTag struct {
 	label    string
 	weight   *float64
 	override string
+	source   string
 }
 
 func weighted(label string, weight float64) summaryTag {
@@ -41,13 +43,13 @@ func assertSummaryTags(t *testing.T, item collectorapi.CatalogItem, want []summa
 	for i := 0; ok && i < len(want); i++ {
 		tag := item.SummaryTags[i]
 		ok = tag.Namespace+":"+tag.Value == want[i].label && tag.Term == gallerysearch.SuggestionTerm("", tag.Namespace, tag.Value) &&
-			tag.Override == want[i].override && (tag.Weight == nil) == (want[i].weight == nil) &&
+			tag.Override == want[i].override && tag.Source == want[i].source && (tag.Weight == nil) == (want[i].weight == nil) &&
 			(tag.Weight == nil || math.Abs(*tag.Weight-*want[i].weight) <= 1e-9)
 	}
 	if !ok {
 		got := make([]summaryTag, 0, len(item.SummaryTags))
 		for _, tag := range item.SummaryTags {
-			got = append(got, summaryTag{tag.Namespace + ":" + tag.Value, tag.Weight, tag.Override})
+			got = append(got, summaryTag{tag.Namespace + ":" + tag.Value, tag.Weight, tag.Override, tag.Source})
 		}
 		t.Fatalf("gallery %d summary tags = %v, want %v", item.GalleryID, describeTags(got), describeTags(want))
 	}
@@ -62,6 +64,9 @@ func describeTags(tags []summaryTag) []string {
 		}
 		if tag.weight != nil {
 			label += "=" + strconv.FormatFloat(*tag.weight, 'g', 4, 64)
+		}
+		if tag.source != "" {
+			label += " (" + tag.source + ")"
 		}
 		described = append(described, label)
 	}

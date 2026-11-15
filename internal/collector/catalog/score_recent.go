@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
@@ -13,6 +14,9 @@ import (
 // RecentSampleSize is the number of the newest catalog galleries a preview
 // classes by the hiding rules.
 const RecentSampleSize = 2000
+
+// The histograms of a preview count scores from -1000.0 to 1000.0.
+const scoreWindowTenths = 10000
 
 // recent classes the newest RecentSampleSize galleries that pass the
 // predicate, in catalog order, by the first hiding rule that decides them:
@@ -27,10 +31,10 @@ func (f scoreFilter) recent(ctx context.Context, tx pgx.Tx, predicate string, ar
 	always := f.matches(collectorapi.ScoreRuleAlwaysHide, &args)
 	candidateTenths, activeTenths := "NULL::integer", "NULL::integer"
 	if candidateID != nil {
-		candidateTenths = scoreTenths(args.Add(*candidateID)+"::bigint") + "::integer"
+		candidateTenths = windowTenths(f.scoreTenths(args.Add(*candidateID) + "::bigint"))
 	}
 	if f.model != nil {
-		activeTenths = scoreTenths(args.Add(f.model.id)+"::bigint") + "::integer"
+		activeTenths = windowTenths(f.scoreTenths(args.Add(f.model.id) + "::bigint"))
 	}
 	rows, err := tx.Query(ctx, `SELECT COALESCE(v.verdict, ''), `+never+`, `+always+`, `+candidateTenths+`, `+activeTenths+`
 		FROM (`+sample+`) sample
@@ -77,6 +81,12 @@ func (f scoreFilter) recent(ctx context.Context, tx pgx.Tx, predicate string, ar
 		recent.Active = scoreHistogram(activeScores)
 	}
 	return recent, nil
+}
+
+// windowTenths limits the SQL expression for a score's tenths to the window,
+// as an integer.
+func windowTenths(tenths string) string {
+	return fmt.Sprintf("least(greatest(%s, %d), %d)::integer", tenths, -scoreWindowTenths, scoreWindowTenths)
 }
 
 // scoreHistogram counts the scores in tenths by bucket, from the lowest score
