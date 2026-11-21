@@ -33,6 +33,9 @@ type activeScoreModel struct {
 	id              int64
 	thresholdTenths int
 	calculatedAt    time.Time
+	// favoriteScores are the stored held-out favorite scores of the model in
+	// tenths, lowest first; nil when none are stored for it.
+	favoriteScores []int
 }
 
 func readScoreFilter(ctx context.Context, tx pgx.Tx) (scoreFilter, error) {
@@ -55,8 +58,9 @@ func readScoreFilter(ctx context.Context, tx pgx.Tx) (scoreFilter, error) {
 	}
 	filter := scoreFilter{overrides: overrides, pins: pins, authorBonus: bonus}
 	var model activeScoreModel
-	err = tx.QueryRow(ctx, `SELECT id, threshold_tenths, calculated_at
-		FROM panda_score_models WHERE active`).Scan(&model.id, &model.thresholdTenths, &model.calculatedAt)
+	err = tx.QueryRow(ctx, `SELECT m.id, m.threshold_tenths, m.calculated_at, CASE WHEN s.model_id = m.id THEN s.scores END
+		FROM panda_score_models m LEFT JOIN panda_favorite_scores s ON s.id = 1
+		WHERE m.active`).Scan(&model.id, &model.thresholdTenths, &model.calculatedAt, &model.favoriteScores)
 	switch {
 	case err == nil:
 		filter.model = &model

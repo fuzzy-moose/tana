@@ -37,10 +37,16 @@ export interface PandaScoreWeight {
   source?: ScoreSource
 }
 
-/** What the score filter knows about a gallery: its score, its strongest weights and the rule that decides. */
+/** The score among the top quarter, or else the top half, of the held-out favorite scores. */
+export type ScoreGrade = 'top_quarter' | 'top_half'
+
+/** What the score filter knows about a gallery: its score, its strongest weights, its score grade and the rule that decides. */
 export interface PandaGalleryScore {
   value?: number
   weights?: PandaScoreWeight[]
+  /** The held-out favorite scores above this score; absent without any. */
+  favorites_above?: number
+  grade?: ScoreGrade
   rule?: 'never_hide' | 'always_hide' | 'below_threshold'
   override?: string
 }
@@ -49,6 +55,8 @@ export interface PandaGalleryScore {
 export interface PandaCatalogScoreFilter {
   threshold_tenths?: number
   hidden_unseen?: boolean
+  /** The number of held-out favorite scores that the score grades compare with. */
+  held_out_favorites?: number
 }
 
 export interface PandaCatalogResult {

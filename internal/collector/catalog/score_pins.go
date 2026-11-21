@@ -35,26 +35,31 @@ func (s *Service) SetScorePin(ctx context.Context, kind, value string, weight fl
 		return collectorapi.ScorePin{}, ErrInvalidScorePin
 	}
 	pin := collectorapi.ScorePin{Kind: target.kind}
-	if target.kind == collectorapi.ScoreKindTag {
-		err := s.db.QueryRow(ctx, `WITH tag AS (
-				SELECT id, namespace || ':' || value AS label FROM catalog_tags WHERE namespace = $1 AND value_lower = $2
-			), pin AS (
-				INSERT INTO panda_score_pins (kind, tag_id, weight, created_at)
-				SELECT 'tag', id, $3, now() FROM tag
-				ON CONFLICT (tag_id) WHERE kind = 'tag' DO UPDATE SET weight = excluded.weight
-				RETURNING id, weight
-			)
-			SELECT pin.id, tag.label, pin.weight FROM pin, tag`,
-			target.namespace, target.value, weight).Scan(&pin.ID, &pin.Label, &pin.Weight)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return collectorapi.ScorePin{}, ErrTagNotFound
+	err := s.writeScoreInputs(ctx, func(tx pgx.Tx) error {
+		if target.kind == collectorapi.ScoreKindTag {
+			err := tx.QueryRow(ctx, `WITH tag AS (
+					SELECT id, namespace || ':' || value AS label FROM catalog_tags WHERE namespace = $1 AND value_lower = $2
+				), pin AS (
+					INSERT INTO panda_score_pins (kind, tag_id, weight, created_at)
+					SELECT 'tag', id, $3, now() FROM tag
+					ON CONFLICT (tag_id) WHERE kind = 'tag' DO UPDATE SET weight = excluded.weight
+					RETURNING id, weight
+				)
+				SELECT pin.id, tag.label, pin.weight FROM pin, tag`,
+				target.namespace, target.value, weight).Scan(&pin.ID, &pin.Label, &pin.Weight)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrTagNotFound
+			}
+			return err
 		}
-		return pin, err
+		return tx.QueryRow(ctx, `INSERT INTO panda_score_pins (kind, value, weight, created_at) VALUES ($1, $2, $3, now())
+			ON CONFLICT (kind, value) WHERE kind <> 'tag' DO UPDATE SET weight = excluded.weight
+			RETURNING id, value, weight`, target.kind, target.value, weight).Scan(&pin.ID, &pin.Label, &pin.Weight)
+	})
+	if err != nil {
+		return collectorapi.ScorePin{}, err
 	}
-	err := s.db.QueryRow(ctx, `INSERT INTO panda_score_pins (kind, value, weight, created_at) VALUES ($1, $2, $3, now())
-		ON CONFLICT (kind, value) WHERE kind <> 'tag' DO UPDATE SET weight = excluded.weight
-		RETURNING id, value, weight`, target.kind, target.value, weight).Scan(&pin.ID, &pin.Label, &pin.Weight)
-	return pin, err
+	return pin, nil
 }
 
 // RemoveScorePin deletes the pin with the ID, if it exists.
@@ -62,8 +67,10 @@ func (s *Service) RemoveScorePin(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidScorePin
 	}
-	_, err := s.db.Exec(ctx, "DELETE FROM panda_score_pins WHERE id = $1", id)
-	return err
+	return s.writeScoreInputs(ctx, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, "DELETE FROM panda_score_pins WHERE id = $1", id)
+		return err
+	})
 }
 
 // scorePins reads every pin with its label, namespace:value in the stored

@@ -49,6 +49,9 @@ func (s *Service) ApplyScoreModel(ctx context.Context, candidateID int64, thresh
 	if _, err := tx.Exec(ctx, "UPDATE panda_score_models SET active = true, threshold_tenths = $2 WHERE id = $1", candidateID, thresholdTenths); err != nil {
 		return err
 	}
+	if err := storeFavoriteScores(ctx, tx, true); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 

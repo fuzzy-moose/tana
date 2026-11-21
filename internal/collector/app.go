@@ -121,6 +121,9 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := catalogService.RefreshFavoriteScores(ctx); err != nil {
+		logger.Error("catalog_favorite_scores_failed", "error", err)
+	}
 	catalogService.StartScopeCounts(ctx, logger)
 	return &App{
 		Logger:           logger,

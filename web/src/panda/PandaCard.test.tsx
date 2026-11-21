@@ -193,3 +193,23 @@ test('details name the source of a pinned or bonus weight', () => {
   expect(screen.getByText('+0.80 artist:someone (author bonus)')).toBeTruthy()
   expect(screen.getByText('+0.30 female:sole female')).toBeTruthy()
 })
+
+test('cards outline a score grade, and details compare the score with the held-out favorite scores', () => {
+  const graded = (grade: 'top_quarter' | 'top_half' | undefined, above: number): PandaGallery => ({ ...collectedGallery, score: { value: 2, favorites_above: above, grade } })
+  const { rerender } = render(<Theme><PandaCard gallery={graded('top_quarter', 0)} /></Theme>)
+  expect(screen.getByRole('link').classList.contains('panda-grade-top-quarter')).toBe(true)
+  expect(screen.getByRole('link').textContent).toContain('Top quarter of favorites')
+  rerender(<Theme><PandaCard gallery={graded('top_half', 15)} /></Theme>)
+  expect(screen.getByRole('link').classList.contains('panda-grade-top-half')).toBe(true)
+  rerender(<Theme><PandaCard gallery={graded(undefined, 30)} /></Theme>)
+  expect(screen.getByRole('link').className).not.toMatch(/panda-grade/)
+  expect(screen.getByRole('link').textContent).not.toContain('of favorites')
+
+  const scoreFilter = { held_out_favorites: 40 }
+  rerender(<PandaDetails gallery={graded('top_quarter', 0)} scoreFilter={scoreFilter} />)
+  expect(screen.getByText('Top quarter of favorites · No favorite scores higher')).toBeTruthy()
+  rerender(<PandaDetails gallery={graded('top_half', 15)} scoreFilter={scoreFilter} />)
+  expect(screen.getByText('Top half of favorites · 15 of 40 favorites score higher')).toBeTruthy()
+  rerender(<PandaDetails gallery={graded(undefined, 30)} scoreFilter={scoreFilter} />)
+  expect(screen.getByText('30 of 40 favorites score higher')).toBeTruthy()
+})

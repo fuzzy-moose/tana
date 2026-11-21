@@ -34,22 +34,24 @@ func (s *Service) SetScoreOverride(ctx context.Context, kind, value, rule string
 	if !ok {
 		return ErrInvalidScoreOverride
 	}
-	if target.kind == collectorapi.ScoreKindTag {
-		result, err := s.db.Exec(ctx, `INSERT INTO panda_score_overrides (kind, tag_id, rule, created_at)
-			SELECT 'tag', id, $3, now() FROM catalog_tags WHERE namespace = $1 AND value_lower = $2
-			ON CONFLICT (tag_id) WHERE kind = 'tag' DO UPDATE SET rule = excluded.rule`,
-			target.namespace, target.value, rule)
-		if err != nil {
-			return err
+	return s.writeScoreInputs(ctx, func(tx pgx.Tx) error {
+		if target.kind == collectorapi.ScoreKindTag {
+			result, err := tx.Exec(ctx, `INSERT INTO panda_score_overrides (kind, tag_id, rule, created_at)
+				SELECT 'tag', id, $3, now() FROM catalog_tags WHERE namespace = $1 AND value_lower = $2
+				ON CONFLICT (tag_id) WHERE kind = 'tag' DO UPDATE SET rule = excluded.rule`,
+				target.namespace, target.value, rule)
+			if err != nil {
+				return err
+			}
+			if result.RowsAffected() == 0 {
+				return ErrTagNotFound
+			}
+			return nil
 		}
-		if result.RowsAffected() == 0 {
-			return ErrTagNotFound
-		}
-		return nil
-	}
-	_, err := s.db.Exec(ctx, `INSERT INTO panda_score_overrides (kind, value, rule, created_at) VALUES ($1, $2, $3, now())
-		ON CONFLICT (kind, value) WHERE kind <> 'tag' DO UPDATE SET rule = excluded.rule`, target.kind, target.value, rule)
-	return err
+		_, err := tx.Exec(ctx, `INSERT INTO panda_score_overrides (kind, value, rule, created_at) VALUES ($1, $2, $3, now())
+			ON CONFLICT (kind, value) WHERE kind <> 'tag' DO UPDATE SET rule = excluded.rule`, target.kind, target.value, rule)
+		return err
+	})
 }
 
 // scoreTarget is the tag, uploader or category that an override or a pin
@@ -106,8 +108,10 @@ func (s *Service) RemoveScoreOverride(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidScoreOverride
 	}
-	_, err := s.db.Exec(ctx, "DELETE FROM panda_score_overrides WHERE id = $1", id)
-	return err
+	return s.writeScoreInputs(ctx, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, "DELETE FROM panda_score_overrides WHERE id = $1", id)
+		return err
+	})
 }
 
 // scoreOverrides reads every override with its label: namespace:value in the

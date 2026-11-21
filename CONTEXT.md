@@ -158,6 +158,13 @@ A set of weights for tags, uploaders, and Panda gallery categories, together wit
 **Panda gallery score**:
 The sum of the weights of a gallery's tags, uploader, and category under the active Panda score model. A pinned weight replaces the model's weight of its value, and the tag of a favorite author weighs at least the author bonus.
 
+**Held-out favorite score**:
+The Panda gallery score of a Panda favorite, with weights calculated from the other favorites only. A favorite that a score override decides has no held-out favorite score.
+
+**Score grade**:
+The level of a Panda gallery score among the held-out favorite scores of the active Panda score model: top quarter or top half. A gallery below the top half has no score grade. The grade follows the current pinned weights, score overrides, and author bonus, and does not depend on the score threshold.
+_Avoid_: Highlight, rank
+
 **Score threshold**:
 The score below which the score filter hides a gallery.
 

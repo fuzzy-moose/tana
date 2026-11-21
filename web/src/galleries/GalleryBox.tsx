@@ -49,20 +49,25 @@ interface GalleryBoxProps extends Pick<ComponentProps<'a'>, 'href' | 'target' | 
   status?: ReactNode
   /** Dims the title and cover, for a gallery the user has already seen. */
   subdued?: boolean
+  /** Extra classes for the box, for example an outline. */
+  className?: string
+  /** Read by screen readers after the title, for what `className` shows. */
+  hiddenLabel?: string
 }
 
 /** One cell of a gallery grid: title, cover with its page count and status, and the tags that fit. */
-export default function GalleryBox({ title, cover, pageCount, tags, tooltip = title, status, subdued, ...link }: GalleryBoxProps) {
+export default function GalleryBox({ title, cover, pageCount, tags, tooltip = title, status, subdued, className, hiddenLabel, ...link }: GalleryBoxProps) {
   const [coverRatio, setCoverRatio] = useState<number>()
   // A loaded cover shapes its frame inside the 2:3 slot, so the border and page count follow the image.
   const onCoverLoad: ReactEventHandler<HTMLImageElement> = ({ currentTarget: image }) => {
     setCoverRatio(image.naturalWidth / image.naturalHeight)
   }
   const coverShape = coverRatio === undefined ? '' : coverRatio > 2 / 3 ? ' gallery-cover-wide' : ' gallery-cover-tall'
-  return <Tooltip content={tooltip}><Box asChild p="3"><a className={subdued ? 'gallery-box gallery-box-subdued' : 'gallery-box'} {...link}>
+  return <Tooltip content={tooltip}><Box asChild p="3"><a className={['gallery-box', subdued && 'gallery-box-subdued', className].filter(Boolean).join(' ')} {...link}>
     <Flex direction="column" gap="2">
       <Text asChild size="1" weight="medium"><h2>{title}</h2></Text>
       {subdued && <VisuallyHidden>Seen</VisuallyHidden>}
+      {hiddenLabel && <VisuallyHidden>{hiddenLabel}</VisuallyHidden>}
       <div className="gallery-cover"><div className={`gallery-cover-frame${coverShape}`} style={{ aspectRatio: coverRatio }}>
         {cover({ onLoad: onCoverLoad })}
         {status && <Flex className="gallery-cover-status" gap="1">{status}</Flex>}

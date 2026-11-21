@@ -8,3 +8,9 @@
 
 /* Caps the heading and the view control at the toolbar's width, so they wrap instead of overflowing on a phone. */
 .panda-catalog-heading { max-width: 100%; }
+
+/* Score grades: one accent in two strengths, not green, which marks liked tags. Inset, so the grid borders and the focus outline stay. */
+.panda-grade-top-quarter { box-shadow: inset 0 0 0 3px var(--amber-9); }
+.panda-grade-top-half { box-shadow: inset 0 0 0 2px var(--amber-a7); }
+.gallery-box-subdued.panda-grade-top-quarter { box-shadow: inset 0 0 0 3px var(--amber-a7); }
+.gallery-box-subdued.panda-grade-top-half { box-shadow: inset 0 0 0 2px var(--amber-a5); }

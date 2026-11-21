@@ -3,12 +3,26 @@ import { Badge, Flex, Text, VisuallyHidden } from '@radix-ui/themes'
 import { ClockIcon, DrawingPinFilledIcon, ExclamationTriangleIcon, EyeNoneIcon, EyeOpenIcon, StarFilledIcon } from '@radix-ui/react-icons'
 import GalleryBox from '../galleries/GalleryBox'
 import type { GalleryBoxTag } from '../galleries/GalleryBox'
-import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaSummaryTag } from './api'
+import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaSummaryTag, ScoreGrade } from './api'
 import { scoreRuleNames } from './score'
 import type { ScoreSource } from './score'
 
 const weightPrefixes: Record<PandaScoreWeight['kind'], string> = { tag: '', uploader: 'Uploader ', category: 'Category ' }
 const sourceSuffixes: Record<ScoreSource, string> = { pin: ' (pinned)', author_bonus: ' (author bonus)' }
+
+const grades: Record<ScoreGrade, { name: string, className: string }> = {
+  top_quarter: { name: 'Top quarter of favorites', className: 'panda-grade-top-quarter' },
+  top_half: { name: 'Top half of favorites', className: 'panda-grade-top-half' },
+}
+
+/** The score grade and how many held-out favorite scores are above the score, for example "Top half of favorites · 15 of 40 favorites score higher". */
+function gradeText({ score }: PandaGallery, scoreFilter?: PandaCatalogScoreFilter) {
+  const total = scoreFilter?.held_out_favorites
+  const above = score?.favorites_above
+  if (!total || above === undefined) return ''
+  const comparison = above === 0 ? 'No favorite scores higher' : `${above} of ${total} favorites score higher`
+  return score?.grade ? `${grades[score.grade].name} · ${comparison}` : comparison
+}
 
 /** The smallest absolute weight that colours a tag by its direction. */
 const clearTagWeight = 0.2
@@ -47,6 +61,7 @@ export function PandaDetails({ gallery, scoreFilter }: { gallery: PandaGallery, 
   const date = gallery.posted_at || gallery.first_seen_at
   const score = gallery.score
   const rule = scoreFilter ? scoreRule(gallery) : ''
+  const grade = gradeText(gallery, scoreFilter)
   return <Flex direction="column" gap="1">
     <Text weight="medium">{gallery.title}</Text>
     <Text>{gallery.page_count === null && 'Pages unknown · '}{date
@@ -58,6 +73,7 @@ export function PandaDetails({ gallery, scoreFilter }: { gallery: PandaGallery, 
     </>}
     {score?.value !== undefined && <>
       <Text>Score {score.value.toFixed(2)}{scoreFilter?.threshold_tenths !== undefined && ` · Threshold ${(scoreFilter.threshold_tenths / 10).toFixed(1)}`}</Text>
+      {grade && <Text>{grade}</Text>}
       {score.weights?.map((weight) => <Text key={`${weight.kind}:${weight.label}`}>{weight.weight > 0 ? '+' : ''}{weight.weight.toFixed(2)} {weightPrefixes[weight.kind]}{weight.label}{weight.source && sourceSuffixes[weight.source]}</Text>)}
     </>}
     {rule && <Text>{rule}</Text>}
@@ -67,8 +83,10 @@ export function PandaDetails({ gallery, scoreFilter }: { gallery: PandaGallery, 
 export default function PandaCard({ gallery, scoreFilter }: { gallery: PandaGallery, scoreFilter?: PandaCatalogScoreFilter }) {
   const [failedImage, setFailedImage] = useState<string | null>(null)
   const failed = gallery.metadata_state === 'failed'
+  const grade = gallery.score?.grade
   return <GalleryBox href={gallery.url} target="_blank" rel="noopener noreferrer" title={gallery.title} pageCount={gallery.page_count} tags={gallery.summary_tags.map(stripTag)}
     subdued={!!gallery.displayed}
+    className={grade && grades[grade].className} hiddenLabel={grade && grades[grade].name}
     tooltip={<PandaDetails gallery={gallery} scoreFilter={scoreFilter} />}
     status={gallery.metadata_source === 'feed' && <Badge variant="solid" color={failed ? 'red' : 'gray'}>
       {failed ? <ExclamationTriangleIcon /> : <ClockIcon />}<VisuallyHidden>{failed ? 'Collection failed' : 'Waiting for metadata'}</VisuallyHidden>

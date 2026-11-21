@@ -16,8 +16,10 @@ func (s *Service) SetAuthorBonus(ctx context.Context, bonus *float64) error {
 	if bonus != nil && (math.IsNaN(*bonus) || *bonus <= 0 || *bonus > maxScoreWeight) {
 		return ErrInvalidAuthorBonus
 	}
-	_, err := s.db.Exec(ctx, "UPDATE panda_score_settings SET author_bonus = $1 WHERE id = 1", bonus)
-	return err
+	return s.writeScoreInputs(ctx, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, "UPDATE panda_score_settings SET author_bonus = $1 WHERE id = 1", bonus)
+		return err
+	})
 }
 
 // authorBonus reads the author bonus, nil while it is off.

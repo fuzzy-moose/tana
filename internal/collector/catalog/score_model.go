@@ -363,8 +363,14 @@ func storeCandidate(ctx context.Context, tx pgx.Tx, calculation scoreCalculation
 // active model, as it was calculated: its weights with their counts and the
 // two totals. ok is false when no such candidate is stored.
 func storedCalculation(ctx context.Context, tx pgx.Tx, id int64) (calculation scoreCalculation, calculatedAt time.Time, ok bool, err error) {
-	err = tx.QueryRow(ctx, "SELECT calculated_at, favorites_in_scope, catalog_in_scope FROM panda_score_models WHERE id = $1 AND NOT active",
-		id).Scan(&calculatedAt, &calculation.favoritesInScope, &calculation.catalogInScope)
+	return readCalculation(ctx, tx, id, false)
+}
+
+// readCalculation reads the model with the ID as storedCalculation does, but
+// only while its active state is the one given.
+func readCalculation(ctx context.Context, tx pgx.Tx, id int64, active bool) (calculation scoreCalculation, calculatedAt time.Time, ok bool, err error) {
+	err = tx.QueryRow(ctx, "SELECT calculated_at, favorites_in_scope, catalog_in_scope FROM panda_score_models WHERE id = $1 AND active = $2",
+		id, active).Scan(&calculatedAt, &calculation.favoritesInScope, &calculation.catalogInScope)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return calculation, calculatedAt, false, nil
 	}

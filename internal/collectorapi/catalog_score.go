@@ -40,6 +40,13 @@ const (
 	ScoreFilterHidden = "hidden"
 )
 
+// The two score grades: the score is among the top quarter, or else the top
+// half, of the held-out favorite scores.
+const (
+	ScoreGradeTopQuarter = "top_quarter"
+	ScoreGradeTopHalf    = "top_half"
+)
+
 func ValidScoreFilter(filter string) bool {
 	return filter == "" || filter == ScoreFilterAll || filter == ScoreFilterHidden
 }
@@ -48,19 +55,26 @@ func ValidScoreFilter(filter string) bool {
 // ThresholdTenths is the active model's threshold, nil without one.
 // HiddenUnseen reports, for an empty first page of the unseen view, that the
 // filter hides unseen galleries that pass the search and filters.
+// HeldOutFavorites is the number of held-out favorite scores that the score
+// grades compare with.
 type CatalogScoreFilter struct {
-	ThresholdTenths *int `json:"threshold_tenths,omitempty"`
-	HiddenUnseen    bool `json:"hidden_unseen,omitempty"`
+	ThresholdTenths  *int `json:"threshold_tenths,omitempty"`
+	HiddenUnseen     bool `json:"hidden_unseen,omitempty"`
+	HeldOutFavorites int  `json:"held_out_favorites,omitempty"`
 }
 
 // CatalogItemScore names the rule that decides a catalog item and the label of
 // the deciding override. With an active model
-// it also gives the item's score and its strongest weights.
+// it also gives the item's score and its strongest weights, and with at
+// least one held-out favorite score the number of those above the item's
+// score and its score grade, empty below the top half.
 type CatalogItemScore struct {
-	Rule     string               `json:"rule,omitempty"`
-	Override string               `json:"override,omitempty"`
-	Value    *float64             `json:"value,omitempty"`
-	Weights  []CatalogScoreWeight `json:"weights,omitempty"`
+	Rule           string               `json:"rule,omitempty"`
+	Override       string               `json:"override,omitempty"`
+	Value          *float64             `json:"value,omitempty"`
+	Weights        []CatalogScoreWeight `json:"weights,omitempty"`
+	FavoritesAbove *int                 `json:"favorites_above,omitempty"`
+	Grade          string               `json:"grade,omitempty"`
 }
 
 // CatalogScoreWeight is the effective weight of one tag, uploader or category

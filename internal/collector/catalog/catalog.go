@@ -164,6 +164,10 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		if err := filter.markScores(ctx, tx, result.Items); err != nil {
 			return result, err
 		}
+		if filter.model != nil {
+			result.ScoreFilter.HeldOutFavorites = len(filter.model.favoriteScores)
+			markGrades(result.Items, filter.model.favoriteScores)
+		}
 		if options.Unseen && options.ScoreFilter == "" && options.Cursor == "" && len(result.Items) == 0 {
 			result.ScoreFilter.HiddenUnseen, err = filter.hasHiddenUnseen(ctx, tx, unseenPredicate, unseenArgs)
 			if err != nil {
