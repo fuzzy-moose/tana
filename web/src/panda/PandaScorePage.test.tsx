@@ -249,6 +249,15 @@ test('without a favorite in scope says that no model is possible and keeps the a
   expect(listedAuthors()).toEqual([['artist:author 0', '2 favorites', '–']])
 })
 
+test('while the catalog in scope is counted, says how much is done instead of offering a model', async () => {
+  respond(Response.json(preview({ candidate: null, no_model: 'counts_preparing', counts_progress: 42 })))
+  render(<App />)
+  await screen.findByRole('region', { name: 'Evidence' })
+  expect(newModel().getByText('The collector counts the catalog inside the default filter: 42 % done. The page calculates a model when the counts are complete.')).toBeTruthy()
+  expect(newModel().queryByRole('table')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Apply model and threshold' })).toBeNull()
+})
+
 test('a candidate without weights offers its threshold and an empty weights table', async () => {
   respond(Response.json(preview({ candidate: { ...preview().candidate!, weight_count: 0, weights: [] } })))
   render(<App />)

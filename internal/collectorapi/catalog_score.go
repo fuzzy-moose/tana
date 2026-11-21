@@ -97,6 +97,10 @@ type ScorePin struct {
 // is inside the default filter.
 const ScoreNoFavorites = "no_favorites"
 
+// ScoreCountsPreparing is the reason a preview offers no model while the
+// collector counts the catalog in scope of a new default filter.
+const ScoreCountsPreparing = "counts_preparing"
+
 // ScorePreviewOptions asks for a candidate score model from the Panda
 // favorites inside the default filter. The default filter describes the
 // listing as the user sees it and limits both the favorites and the catalog
@@ -116,10 +120,13 @@ type ScorePreview struct {
 	Evidence  ScoreEvidence   `json:"evidence"`
 	Candidate *ScoreCandidate `json:"candidate"`
 	NoModel   string          `json:"no_model,omitempty"`
-	Active    *ScoreActive    `json:"active"`
-	Overrides []ScoreOverride `json:"overrides"`
-	Pins      []ScorePin      `json:"pins"`
-	Recent    ScoreRecent     `json:"recent"`
+	// CountsProgress is the share of the catalog counted so far, in percent,
+	// while NoModel is ScoreCountsPreparing.
+	CountsProgress *int            `json:"counts_progress,omitempty"`
+	Active         *ScoreActive    `json:"active"`
+	Overrides      []ScoreOverride `json:"overrides"`
+	Pins           []ScorePin      `json:"pins"`
+	Recent         ScoreRecent     `json:"recent"`
 
 	AuthorBonus         *float64              `json:"author_bonus"`
 	FavoriteAuthorCount int                   `json:"favorite_author_count"`

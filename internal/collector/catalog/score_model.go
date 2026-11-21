@@ -29,6 +29,9 @@ const scorePreviewAuthors = 500
 // candidate again with the current favorites, pins, overrides and bonus.
 func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.ScorePreviewOptions) (collectorapi.ScorePreview, error) {
 	var preview collectorapi.ScorePreview
+	if err := s.useScope(ctx, options.DefaultQuery, options.DefaultCategories); err != nil {
+		return preview, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return preview, err
@@ -113,10 +116,27 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 		if _, err := tx.Exec(ctx, "DELETE FROM panda_score_models WHERE NOT active"); err != nil {
 			return preview, err
 		}
-		if len(favorites) == 0 {
+		// The counts stay as read while the preview runs.
+		counted, err := readScope(ctx, tx, "FOR SHARE")
+		if err != nil {
+			return preview, err
+		}
+		categories, err := scopeCategories(options.DefaultCategories)
+		if err != nil {
+			return preview, err
+		}
+		switch {
+		case len(favorites) == 0:
 			preview.NoModel = collectorapi.ScoreNoFavorites
-		} else {
-			if calculation, err = calculateScoreModel(ctx, tx, scope, scopeArgs, favorites); err != nil {
+		case !counted.ready || !counted.is(options.DefaultQuery, categories):
+			preview.NoModel = collectorapi.ScoreCountsPreparing
+			progress, err := scopeProgress(ctx, tx, counted)
+			if err != nil {
+				return preview, err
+			}
+			preview.CountsProgress = &progress
+		default:
+			if calculation, err = calculateScoreModel(ctx, tx, counted.galleries, favorites); err != nil {
 				return preview, err
 			}
 			candidate, err := storeCandidate(ctx, tx, calculation)
@@ -232,59 +252,26 @@ type scoreCalculation struct {
 }
 
 // calculateScoreModel weighs every value that at least MinSupport favorites
-// carry against its frequency in the catalog in scope. The catalog is
-// counted in the database, and only for those values.
-func calculateScoreModel(ctx context.Context, tx pgx.Tx, scope string, args pgdb.Args, favorites []favoriteGallery) (scoreCalculation, error) {
-	calculation := scoreCalculation{favoritesInScope: len(favorites), weights: map[scoreValue]float64{}, catalog: map[scoreValue]int{}}
+// carry against its frequency in the catalog in scope of catalogInScope
+// galleries, as the scope counts give it.
+func calculateScoreModel(ctx context.Context, tx pgx.Tx, catalogInScope int, favorites []favoriteGallery) (scoreCalculation, error) {
+	calculation := scoreCalculation{favoritesInScope: len(favorites), catalogInScope: catalogInScope, weights: map[scoreValue]float64{}}
 	carried := map[scoreValue]int{}
 	for _, gallery := range favorites {
 		for _, value := range gallery.values() {
 			carried[value]++
 		}
 	}
-	var tagIDs []int64
-	var uploaders, categories []string
+	supported := make([]scoreValue, 0, len(carried))
 	for value, count := range carried {
 		if count < MinSupport {
 			delete(carried, value)
 			continue
 		}
-		switch value.kind {
-		case collectorapi.ScoreKindTag:
-			tagIDs = append(tagIDs, value.tagID)
-		case collectorapi.ScoreKindUploader:
-			uploaders = append(uploaders, value.value)
-		case collectorapi.ScoreKindCategory:
-			categories = append(categories, value.value)
-		}
+		supported = append(supported, value)
 	}
-	if err := tx.QueryRow(ctx, "SELECT count(*) FROM catalog_galleries g WHERE "+scope, args...).Scan(&calculation.catalogInScope); err != nil {
-		return calculation, err
-	}
-	counted := slices.Clone(args)
-	tagsArg, uploadersArg, categoriesArg := counted.Add(tagIDs), counted.Add(uploaders), counted.Add(categories)
-	rows, err := tx.Query(ctx, `SELECT 'tag', gt.tag_id, '', count(*)
-		FROM catalog_gallery_tags gt JOIN catalog_galleries g ON g.gallery_id = gt.gallery_id
-		WHERE gt.tag_id = ANY(`+tagsArg+`::bigint[]) AND (`+scope+`) GROUP BY gt.tag_id
-		UNION ALL
-		SELECT 'uploader', 0, g.uploader, count(*) FROM catalog_galleries g
-		WHERE g.uploader = ANY(`+uploadersArg+`::text[]) AND (`+scope+`) GROUP BY g.uploader
-		UNION ALL
-		SELECT 'category', 0, g.category, count(*) FROM catalog_galleries g
-		WHERE g.category = ANY(`+categoriesArg+`::text[]) AND (`+scope+`) GROUP BY g.category`, counted...)
-	if err != nil {
-		return calculation, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var value scoreValue
-		var count int
-		if err := rows.Scan(&value.kind, &value.tagID, &value.value, &count); err != nil {
-			return calculation, err
-		}
-		calculation.catalog[value] = count
-	}
-	if err := rows.Err(); err != nil {
+	var err error
+	if calculation.catalog, err = storedScopeCounts(ctx, tx, supported); err != nil {
 		return calculation, err
 	}
 	calculation.favorites = carried

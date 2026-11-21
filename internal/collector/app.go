@@ -121,6 +121,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	catalogService.StartScopeCounts(ctx, logger)
 	return &App{
 		Logger:           logger,
 		APIToken:         cfg.APIToken,
@@ -149,6 +150,7 @@ func (a *App) Close() error {
 	a.Feeds.Close()
 	a.MetadataProxies.Close()
 	a.Metadata.Close()
+	a.Catalog.Close()
 	a.db.Close()
 	return nil
 }

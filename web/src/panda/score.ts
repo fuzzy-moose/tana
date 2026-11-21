@@ -5,7 +5,7 @@ export type ScoreKind = 'tag' | 'uploader' | 'category'
 export type ScoreRule = 'always_hide' | 'never_hide'
 /** Where a weight comes from when the model does not calculate it. */
 export type ScoreSource = 'pin' | 'author_bonus'
-export type NoScoreModel = 'no_favorites'
+export type NoScoreModel = 'no_favorites' | 'counts_preparing'
 
 /** The names of the score override rules, as the user reads them. */
 export const scoreRuleNames: Record<ScoreRule, string> = { always_hide: 'Always hide', never_hide: 'Never hide' }
@@ -94,6 +94,8 @@ export interface ScorePreview {
   evidence: ScoreEvidence
   candidate: ScoreCandidate | null
   no_model?: NoScoreModel
+  /** The share of the catalog counted so far, in percent, while `no_model` is `counts_preparing`. */
+  counts_progress?: number
   active: ActiveScoreModel | null
   overrides: ScoreOverride[]
   pins: ScorePin[]

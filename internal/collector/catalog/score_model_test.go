@@ -19,11 +19,7 @@ import (
 
 func previewScore(t *testing.T, s *Service) collectorapi.ScorePreview {
 	t.Helper()
-	preview, err := s.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return preview
+	return previewWith(t, s, collectorapi.ScorePreviewOptions{})
 }
 
 func findWeight(preview collectorapi.ScorePreview, kind, label string) (collectorapi.ScoreWeight, bool) {

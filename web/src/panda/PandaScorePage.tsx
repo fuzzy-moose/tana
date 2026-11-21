@@ -16,6 +16,8 @@ import './PandaScorePage.css'
 const pageSize = 50
 
 const noFavoritesMessage = 'No model is possible: no Panda favorite is in scope. Sync your Panda favorites, or widen the default filter.'
+// How long the page waits before it asks again while the collector counts the catalog in scope.
+const countsPollDelay = 5000
 
 const formatThreshold = (tenths: number) => (tenths / 10).toFixed(1)
 const formatShare = (share: number) => Math.round(share * 100)
@@ -539,7 +541,10 @@ function Preview({ preview, loading, thresholds, onThresholds, change, onChange,
         ? <Weights weights={candidate.weights} count={candidate.weight_count} overrides={preview.overrides}
           disabled={change.pending || loading} onOverride={(operation) => onChange('override-row', operation)}
           pins={pins} pinDisabled={change.pending} onPin={(operation) => onPin('pin-row', operation)} />
-        : preview.no_model === 'no_favorites' && <Text as="p" size="2">{noFavoritesMessage}</Text>}
+        : preview.no_model === 'no_favorites' ? <Text as="p" size="2">{noFavoritesMessage}</Text>
+          : preview.no_model === 'counts_preparing' && <Text as="p" size="2">
+            The collector counts the catalog inside the default filter: {preview.counts_progress ?? 0} % done. The page calculates a model when the counts are complete.
+          </Text>}
     </Section>
     <Overrides overrides={preview.overrides} disabled={change.pending || loading} change={change} onOverride={onChange} />
     <PinnedWeights pins={pins} modelPins={preview.pins} active={active !== null} disabled={change.pending} change={change} onPin={onPin} />
@@ -584,6 +589,13 @@ export default function PandaScorePage() {
     })
     return () => controller.abort()
   }, [request])
+
+  // Calculate again until the counts of the catalog in scope are complete.
+  useEffect(() => {
+    if (preview?.no_model !== 'counts_preparing') return
+    const timer = setTimeout(() => setRequest({ candidateID: null }), countsPollDelay)
+    return () => clearTimeout(timer)
+  }, [preview])
 
   function load(candidateID: number | null = null) {
     setLoading(true)

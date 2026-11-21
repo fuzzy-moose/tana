@@ -1,0 +1,9 @@
+# Collector keeps the catalog counts of the default filter
+
+A Panda score model weighs each value against how many galleries of the catalog in scope carry it. Counted per calculation, this reads most of `catalog_gallery_tags`, which takes more than a minute on the real catalog and exceeds every request timeout. The collector therefore keeps the catalog in scope as a projection: the number of its galleries and, for each tag, uploader and category, the number that carry it. A calculation reads these counts and costs about as much as reading the favorites.
+
+The counts belong to the default filter of the latest preview request, because Tana owns the default filter and sends it with each request under [ADR 0019](0019-collector-keeps-panda-seen-state.md). A request with another filter drops the counts and starts a new build, which counts the catalog in batches by gallery ID and continues after a restart. Until the build completes, a preview offers no new model and reports the share counted; a measurement of a stored candidate needs no counts.
+
+Triggers on `catalog_galleries` and `catalog_gallery_tags` record every changed gallery, cascades included, so no write path can bypass the counts. A worker counts each changed gallery again: it takes back what the gallery added, as stored per counted gallery, and adds what the catalog now holds. Storing the counted values costs about one row per gallery in scope, and keeps the correction exact without reconstructing the previous state of a gallery. The worker evaluates the scope with the tag vocabulary of the moment; since projections only extend the vocabulary, a new tag reaches only galleries whose tag change is itself recorded.
+
+The counts trail catalog writes by the worker's few seconds. A recorded change waits while a writer still holds it, so a change is never counted from a state before its commit.

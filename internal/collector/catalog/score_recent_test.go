@@ -9,7 +9,21 @@ import (
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
+// previewWith previews with the scope counts of the options settled, as the
+// scope count worker leaves them.
 func previewWith(t *testing.T, s *Service, options collectorapi.ScorePreviewOptions) collectorapi.ScorePreview {
+	t.Helper()
+	settleScope(t, s)
+	preview := previewRaw(t, s, options)
+	if preview.NoModel == collectorapi.ScoreCountsPreparing {
+		settleScope(t, s)
+		preview = previewRaw(t, s, options)
+	}
+	return preview
+}
+
+// previewRaw previews without waiting for the scope counts.
+func previewRaw(t *testing.T, s *Service, options collectorapi.ScorePreviewOptions) collectorapi.ScorePreview {
 	t.Helper()
 	preview, err := s.PreviewScoreModel(t.Context(), options)
 	if err != nil {

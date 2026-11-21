@@ -731,10 +731,24 @@ func TestLocalScoreModel(t *testing.T) {
 	}
 	defaults := catalogfilter.New(pgtest.Open(t, localstorage.Migrations()))
 	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, path, strings.NewReader(body))
-		r.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		NewHandler(&local.App{Logger: logger, Collector: client, CatalogFilter: defaults}).ServeHTTP(w, r)
+		serve := func() *httptest.ResponseRecorder {
+			r := httptest.NewRequest(method, path, strings.NewReader(body))
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			NewHandler(&local.App{Logger: logger, Collector: client, CatalogFilter: defaults}).ServeHTTP(w, r)
+			return w
+		}
+		w := serve()
+		// A preview of a new default filter waits for its catalog counts:
+		// count them, as the collector's worker would, and ask again.
+		if strings.Contains(w.Body.String(), `"no_model":"`+collectorapi.ScoreCountsPreparing+`"`) {
+			for more := true; more; {
+				if more, err = service.UpdateScopeCounts(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			w = serve()
+		}
 		return w
 	}
 	sent := func() map[string]json.RawMessage {
