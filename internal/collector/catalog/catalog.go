@@ -24,17 +24,17 @@ var ErrInvalidQuery = gallerysearch.ErrInvalidQuery
 var ErrInvalidPagination = errors.New("invalid pagination")
 
 type Service struct {
-	db            *pgxpool.Pool
-	galleryOrigin string
-	scopeBatch    int
-	scopeWake     chan struct{}
-	stopWorkers   context.CancelFunc
-	workers       sync.WaitGroup
+	db              *pgxpool.Pool
+	galleryOrigin   string
+	scopeBuildBatch int
+	scopeWake       chan struct{}
+	stopWorkers     context.CancelFunc
+	workers         sync.WaitGroup
 }
 
 func New(db *pgxpool.Pool, galleryOrigin string) *Service {
 	return &Service{db: db, galleryOrigin: strings.TrimRight(galleryOrigin, "/"),
-		scopeBatch: defaultScopeBatch, scopeWake: make(chan struct{}, 1)}
+		scopeBuildBatch: defaultScopeBuildBatch, scopeWake: make(chan struct{}, 1)}
 }
 
 func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions) (collectorapi.CatalogResult, error) {

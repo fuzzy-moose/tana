@@ -128,7 +128,7 @@ func TestCalculationWaitsForTheScopeCounts(t *testing.T) {
 
 func TestScopeCountsBuildInBatches(t *testing.T) {
 	db, s := openCatalog(t)
-	s.scopeBatch = 2
+	s.scopeBuildBatch = 2
 	retainRange(t, db, 1, 3, panda.Metadata{Uploader: "Up", Category: "Manga", Tags: []string{"other:a", "language:english"}})
 	retainRange(t, db, 4, 7, panda.Metadata{Category: "Doujinshi", Tags: []string{"other:a", "other:b"}})
 	retain(t, db, panda.Metadata{ID: 8, Posted: 8, Expunged: true, Tags: []string{"other:b"}}, true)

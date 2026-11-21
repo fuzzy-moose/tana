@@ -149,6 +149,9 @@ A user action that makes every Panda gallery at or before a catalog position see
 **Default filter**:
 The search and Panda gallery categories that the user saves to limit every Panda catalog listing, unless the user bypasses it for a listing.
 
+**Catalog in scope**:
+Every Panda catalog gallery that passes the default filter, expunged galleries included. The collector keeps how many galleries it holds and how many carry each tag, uploader, and Panda gallery category, for the default filter of the latest score model preview.
+
 **Panda score model**:
 A set of weights for tags, uploaders, and Panda gallery categories, together with a score threshold. A value's weight measures how much more frequent the value is in the Panda favorites than in the Panda catalog, both limited to the default filter. Favorites of all favorite collections count. A calculated weight is never negative: only pinned weights and score overrides express dislike. At most one model is active.
 

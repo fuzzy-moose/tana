@@ -29,7 +29,8 @@ const scorePreviewAuthors = 500
 // candidate again with the current favorites, pins, overrides and bonus.
 func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.ScorePreviewOptions) (collectorapi.ScorePreview, error) {
 	var preview collectorapi.ScorePreview
-	if err := s.useScope(ctx, options.DefaultQuery, options.DefaultCategories); err != nil {
+	categories, err := s.useScope(ctx, options.DefaultQuery, options.DefaultCategories)
+	if err != nil {
 		return preview, err
 	}
 	tx, err := s.db.Begin(ctx)
@@ -118,10 +119,6 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 		}
 		// The counts stay as read while the preview runs.
 		counted, err := readScope(ctx, tx, "FOR SHARE")
-		if err != nil {
-			return preview, err
-		}
-		categories, err := scopeCategories(options.DefaultCategories)
 		if err != nil {
 			return preview, err
 		}
