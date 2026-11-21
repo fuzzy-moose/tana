@@ -138,10 +138,7 @@ The browsable collection of Panda galleries described by collected or provisiona
 A Panda gallery that is a displayed Panda gallery or that a catch-up covers. Seen state belongs to the gallery ID, so a new version of a seen gallery is unseen.
 
 **Displayed Panda gallery**:
-A Panda gallery shown on a listing page that the user left by going to the next page, or one the user gave a verdict. Each display keeps the time it was recorded and whether it is evidence for the Panda score model.
-
-**Panda gallery verdict**:
-The user's judgment of one Panda gallery, "Not for me" or "Interesting". A displayed Panda gallery without a verdict is neutral.
+A Panda gallery shown on a listing page that the user left by going to the next page. Each display keeps the time it was recorded.
 
 **Unseen view**:
 The Panda catalog listing restricted to galleries that are not seen, in catalog order, combined with the current search and filters.
@@ -149,8 +146,11 @@ The Panda catalog listing restricted to galleries that are not seen, in catalog 
 **Catch-up**:
 A user action that makes every Panda gallery at or before a catalog position seen, including galleries that join the catalog later at such a position. The position only advances and never makes a gallery unseen.
 
+**Default filter**:
+The search and Panda gallery categories that the user saves to limit every Panda catalog listing, unless the user bypasses it for a listing.
+
 **Panda score model**:
-A set of weights for tags, uploaders, and Panda gallery categories, calculated from the user's evidence (Panda gallery verdicts, displayed Panda galleries, and optionally Panda favorites), together with a score threshold. At most one model is active.
+A set of weights for tags, uploaders, and Panda gallery categories, together with a score threshold. A value's weight measures how much more frequent the value is in the Panda favorites than in the Panda catalog, both limited to the default filter. Favorites of all favorite collections count. A calculated weight is never negative: only pinned weights and score overrides express dislike. At most one model is active.
 
 **Panda gallery score**:
 The sum of the weights of a gallery's tags, uploader, and category under the active Panda score model. A pinned weight replaces the model's weight of its value, and the tag of a favorite author weighs at least the author bonus.
@@ -168,7 +168,7 @@ A weight that the user sets by hand for one tag, uploader, or Panda gallery cate
 An `artist` tag carried by at least two Panda favorites whose tags the Panda catalog has, as of the last completed Panda favorite sync. A gallery in several Panda favorite collections counts once. The author bonus is the one weight that the user sets as the minimum for the tag of every favorite author. It is off until set, and a pinned weight on the tag wins.
 
 **Score filter**:
-The hiding of Panda galleries in the catalog listing by the active Panda score model, the score overrides, and the user's own verdicts. It is in force while a model is active or an override exists.
+The hiding of Panda galleries in the catalog listing by the active Panda score model and the score overrides. It is in force while a model is active or an override exists.
 
 **Metadata refresh time**:
 The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.
