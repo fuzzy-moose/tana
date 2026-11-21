@@ -1,6 +1,6 @@
 export const meta = {
   name: 'ship-feature',
-  description: 'Plan (fable, xhigh), then implement, review and fix every ticket (medium) of a tana feature',
+  description: 'Plan (fable, high), then implement, review and fix every ticket (medium) of a tana feature',
   whenToUse:
     'Pass a feature brief to plan and build it hands-off, or the slug of an existing .scratch/<feature>/ plan to build or resume it.',
   phases: [
@@ -20,7 +20,7 @@ if (!input) throw new Error('Pass a feature brief, or the slug of an existing pl
 
 // Model and effort per role. Agent frontmatter sets the same values for manual use; passing
 // them here makes the pipeline independent of the session's own settings.
-const PLAN = { model: 'fable', effort: 'xhigh' }
+const PLAN = { model: 'fable', effort: 'high' }
 const CRITIC = { model: 'opus', effort: 'high' }
 const WORK = { model: 'opus', effort: 'medium' }
 const CHORE = { model: 'haiku', effort: 'medium' } // setup, branch and the ticket board: git state and status lines
