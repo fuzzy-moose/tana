@@ -21,7 +21,7 @@ import (
 	"github.com/fuzzy-moose/tana/internal/pgdb/pgtest"
 )
 
-func TestGalleryPandaFiltersUseCurrentCollectorFacts(t *testing.T) {
+func TestGalleryListingUsesCurrentCollectorFacts(t *testing.T) {
 	db := pgtest.Open(t, storage.Migrations())
 	galleries := gallery.NewStore(db)
 	l, err := library.NewStore(db).Create(t.Context(), "Library", filepath.Join(t.TempDir(), "books"))
@@ -86,11 +86,20 @@ func TestGalleryPandaFiltersUseCurrentCollectorFacts(t *testing.T) {
 		}
 		return result
 	}
-	if result := listing("/api/galleries?sort=title"); result.Total != 4 || calls.Load() != 0 {
+	categories := func(result gallery.Listing) map[string]string {
+		got := map[string]string{}
+		for _, item := range result.Items {
+			got[item.Title] = item.PandaCategory
+		}
+		return got
+	}
+	shown := map[string]string{"A [11]": "manga", "B [22]": "doujinshi", "C [11]": "manga", "Manual [11]": ""}
+	unknown := map[string]string{"A [11]": "", "B [22]": "", "C [11]": "", "Manual [11]": ""}
+	if result := listing("/api/galleries?sort=title"); result.Total != 4 || calls.Load() != 1 || !reflect.DeepEqual(categories(result), shown) {
 		t.Fatalf("ordinary browsing: %+v, collector calls %d", result, calls.Load())
 	}
 	result := listing("/api/galleries?category=manga&category=doujinshi&sort=favorited_asc&page=2&page_size=1")
-	if result.Total != 3 || result.Page != 2 || len(result.Items) != 1 || result.Items[0].Title != "A [11]" {
+	if result.Total != 3 || result.Page != 2 || len(result.Items) != 1 || result.Items[0].Title != "A [11]" || result.Items[0].PandaCategory != "manga" {
 		t.Fatalf("filtered second page: %+v", result)
 	}
 	removed.Store(true)
@@ -98,32 +107,32 @@ func TestGalleryPandaFiltersUseCurrentCollectorFacts(t *testing.T) {
 	if result.Total != 4 || len(result.Items) != 2 || result.Items[0].Title != "B [22]" || result.Items[1].Title != "A [11]" {
 		t.Fatalf("removed favorite timestamp remained in use: %+v", result)
 	}
-	if calls.Load() != 2 {
+	if calls.Load() != 3 {
 		t.Fatalf("collector calls: %d", calls.Load())
 	}
 	for _, query := range []string{"sort=unknown", "category=unknown", "category=manga&category=unknown"} {
 		request(t, handler, "GET", "/api/galleries?"+query, "", 400)
 	}
-	if calls.Load() != 2 {
+	if calls.Load() != 3 {
 		t.Fatalf("invalid filters called collector: %d", calls.Load())
 	}
 	expectedIDs.Store([]int64{22})
 	result = listing("/api/galleries?q=title:B&category=doujinshi&sort=favorited_desc")
-	if result.Total != 1 || len(result.Items) != 1 || result.Items[0].Title != "B [22]" || calls.Load() != 3 {
+	if result.Total != 1 || len(result.Items) != 1 || result.Items[0].Title != "B [22]" || calls.Load() != 4 {
 		t.Fatalf("searched listing: %+v, collector calls %d", result, calls.Load())
 	}
 	for _, search := range []string{"Manual", "missing"} {
 		result = listing("/api/galleries?q=title:" + search + "&sort=favorited_desc")
-		if calls.Load() != 3 {
+		if calls.Load() != 4 {
 			t.Fatalf("search without Panda candidates called collector: %+v, calls %d", result, calls.Load())
 		}
 	}
 	request(t, handler, "GET", "/api/galleries?q=unknown:value&sort=favorited_desc", "", 400)
-	if calls.Load() != 3 {
+	if calls.Load() != 4 {
 		t.Fatalf("invalid search called collector: %d", calls.Load())
 	}
 	unavailable.Store(true)
-	if result := listing("/api/galleries"); result.Total != 4 || calls.Load() != 3 {
+	if result := listing("/api/galleries"); result.Total != 4 || calls.Load() != 5 || !reflect.DeepEqual(categories(result), unknown) {
 		t.Fatalf("ordinary browsing depends on collector: %+v, calls %d", result, calls.Load())
 	}
 	if response := request(t, handler, "GET", "/api/galleries?category=manga", "", 502); !strings.Contains(response.Body.String(), "collector_unavailable") {
@@ -131,4 +140,8 @@ func TestGalleryPandaFiltersUseCurrentCollectorFacts(t *testing.T) {
 	}
 	unconfigured := NewHandler(&local.App{Logger: logger, Galleries: galleries})
 	request(t, unconfigured, "GET", "/api/galleries?sort=favorited_asc", "", 503)
+	var unconfiguredResult gallery.Listing
+	if err := json.Unmarshal(request(t, unconfigured, "GET", "/api/galleries?sort=title", "", 200).Body.Bytes(), &unconfiguredResult); err != nil || !reflect.DeepEqual(categories(unconfiguredResult), unknown) {
+		t.Fatalf("listing without collector: %+v, %v", unconfiguredResult, err)
+	}
 }

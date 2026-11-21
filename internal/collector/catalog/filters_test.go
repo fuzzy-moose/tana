@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
@@ -161,5 +162,23 @@ func TestCatalogFactsUseLatestCurrentFavoriteEvenWithoutMetadata(t *testing.T) {
 		if _, err := service.Facts(t.Context(), ids); !errors.Is(err, ErrInvalidFactsBatch) {
 			t.Fatalf("invalid facts batch: %v", err)
 		}
+	}
+}
+
+func TestCatalogItemsCarryTheirCategory(t *testing.T) {
+	db, service := openCatalog(t)
+	retain(t, db, panda.Metadata{ID: 1, Posted: 1, Category: "Artist CG"}, true)
+	retain(t, db, panda.Metadata{ID: 2, Posted: 2, Category: ""}, true)
+	projectFeed(t, db, panda.FeedEntry{GalleryRef: panda.GalleryRef{ID: 3, Token: "token"}, Title: "Feed", Category: "manga"}, time.Unix(3, 0))
+	result, err := service.List(t.Context(), collectorapi.CatalogOptions{PageSize: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]string{}
+	for _, item := range result.Items {
+		got[item.GalleryID] = item.Category
+	}
+	if want := map[int64]string{1: "artist cg", 2: "", 3: "manga"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("categories = %v, want %v", got, want)
 	}
 }

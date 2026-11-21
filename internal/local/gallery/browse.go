@@ -22,6 +22,8 @@ type Listing struct {
 type ListedGallery struct {
 	Summary
 	SummaryTags []DetailTag `json:"summary_tags"`
+	// PandaCategory is the Panda gallery category of the source's Panda gallery candidate, when the collector knows it.
+	PandaCategory string `json:"panda_category,omitempty"`
 }
 
 func (r *Store) Browse(ctx context.Context, search string, page, pageSize int64) (Listing, error) {

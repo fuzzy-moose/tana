@@ -4,6 +4,7 @@ import { ClockIcon, DrawingPinFilledIcon, ExclamationTriangleIcon, EyeNoneIcon, 
 import GalleryBox from '../galleries/GalleryBox'
 import type { GalleryBoxTag } from '../galleries/GalleryBox'
 import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaSummaryTag, ScoreGrade } from './api'
+import PandaCategoryBadge from './PandaCategoryBadge'
 import { scoreRuleNames } from './score'
 import type { ScoreSource } from './score'
 
@@ -88,6 +89,7 @@ export default function PandaCard({ gallery, scoreFilter }: { gallery: PandaGall
     subdued={!!gallery.displayed}
     className={grade && grades[grade].className} hiddenLabel={grade && grades[grade].name}
     tooltip={<PandaDetails gallery={gallery} scoreFilter={scoreFilter} />}
+    footer={<PandaCategoryBadge category={gallery.category} />}
     status={gallery.metadata_source === 'feed' && <Badge variant="solid" color={failed ? 'red' : 'gray'}>
       {failed ? <ExclamationTriangleIcon /> : <ClockIcon />}<VisuallyHidden>{failed ? 'Collection failed' : 'Waiting for metadata'}</VisuallyHidden>
     </Badge>}

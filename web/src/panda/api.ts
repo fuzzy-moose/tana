@@ -20,6 +20,8 @@ export interface PandaGallery {
   thumbnail_url: string
   page_count: number | null
   posted_at: string | null
+  /** The Panda gallery category in lowercase; absent while unknown. */
+  category?: string
   metadata_source: 'feed' | 'collected'
   metadata_state?: 'waiting' | 'failed'
   fetch_eligible_at?: string

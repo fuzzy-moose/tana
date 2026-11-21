@@ -53,22 +53,27 @@ interface GalleryBoxProps extends Pick<ComponentProps<'a'>, 'href' | 'target' | 
   className?: string
   /** Read by screen readers after the title, for what `className` shows. */
   hiddenLabel?: string
+  /** One row below the tags, for example the category. The row keeps its height when empty. */
+  footer?: ReactNode
 }
 
-/** One cell of a gallery grid: title, cover with its page count and status, and the tags that fit. */
-export default function GalleryBox({ title, cover, pageCount, tags, tooltip = title, status, subdued, className, hiddenLabel, ...link }: GalleryBoxProps) {
+/** The cover slot's width to height, the shape of a Panda thumbnail. */
+const coverSlotRatio = 250 / 353
+
+/** One cell of a gallery grid: title, cover with its page count and status, the tags that fit, and a footer row. */
+export default function GalleryBox({ title, cover, pageCount, tags, tooltip = title, status, subdued, className, hiddenLabel, footer, ...link }: GalleryBoxProps) {
   const [coverRatio, setCoverRatio] = useState<number>()
-  // A loaded cover shapes its frame inside the 2:3 slot, so the border and page count follow the image.
+  // A loaded cover shapes its frame inside the slot, so the border and page count follow the image.
   const onCoverLoad: ReactEventHandler<HTMLImageElement> = ({ currentTarget: image }) => {
     setCoverRatio(image.naturalWidth / image.naturalHeight)
   }
-  const coverShape = coverRatio === undefined ? '' : coverRatio > 2 / 3 ? ' gallery-cover-wide' : ' gallery-cover-tall'
+  const coverShape = coverRatio === undefined ? '' : coverRatio > coverSlotRatio ? ' gallery-cover-wide' : ' gallery-cover-tall'
   return <Tooltip content={tooltip}><Box asChild p="3"><a className={['gallery-box', subdued && 'gallery-box-subdued', className].filter(Boolean).join(' ')} {...link}>
     <Flex direction="column" gap="2">
       <Text asChild size="1" weight="medium"><h2>{title}</h2></Text>
       {subdued && <VisuallyHidden>Seen</VisuallyHidden>}
       {hiddenLabel && <VisuallyHidden>{hiddenLabel}</VisuallyHidden>}
-      <div className="gallery-cover"><div className={`gallery-cover-frame${coverShape}`} style={{ aspectRatio: coverRatio }}>
+      <div className="gallery-cover" style={{ aspectRatio: coverSlotRatio }}><div className={`gallery-cover-frame${coverShape}`} style={{ aspectRatio: coverRatio }}>
         {cover({ onLoad: onCoverLoad })}
         {status && <Flex className="gallery-cover-status" gap="1">{status}</Flex>}
         {pageCount !== null && pageCount > 0 && <Badge className="gallery-page-count" variant="solid" color="gray">
@@ -77,6 +82,7 @@ export default function GalleryBox({ title, cover, pageCount, tags, tooltip = ti
       </div></div>
       {/* A mark widens its badge, and a mounted strip fits again only on a resize. */}
       <SummaryTags key={tags.map((tag) => `${tag.mark ? '+' : '-'}${tag.term}`).join(' ')} tags={tags} />
+      <Flex className="gallery-box-footer" align="center">{footer}</Flex>
     </Flex>
   </a></Box></Tooltip>
 }

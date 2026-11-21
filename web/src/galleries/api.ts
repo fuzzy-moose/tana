@@ -14,6 +14,8 @@ export interface GalleryDetails extends Gallery {
 
 export interface ListedGallery extends Gallery {
   summary_tags: TagSuggestion[]
+  /** The Panda gallery category of the source's Panda gallery candidate, in lowercase; absent while unknown. */
+  panda_category?: string
 }
 
 export interface GalleryListing {

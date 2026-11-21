@@ -107,7 +107,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if cursor.Before {
 		order = "ASC"
 	}
-	rows, err := tx.Query(ctx, `SELECT g.gallery_id, g.title, g.thumbnail_url, g.page_count, g.posted, r.token,
+	rows, err := tx.Query(ctx, `SELECT g.gallery_id, g.title, g.thumbnail_url, g.page_count, g.posted, g.category, r.token,
 		g.metadata_source, g.first_seen_at, r.metadata_error,
 		r.feed_metadata_base_at + make_interval(hours => settings.feed_metadata_delay_hours),
 		EXISTS (SELECT 1 FROM metadata_fetches f WHERE f.gallery_id = r.gallery_id AND f.token = r.token AND f.status = 'pending')
@@ -126,7 +126,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		var metadataError *string
 		var explicitPending bool
 		var token string
-		if err := rows.Scan(&item.GalleryID, &item.Title, &item.ThumbnailURL, &item.PageCount, &item.PostedAt, &token,
+		if err := rows.Scan(&item.GalleryID, &item.Title, &item.ThumbnailURL, &item.PageCount, &item.PostedAt, &item.Category, &token,
 			&item.MetadataSource, &firstSeen, &metadataError, &eligible, &explicitPending); err != nil {
 			return result, err
 		}

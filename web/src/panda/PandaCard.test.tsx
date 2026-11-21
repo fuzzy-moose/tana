@@ -213,3 +213,10 @@ test('cards outline a score grade, and details compare the score with the held-o
   rerender(<PandaDetails gallery={graded(undefined, 30)} scoreFilter={scoreFilter} />)
   expect(screen.getByText('30 of 40 favorites score higher')).toBeTruthy()
 })
+
+test('cards show the category by its display name and keep an empty row without one', () => {
+  const { rerender } = render(<Theme><PandaCard gallery={{ ...collectedGallery, category: 'artist cg' }} /></Theme>)
+  expect(document.querySelector('.gallery-box-footer')?.textContent).toBe('Category: Artist CG')
+  rerender(<Theme><PandaCard gallery={feedGallery} /></Theme>)
+  expect(document.querySelector('.gallery-box-footer')?.textContent).toBe('')
+})

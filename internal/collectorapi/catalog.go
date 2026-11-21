@@ -26,11 +26,13 @@ type CatalogOptions struct {
 }
 
 type CatalogItem struct {
-	GalleryID       int64             `json:"gallery_id"`
-	Title           string            `json:"title"`
-	ThumbnailURL    string            `json:"thumbnail_url"`
-	PageCount       *int64            `json:"page_count"`
-	PostedAt        *time.Time        `json:"posted_at"`
+	GalleryID    int64      `json:"gallery_id"`
+	Title        string     `json:"title"`
+	ThumbnailURL string     `json:"thumbnail_url"`
+	PageCount    *int64     `json:"page_count"`
+	PostedAt     *time.Time `json:"posted_at"`
+	// Category is the normalized Panda gallery category; empty while unknown.
+	Category        string            `json:"category,omitempty"`
 	URL             string            `json:"url"`
 	MetadataSource  string            `json:"metadata_source"`
 	MetadataState   string            `json:"metadata_state,omitempty"`

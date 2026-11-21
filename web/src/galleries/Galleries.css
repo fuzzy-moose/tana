@@ -62,16 +62,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: 2 / 3;
   overflow: hidden;
   border-radius: var(--radius-3);
 }
 
 .gallery-cover img { display: block; width: 100%; height: 100%; object-fit: contain; }
 
-/* Cells draw only their right and bottom edges, so neighbors share one line. */
+/* Cells draw only their right and bottom edges, so neighbors share one line.
+   The minimum column, padding and right edge included, leaves a cover at least as wide as a 250px Panda thumbnail. */
 .gallery-boxes .gallery-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(250px + 2 * var(--space-3) + 1px, 100%), 1fr));
   gap: 0;
   border-top: 1px solid var(--gray-a5);
   border-left: 1px solid var(--gray-a5);
@@ -106,6 +106,9 @@
   overflow: hidden;
   list-style: none;
 }
+
+/* One badge row, present also when empty, so every card keeps the same height. */
+.gallery-box-footer { height: calc(var(--line-height-1) + var(--space-1)); }
 
 .gallery-summary-tags > li { display: flex; align-items: center; min-width: 0; max-width: 100%; }
 .gallery-summary-tags .rt-Badge { max-width: 100%; }

@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/local/gallery"
@@ -28,6 +30,8 @@ func HandleListGalleries(galleries *gallery.Store, client *collectorapi.Client) 
 			writeGalleryError(w, r, gallery.ErrInvalidQuery)
 			return
 		}
+		// The Panda gallery category of each candidate the collector answered for.
+		var pandaCategories map[int64]string
 		if options.NeedsPanda() {
 			if !catalogCollectorConfigured(w, client) {
 				return
@@ -50,6 +54,7 @@ func HandleListGalleries(galleries *gallery.Store, client *collectorapi.Client) 
 			for _, fact := range facts {
 				byID[fact.GalleryID] = fact
 			}
+			pandaCategories = categoriesOf(facts)
 			for _, candidate := range candidates {
 				fact := byID[candidate.PandaID]
 				options.PandaFacts = append(options.PandaFacts, gallery.PandaFact{
@@ -62,8 +67,61 @@ func HandleListGalleries(galleries *gallery.Store, client *collectorapi.Client) 
 			writeGalleryError(w, r, err)
 			return
 		}
+		if client != nil {
+			if err := addPandaCategories(r, galleries, client, result.Items, pandaCategories); err != nil {
+				writeGalleryError(w, r, err)
+				return
+			}
+		}
 		server.WriteJSON(w, http.StatusOK, result)
 	})
+}
+
+// pandaCategoryTimeout bounds the collector call of a plain listing: a category label must not hold up browsing.
+const pandaCategoryTimeout = 2 * time.Second
+
+// categoriesOf maps each Panda gallery ID to its Panda gallery category.
+func categoriesOf(facts []collectorapi.CatalogFact) map[int64]string {
+	categories := make(map[int64]string, len(facts))
+	for _, fact := range facts {
+		categories[fact.GalleryID] = fact.Category
+	}
+	return categories
+}
+
+// addPandaCategories labels the listed galleries with the categories of their Panda gallery candidates.
+// Known categories come from facts the request already fetched; otherwise the collector is asked for this
+// page only, and a collector failure or delay leaves the categories unknown instead of failing the listing.
+func addPandaCategories(r *http.Request, galleries *gallery.Store, client *collectorapi.Client, items []gallery.ListedGallery, known map[int64]string) error {
+	galleryIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		galleryIDs = append(galleryIDs, item.ID)
+	}
+	candidates, err := galleries.PandaCandidateIDsByGallery(r.Context(), galleryIDs)
+	if err != nil || len(candidates) == 0 {
+		return err
+	}
+	if known == nil {
+		ids := make([]int64, 0, len(candidates))
+		for _, id := range galleryIDs {
+			if candidate, ok := candidates[id]; ok {
+				ids = append(ids, candidate)
+			}
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), pandaCategoryTimeout)
+		defer cancel()
+		facts, err := client.CatalogFacts(ctx, ids)
+		if err != nil {
+			return nil
+		}
+		known = categoriesOf(facts)
+	}
+	for i := range items {
+		if id, ok := candidates[items[i].ID]; ok {
+			items[i].PandaCategory = known[id]
+		}
+	}
+	return nil
 }
 
 func positiveQuery(r *http.Request, key string, fallback int64) (int64, bool) {
