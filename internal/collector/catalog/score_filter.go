@@ -223,8 +223,10 @@ func (f scoreFilter) matches(rule string, args *pgdb.Args) string {
 	}
 	conditions := []string{}
 	if len(tagIDs) > 0 {
-		conditions = append(conditions, `EXISTS (SELECT 1 FROM catalog_gallery_tags gt
-			WHERE gt.gallery_id = g.gallery_id AND gt.tag_id = ANY(`+args.Add(tagIDs)+`::bigint[]))`)
+		// A scalar probe; as EXISTS, a generic plan hashes every gallery that
+		// carries one of the tags, once for each category branch of a page.
+		conditions = append(conditions, `COALESCE((SELECT true FROM catalog_gallery_tags gt
+			WHERE gt.gallery_id = g.gallery_id AND gt.tag_id = ANY(`+args.Add(tagIDs)+`::bigint[]) LIMIT 1), false)`)
 	}
 	if len(uploaders) > 0 {
 		conditions = append(conditions, "g.uploader = ANY("+args.Add(uploaders)+"::text[])")

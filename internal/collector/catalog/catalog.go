@@ -58,14 +58,23 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		return result, err
 	}
 	defer tx.Rollback(ctx)
+	// A page probes each candidate's tags and weights by key. The planner
+	// prices these probes as if they read the whole scan range, so the plan
+	// passes the JIT thresholds, and compilation takes longer than the page.
+	if _, err := tx.Exec(ctx, "SET LOCAL jit = off"); err != nil {
+		return result, err
+	}
 	predicate, args, pageCategories, err := catalogPredicate(ctx, tx, options)
 	if err != nil {
 		return result, err
 	}
 	if options.Unseen {
 		// Probe each candidate in index order; the display table is far too large
-		// to read into a list before the first page can be returned.
-		predicate += " AND NOT EXISTS (SELECT 1 FROM panda_gallery_displays d WHERE d.gallery_id = g.gallery_id)"
+		// to read into a list before the first page can be returned. A scalar
+		// probe stays a filter that runs before the score: as NOT EXISTS, the
+		// planner makes it an anti join after the score, which scores every
+		// displayed candidate and compares each one with the whole table.
+		predicate += " AND NOT COALESCE((SELECT true FROM panda_gallery_displays d WHERE d.gallery_id = g.gallery_id LIMIT 1), false)"
 		// Bind the position read beforehand, so the ordered index scan stops there.
 		orderedAt, galleryID, ok, err := catchUpPosition(ctx, tx)
 		if err != nil {
@@ -381,8 +390,10 @@ func (m *tagMatcher) match(term gallerysearch.Term, args *pgdb.Args) string {
 		case term.Prefix == "-":
 			// Probe the candidate's assignments; even a common excluded tag must not
 			// enumerate all of its galleries before the first page can be returned.
-			fields = append(fields, `EXISTS (SELECT 1 FROM catalog_gallery_tags gt
-				WHERE gt.gallery_id = g.gallery_id AND gt.tag_id = ANY(`+args.Add(ids)+"))")
+			// A scalar probe stays a filter that runs before the score filter; as
+			// EXISTS under NOT, the planner makes it an anti join after the score.
+			fields = append(fields, `COALESCE((SELECT true FROM catalog_gallery_tags gt
+				WHERE gt.gallery_id = g.gallery_id AND gt.tag_id = ANY(`+args.Add(ids)+") LIMIT 1), false)")
 		default:
 			fields = append(fields, `g.gallery_id IN (SELECT gt.gallery_id FROM catalog_gallery_tags gt
 				WHERE gt.tag_id = ANY(`+args.Add(ids)+"))")
