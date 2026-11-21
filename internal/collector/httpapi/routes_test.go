@@ -208,3 +208,64 @@ func TestBatchAPIRejectsInvalidRequests(t *testing.T) {
 		t.Fatalf("wrong method: %d %v", w.Code, w.Header())
 	}
 }
+
+func TestCatalogIgnoresVerdictParameter(t *testing.T) {
+	handler, db := pausedHandler(t)
+	// Gallery 3 is seen and gallery 2 is hidden by an override, so the unseen
+	// view and the hidden galleries each differ from the whole catalog.
+	if _, err := db.Exec(t.Context(), `
+		INSERT INTO gallery_refs (gallery_id, token) SELECT g, 'token' FROM generate_series(1, 3) g;
+		INSERT INTO panda_gallery_displays (gallery_id, displayed_at) VALUES (3, now());`); err != nil {
+		t.Fatal(err)
+	}
+	for id := int64(1); id <= 3; id++ {
+		uploader := "Other"
+		if id == 2 {
+			uploader = "Some One"
+		}
+		tx, err := db.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: "Gallery", Posted: id, Uploader: uploader}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if w := apiRequest(handler, http.MethodPost, "/api/catalog/score/overrides", `{"kind":"uploader","value":"Some One","rule":"always_hide"}`); w.Code != http.StatusNoContent {
+		t.Fatalf("override: %d %s", w.Code, w.Body)
+	}
+	listed := func(path string) []int64 {
+		t.Helper()
+		w := apiRequest(handler, http.MethodGet, path, "")
+		var result collectorapi.CatalogResult
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body)
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		ids := []int64{}
+		for _, item := range result.Items {
+			ids = append(ids, item.GalleryID)
+		}
+		return ids
+	}
+	for query, want := range map[string]string{
+		"":                    "[3 1]",
+		"unseen=true":         "[1]",
+		"score_filter=hidden": "[2]",
+	} {
+		without := listed("/api/catalog?" + query)
+		if got := fmt.Sprint(without); got != want {
+			t.Fatalf("%q without verdict: %s, want %s", query, got, want)
+		}
+		for _, verdict := range []string{"not_for_me", "interesting", "maybe"} {
+			if got := listed("/api/catalog?" + query + "&verdict=" + verdict); fmt.Sprint(got) != fmt.Sprint(without) {
+				t.Fatalf("%q with verdict=%s: %v, want %v", query, verdict, got, without)
+			}
+		}
+	}
+}

@@ -295,6 +295,20 @@ test('Next and its shortcuts record the displayed galleries in page order withou
   expect(recordedIDs()).toEqual([[5, 3, 4], [5, 3, 4], [5, 3, 4], [5, 3, 4], [2, 1]])
 })
 
+test('the paging keys work with the focus on a card and record the page', async () => {
+  serveRecords(async () => new Response(null, { status: 204 }))
+  await renderAt()
+  const card = await screen.findByRole('link', { name: /Upload first 5/ })
+  card.focus()
+  fireEvent.keyDown(card, { key: 'ArrowRight' })
+  await screen.findByRole('heading', { name: 'Upload next-token 2' })
+  expect(recordedIDs()).toEqual([[5, 3, 4]])
+  const next = screen.getByRole('link', { name: /Upload next-token 2/ })
+  next.focus()
+  fireEvent.keyDown(next, { key: 'a' })
+  await screen.findByRole('heading', { name: 'Upload previous-token 5' })
+})
+
 test('only going to the next page records', async () => {
   serveRecords(async () => new Response(null, { status: 204 }))
   await renderAt('#/panda?cursor=next-token&unseen=false')
@@ -427,6 +441,8 @@ test('the view control switches views from any page without recording, and #/pan
   await renderAt('#/panda')
   await screen.findByRole('heading', { name: 'Upload unseen first 5' })
   expect(screen.getByRole('radio', { name: 'Unseen' }).getAttribute('aria-checked')).toBe('true')
+  const viewControl = within(screen.getByRole('radiogroup', { name: 'View' }))
+  expect(viewControl.getAllByRole('radio')).toEqual(['All', 'Unseen'].map((name) => viewControl.getByRole('radio', { name })))
   expect(catalogRequests().at(-1)?.[0]).toBe('/api/collector/catalog?q=&cursor=&page_size=8&include_expunged=false&unseen=true')
 })
 

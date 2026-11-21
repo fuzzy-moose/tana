@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import App from '../App'
@@ -20,20 +20,17 @@ const fetchMock = vi.fn<typeof fetch>()
 let scoreFilter: PandaCatalogScoreFilter | undefined
 let empty: boolean
 let defaultFilter: { query: string, categories: string[] }
-const verdictSaves: ((response: Response) => void)[] = []
 
 beforeEach(() => {
   scoreFilter = undefined
   empty = false
   defaultFilter = { query: '', categories: [] }
-  verdictSaves.length = 0
   fetchMock.mockReset()
   fetchMock.mockImplementation(async (input) => {
     const url = new URL(String(input), 'http://localhost')
     if (url.pathname === '/api/panda/default-filter') return Response.json(defaultFilter)
     if (url.pathname === '/api/collector/catalog/displays') return new Response(null, { status: 204 })
     if (url.pathname === '/api/collector/catalog/catch-up') return new Response(null, { status: 204 })
-    if (url.pathname.startsWith('/api/collector/catalog/verdicts/')) return new Promise((resolve) => { verdictSaves.push(resolve) })
     if (url.pathname !== '/api/collector/catalog') return Response.json({ error: 'not_found' }, { status: 404 })
     const cursor = url.searchParams.get('cursor') ?? ''
     const ids = empty ? [] : cursor ? [2, 1] : [5, 3]
@@ -82,7 +79,7 @@ async function waitForHash(hash: string) {
   await waitFor(() => expect(window.location.hash).toBe(hash))
 }
 
-test('the link holds the state, the request carries it outside verdict views, and the control shows it', async () => {
+test('the link holds the state, the request carries it, and the control shows it', async () => {
   await renderAt('#/panda?score_filter=hidden&unseen=false')
   expect(new URL(catalogURLs().at(-1)!, 'http://localhost').searchParams.get('score_filter')).toBe('hidden')
   expect(scoreChecked()).toEqual(['Hidden only'])
@@ -92,14 +89,64 @@ test('the link holds the state, the request carries it outside verdict views, an
   await renderAt('#/panda?unseen=false')
   expect(catalogURLs().at(-1)).not.toContain('score_filter')
   expect(scoreControl()).toBeNull()
+})
+
+function lastCatalogParams() {
+  return new URL(catalogURLs().at(-1)!, 'http://localhost').searchParams
+}
+
+test('a saved link with a verdict opens the first page of its view with its other parameters', async () => {
+  await renderAt('#/panda?verdict=not_for_me')
+  expect(lastCatalogParams().get('unseen')).toBe('true')
+  expect(lastCatalogParams().has('verdict')).toBe(false)
+  expect(screen.getByRole('radio', { name: 'Unseen' }).getAttribute('aria-checked')).toBe('true')
 
   cleanup()
   fetchMock.mockClear()
+  await renderAt('#/panda?verdict=interesting&unseen=false&score_filter=hidden&q=x')
+  expect(lastCatalogParams().get('q')).toBe('x')
+  expect(lastCatalogParams().get('score_filter')).toBe('hidden')
+  expect(lastCatalogParams().has('unseen')).toBe(false)
+  expect(lastCatalogParams().has('verdict')).toBe(false)
+  expect(scoreChecked()).toEqual(['Hidden only'])
+
+  cleanup()
+  fetchMock.mockClear()
+  await renderAt('#/panda?verdict=interesting&cursor=abc')
+  expect(lastCatalogParams().get('cursor')).toBe('')
+  expect(lastCatalogParams().has('verdict')).toBe(false)
+  expect(lastCatalogParams().get('unseen')).toBe('true')
+  await screen.findByRole('heading', { name: 'first 5' })
+
+  cleanup()
+  fetchMock.mockClear()
+  await renderAt('#/panda?cursor=abc')
+  expect(lastCatalogParams().get('cursor')).toBe('abc')
+})
+
+test('no link built from a listing opened with a verdict carries it', async () => {
+  defaultFilter = { query: '-l:chinese$', categories: [] }
   scoreFilter = {}
-  await renderAt('#/panda?score_filter=all&verdict=interesting')
-  expect(catalogURLs().at(-1)).toMatch(/&verdict=interesting$/)
-  expect(catalogURLs().at(-1)).not.toContain('score_filter')
-  expect(scoreControl()).toBeNull()
+  await renderAt('#/panda?verdict=interesting&q=x')
+  await renderedNext()
+  const hrefs = [
+    screen.getByRole('link', { name: 'Next' }).getAttribute('href'),
+    screen.getByRole('link', { name: 'Bypass default' }).getAttribute('href'),
+    screen.getByRole('link', { name: 'Clear all filters' }).getAttribute('href'),
+  ]
+  expect(hrefs).toEqual(['#/panda?q=x&cursor=next-token', '#/panda?q=x&bypass_default=true', '#/panda?bypass_default=true'])
+
+  await userEvent.click(within(scoreControl()!).getByRole('radio', { name: 'Hidden only' }))
+  await waitForHash('#/panda?q=x&score_filter=hidden')
+  window.location.hash = '#/panda?verdict=interesting&q=x'
+  await waitFor(() => expect(scoreChecked()).toEqual(['Filter on']))
+  await userEvent.click(screen.getByRole('radio', { name: 'All' }))
+  await waitForHash('#/panda?q=x&unseen=false')
+  window.location.hash = '#/panda?verdict=interesting&q=x'
+  await waitFor(() => expect(screen.getByRole('radio', { name: 'Unseen' }).getAttribute('aria-checked')).toBe('true'))
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'p:fate' } })
+  fireEvent.submit(screen.getByRole('search'))
+  await waitForHash('#/panda?q=p%3Afate')
 })
 
 test('the control shows with "Filter on" in the views All and Unseen when the filter is in force', async () => {
@@ -120,7 +167,7 @@ test('choosing a state drops the cursor and keeps the search and view', async ()
   await waitFor(() => expect(catalogURLs().at(-1)).toMatch(/score_filter=all&unseen=true$/))
 })
 
-test('the "Hidden only" state survives search, filters, paging and the view switch, but not a verdict view', async () => {
+test('the "Hidden only" state survives search, filters, paging and the view switch', async () => {
   defaultFilter = { query: '-l:chinese$', categories: [] }
   await renderAt('#/panda?score_filter=hidden&unseen=false')
 
@@ -155,42 +202,22 @@ test('the "Hidden only" state survives search, filters, paging and the view swit
   fireEvent.click(screen.getByRole('link', { name: 'Next' }))
   await waitForHash('#/panda?cursor=next-token&include_expunged=true&score_filter=hidden&unseen=false')
   await screen.findByRole('heading', { name: 'next-token 2' })
-  await userEvent.click(screen.getByRole('radio', { name: 'Not for me' }))
-  await waitForHash('#/panda?include_expunged=true&verdict=not_for_me')
 })
 
 async function renderedNext() {
   await waitFor(() => expect(screen.getByRole('link', { name: 'Next' })).toBeTruthy())
 }
 
-test('Next records the displays as no evidence only in the "Hidden only" state', async () => {
-  for (const [hash, body] of [
-    ['#/panda?score_filter=hidden&unseen=false', '{"gallery_ids":[5,3],"score_filter":"hidden"}'],
-    ['#/panda?score_filter=all&unseen=false', '{"gallery_ids":[5,3]}'],
-    ['#/panda?unseen=false', '{"gallery_ids":[5,3]}'],
-  ]) {
+test('Next records the galleries of the page alike in every state', async () => {
+  for (const hash of ['#/panda?unseen=false', '#/panda?score_filter=all&unseen=false', '#/panda?score_filter=hidden&unseen=false']) {
     scoreFilter = {}
     await renderAt(hash)
     await renderedNext()
     fireEvent.click(screen.getByRole('link', { name: 'Next' }))
-    await waitFor(() => expect(displayBodies()).toEqual([body]))
+    await waitFor(() => expect(displayBodies()).toEqual(['{"gallery_ids":[5,3]}']))
     cleanup()
     fetchMock.mockClear()
   }
-})
-
-test('a "Not for me" verdict in the state "Filter on" leaves the card in its position and loads nothing', async () => {
-  scoreFilter = { threshold_tenths: 0 }
-  await renderAt('#/panda?unseen=false')
-  const before = catalogURLs().length
-  const list = screen.getByRole('list', { name: 'Panda galleries' })
-  const first = within(list).getAllByRole('listitem')[0]
-  fireEvent.click(within(first).getByRole('button', { name: 'Not for me' }))
-  await act(async () => { verdictSaves[0](new Response(null, { status: 204 })) })
-  const items = within(list).getAllByRole('listitem')
-  expect(items.map((item) => within(item).getByRole('heading').textContent)).toEqual(['first 5', 'first 3'])
-  expect(within(items[0]).getByRole('button', { name: 'Not for me' }).getAttribute('aria-pressed')).toBe('true')
-  expect(catalogURLs()).toHaveLength(before)
 })
 
 function emptyState() {

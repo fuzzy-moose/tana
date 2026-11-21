@@ -52,14 +52,14 @@ func displayedIDs(t *testing.T, s *Service, options collectorapi.CatalogOptions)
 
 func TestRecordDisplaysKeepsEachRecord(t *testing.T) {
 	db, s := openCatalog(t)
-	if err := s.RecordDisplays(t.Context(), []int64{3, 1, 3}, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), []int64{3, 1, 3}); err != nil {
 		t.Fatal(err)
 	}
 	first := displayTimes(t, db, 3)
 	if len(first) != 1 || len(displayTimes(t, db, 1)) != 1 {
 		t.Fatalf("displays after first record: 3=%v 1=%v", first, displayTimes(t, db, 1))
 	}
-	if err := s.RecordDisplays(t.Context(), []int64{3}, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), []int64{3}); err != nil {
 		t.Fatal(err)
 	}
 	second := displayTimes(t, db, 3)
@@ -75,7 +75,7 @@ func TestRecordDisplaysRejectsInvalidLists(t *testing.T) {
 		tooMany[i] = int64(i + 1)
 	}
 	for _, ids := range [][]int64{nil, {}, tooMany, {0}, {-1}, {2, 0, 5}} {
-		if err := s.RecordDisplays(t.Context(), ids, ""); !errors.Is(err, ErrInvalidDisplays) {
+		if err := s.RecordDisplays(t.Context(), ids); !errors.Is(err, ErrInvalidDisplays) {
 			t.Fatalf("%v: %v", ids, err)
 		}
 	}
@@ -91,7 +91,7 @@ func TestCatalogFlagsDisplayedGalleries(t *testing.T) {
 	retain(t, db, panda.Metadata{ID: 2, Title: "Red two", Posted: 20}, true)
 	retain(t, db, panda.Metadata{ID: 3, Title: "Blue", Posted: 30}, true)
 	projectFeed(t, db, panda.FeedEntry{GalleryRef: panda.GalleryRef{ID: 4, Token: "token4"}, Title: "Red feed"}, time.Unix(40, 0))
-	if err := s.RecordDisplays(t.Context(), []int64{2, 4}, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), []int64{2, 4}); err != nil {
 		t.Fatal(err)
 	}
 	want := map[int64]bool{1: false, 2: true, 3: false, 4: true}
@@ -149,7 +149,7 @@ func TestUnseenViewLeavesOutDisplayedGalleriesUnderEveryFilter(t *testing.T) {
 	} {
 		retain(t, db, entry, true)
 	}
-	if err := s.RecordDisplays(t.Context(), []int64{2, 6, 7, 8}, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), []int64{2, 6, 7, 8}); err != nil {
 		t.Fatal(err)
 	}
 	for name, options := range map[string]collectorapi.CatalogOptions{
@@ -191,13 +191,13 @@ func TestUnseenViewKeepsGalleriesHiddenFromARecordedPage(t *testing.T) {
 	for _, item := range searched.Items {
 		ids = append(ids, item.GalleryID)
 	}
-	if err := s.RecordDisplays(t.Context(), ids, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), ids); err != nil {
 		t.Fatal(err)
 	}
 	assertCatalogIDs(t, unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100}), []int64{2})
 	// A new version is its own gallery: recording gallery 1 leaves gallery 2 unseen.
 	retain(t, db, panda.Metadata{ID: 4, Title: "blue two, new version", Posted: 40}, true)
-	if err := s.RecordDisplays(t.Context(), []int64{2}, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), []int64{2}); err != nil {
 		t.Fatal(err)
 	}
 	assertCatalogIDs(t, unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100}), []int64{4})
@@ -220,12 +220,12 @@ func TestUnseenPagingRunsForwardOnly(t *testing.T) {
 	options.Cursor = last.NextCursor
 	assertCatalogIDs(t, unseenPage(t, s, options), []int64{})
 
-	if err := s.RecordDisplays(t.Context(), []int64{3}, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), []int64{3}); err != nil {
 		t.Fatal(err)
 	}
 	options.Cursor = first.NextCursor
 	assertCatalogIDs(t, unseenPage(t, s, options), []int64{2, 1})
-	if err := s.RecordDisplays(t.Context(), []int64{2, 1}, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), []int64{2, 1}); err != nil {
 		t.Fatal(err)
 	}
 	assertCatalogIDs(t, unseenPage(t, s, options), []int64{})
@@ -293,7 +293,7 @@ func TestCatchUpCoversGalleriesAtAndBeforeItsPosition(t *testing.T) {
 	} {
 		retain(t, db, entry, true)
 	}
-	if err := s.RecordDisplays(t.Context(), []int64{8}, ""); err != nil {
+	if err := s.RecordDisplays(t.Context(), []int64{8}); err != nil {
 		t.Fatal(err)
 	}
 	catchUp(t, s, 4)

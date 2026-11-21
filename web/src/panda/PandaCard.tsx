@@ -1,10 +1,9 @@
 import { useState } from 'react'
-import { Badge, Flex, IconButton, Spinner, Text, VisuallyHidden } from '@radix-ui/themes'
-import { BookmarkFilledIcon, BookmarkIcon, ClockIcon, Cross2Icon, DrawingPinFilledIcon, ExclamationTriangleIcon, EyeNoneIcon, EyeOpenIcon, StarFilledIcon } from '@radix-ui/react-icons'
+import { Badge, Flex, Text, VisuallyHidden } from '@radix-ui/themes'
+import { ClockIcon, DrawingPinFilledIcon, ExclamationTriangleIcon, EyeNoneIcon, EyeOpenIcon, StarFilledIcon } from '@radix-ui/react-icons'
 import GalleryBox from '../galleries/GalleryBox'
 import type { GalleryBoxTag } from '../galleries/GalleryBox'
-import { verdictLabels } from './api'
-import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaSummaryTag, PandaVerdict } from './api'
+import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaSummaryTag } from './api'
 import { scoreRuleNames } from './score'
 import type { ScoreSource } from './score'
 
@@ -33,10 +32,8 @@ function stripTag({ weight, override, source, favorite_author: favoriteAuthor, .
   return { ...tag, color, mark }
 }
 
-/** The rule that decides whether the score filter hides the gallery: the verdict first, then the collector's rule. */
-function scoreRule({ verdict, score }: PandaGallery) {
-  if (verdict === 'not_for_me') return 'Hidden by your "Not for me" verdict.'
-  if (verdict === 'interesting') return ''
+/** The rule that decides whether the score filter hides the gallery, as the collector names it. */
+function scoreRule({ score }: PandaGallery) {
   switch (score?.rule) {
     case 'never_hide': return `Never hidden: ${score.override}.`
     case 'always_hide': return `Hidden by the override for ${score.override}.`
@@ -67,35 +64,11 @@ export function PandaDetails({ gallery, scoreFilter }: { gallery: PandaGallery, 
   </Flex>
 }
 
-/** Settles when the save settles and never rejects. */
-export type VerdictHandler = (gallery: PandaGallery, verdict: PandaVerdict | null) => Promise<void>
-
-
-/** The two verdict controls. Pressed state comes only from the stored verdict; a pending save only disables them. */
-function VerdictControls({ gallery, onVerdict }: { gallery: PandaGallery, onVerdict: VerdictHandler }) {
-  const [pending, setPending] = useState<PandaVerdict | null>(null)
-  const click = (verdict: PandaVerdict) => {
-    if (pending) return
-    setPending(verdict)
-    void onVerdict(gallery, gallery.verdict === verdict ? null : verdict).finally(() => setPending(null))
-  }
-  // aria-disabled, not disabled: a disabled button drops the keyboard focus.
-  return (['not_for_me', 'interesting'] as const).map((verdict) => {
-    const given = gallery.verdict === verdict
-    const icon = verdict === 'not_for_me' ? <Cross2Icon /> : given ? <BookmarkFilledIcon /> : <BookmarkIcon />
-    return <IconButton key={verdict} type="button" size="1" aria-label={verdictLabels[verdict]} title={verdictLabels[verdict]} aria-pressed={given}
-      aria-disabled={pending ? true : undefined} variant={given ? 'solid' : 'soft'} color={given ? (verdict === 'not_for_me' ? 'red' : undefined) : 'gray'}
-      onClick={() => click(verdict)}>
-      {pending === verdict ? <Spinner /> : icon}
-    </IconButton>
-  })
-}
-
-export default function PandaCard({ gallery, onVerdict, subdued = !!gallery.displayed, scoreFilter }: { gallery: PandaGallery, onVerdict?: VerdictHandler, subdued?: boolean, scoreFilter?: PandaCatalogScoreFilter }) {
+export default function PandaCard({ gallery, scoreFilter }: { gallery: PandaGallery, scoreFilter?: PandaCatalogScoreFilter }) {
   const [failedImage, setFailedImage] = useState<string | null>(null)
   const failed = gallery.metadata_state === 'failed'
-  return <GalleryBox actions={onVerdict && <VerdictControls gallery={gallery} onVerdict={onVerdict} />} href={gallery.url} target="_blank" rel="noopener noreferrer" title={gallery.title} pageCount={gallery.page_count} tags={gallery.summary_tags.map(stripTag)}
-    subdued={subdued}
+  return <GalleryBox href={gallery.url} target="_blank" rel="noopener noreferrer" title={gallery.title} pageCount={gallery.page_count} tags={gallery.summary_tags.map(stripTag)}
+    subdued={!!gallery.displayed}
     tooltip={<PandaDetails gallery={gallery} scoreFilter={scoreFilter} />}
     status={gallery.metadata_source === 'feed' && <Badge variant="solid" color={failed ? 'red' : 'gray'}>
       {failed ? <ExclamationTriangleIcon /> : <ClockIcon />}<VisuallyHidden>{failed ? 'Collection failed' : 'Waiting for metadata'}</VisuallyHidden>

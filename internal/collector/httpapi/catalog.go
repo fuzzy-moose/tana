@@ -16,7 +16,7 @@ func HandleCatalog(service *catalog.Service) http.Handler {
 		options := collectorapi.CatalogOptions{
 			Query: r.URL.Query().Get("q"), Categories: r.URL.Query()["category"],
 			DefaultQuery: r.URL.Query().Get("default_q"), DefaultCategories: r.URL.Query()["default_category"],
-			Cursor: r.URL.Query().Get("cursor"), PageSize: 24, Verdict: r.URL.Query().Get("verdict"),
+			Cursor: r.URL.Query().Get("cursor"), PageSize: 24,
 			ScoreFilter: r.URL.Query().Get("score_filter"),
 		}
 		if r.URL.Query().Has("page_size") {
@@ -71,13 +71,12 @@ func HandleCompleteCatalog(service *catalog.Service) http.Handler {
 func HandleRecordCatalogDisplays(service *catalog.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			GalleryIDs  []int64 `json:"gallery_ids"`
-			ScoreFilter string  `json:"score_filter"`
+			GalleryIDs []int64 `json:"gallery_ids"`
 		}
 		if !server.DecodeJSON(w, r, &input) {
 			return
 		}
-		if err := service.RecordDisplays(r.Context(), input.GalleryIDs, input.ScoreFilter); err != nil {
+		if err := service.RecordDisplays(r.Context(), input.GalleryIDs); err != nil {
 			catalogError(w, r, err)
 			return
 		}
@@ -94,42 +93,6 @@ func HandleCatalogCatchUp(service *catalog.Service) http.Handler {
 			return
 		}
 		if err := service.CatchUp(r.Context(), input.GalleryID); err != nil {
-			catalogError(w, r, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
-func HandleSetCatalogVerdict(service *catalog.Service) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		galleryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			catalogError(w, r, catalog.ErrInvalidGalleryReference)
-			return
-		}
-		var input struct {
-			Verdict string `json:"verdict"`
-		}
-		if !server.DecodeJSON(w, r, &input) {
-			return
-		}
-		if err := service.SetVerdict(r.Context(), galleryID, input.Verdict); err != nil {
-			catalogError(w, r, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
-func HandleRemoveCatalogVerdict(service *catalog.Service) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		galleryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			catalogError(w, r, catalog.ErrInvalidGalleryReference)
-			return
-		}
-		if err := service.RemoveVerdict(r.Context(), galleryID); err != nil {
 			catalogError(w, r, err)
 			return
 		}
@@ -313,8 +276,6 @@ func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_category"})
 	case errors.Is(err, catalog.ErrInvalidGalleryReference):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_gallery_reference"})
-	case errors.Is(err, catalog.ErrInvalidVerdict):
-		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_verdict"})
 	case errors.Is(err, catalog.ErrInvalidScoreOverride):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_override"})
 	case errors.Is(err, catalog.ErrInvalidScorePin):

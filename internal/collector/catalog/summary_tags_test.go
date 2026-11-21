@@ -80,26 +80,22 @@ func retainTagged(t *testing.T, db *pgxpool.Pool, id int64, tags ...string) {
 
 func TestSummaryTagsRankWeightedTagsFirst(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
 	artistsAF := unweighted(scoreArtists...)
 	assertSummaryTags(t, itemByID(t, scorePage(t, s, "", collectorapi.CatalogOptions{}), 104), artistsAF)
 
-	preview := applyCandidate(t, s, 0)
-	glasses := weightOf(t, preview, collectorapi.ScoreKindTag, "female:glasses")
-	artist := weightOf(t, preview, collectorapi.ScoreKindTag, "artist:a")
-	hat := weightOf(t, preview, collectorapi.ScoreKindTag, "male:hat")
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
+	glasses, artist, hat := glassesWeight, artistWeight, hatWeight
 	ranked104 := []summaryTag{weighted("female:glasses", glasses)}
 	for _, label := range scoreArtists[:5] {
-		ranked104 = append(ranked104, weighted(label, weightOf(t, preview, collectorapi.ScoreKindTag, label)))
+		ranked104 = append(ranked104, weighted(label, artist))
 	}
 
 	retainTagged(t, db, 301, "artist:a", "artist:u1", "male:hat")
 	retainTagged(t, db, 302, "artist:u1", "artist:u2", "artist:u3", "artist:u4", "artist:u5", "artist:u6", "male:hat")
 	retainTagged(t, db, 303, "artist:u7", "artist:u6", "artist:u5", "artist:u4", "artist:u3", "artist:u2", "artist:u1")
 	retain(t, db, panda.Metadata{ID: 304, Posted: 304, Uploader: "Bad One", Category: "Manga", Tags: []string{"artist:u1", "male:hat"}}, true)
-	retainTagged(t, db, 305, append([]string{"female:glasses"}, scoreArtists...)...)
-	setVerdict(t, s, 305, collectorapi.VerdictNotForMe)
 	retainTagged(t, db, 306)
 
 	all := scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{})
@@ -113,8 +109,6 @@ func TestSummaryTagsRankWeightedTagsFirst(t *testing.T) {
 	assertSummaryTags(t, itemByID(t, all, 306), []summaryTag{})
 
 	assertSummaryTags(t, itemByID(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{}), 104), ranked104)
-	notForMe := scorePage(t, s, "", collectorapi.CatalogOptions{Verdict: collectorapi.VerdictNotForMe})
-	assertSummaryTags(t, itemByID(t, notForMe, 305), ranked104)
 	assertSummaryTags(t, itemByID(t, scorePage(t, s, "", collectorapi.CatalogOptions{}), 301), ranked301)
 	assertSummaryTags(t, itemByID(t, unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100}), 301), ranked301)
 
@@ -130,10 +124,9 @@ func TestSummaryTagsRankWeightedTagsFirst(t *testing.T) {
 
 func TestSummaryTagsRankProvisionalThenCollectedTags(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	preview := applyCandidate(t, s, 0)
-	glasses := weightOf(t, preview, collectorapi.ScoreKindTag, "female:glasses")
-	hat := weightOf(t, preview, collectorapi.ScoreKindTag, "male:hat")
+	seedScoreGalleries(t, db)
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
+	glasses, hat := glassesWeight, hatWeight
 	projectFeed(t, db, panda.FeedEntry{GalleryRef: panda.GalleryRef{ID: 201, Token: "token201"}, Title: "Feed",
 		Tags: []string{"artist:u1", "male:hat"}}, time.Now().UTC())
 	assertSummaryTags(t, itemByID(t, scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{}), 201),
@@ -182,10 +175,9 @@ func TestSummaryTagsIgnoreUploaderAndCategoryOverrides(t *testing.T) {
 
 func TestSummaryTagsPutOverrideTagsBeforeWeightedTags(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	preview := applyCandidate(t, s, 0)
-	glasses := weightOf(t, preview, collectorapi.ScoreKindTag, "female:glasses")
-	artist := weightOf(t, preview, collectorapi.ScoreKindTag, "artist:a")
+	seedScoreGalleries(t, db)
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
+	glasses, artist := glassesWeight, artistWeight
 	retainTagged(t, db, 301, "artist:a", "female:glasses", "other:plain")
 	retainTagged(t, db, 302, "artist:a", "female:glasses")
 
@@ -212,7 +204,4 @@ func TestSummaryTagsPutOverrideTagsBeforeWeightedTags(t *testing.T) {
 	plainFirst := []summaryTag{overridden("other:plain", collectorapi.ScoreRuleNeverHide), weighted("female:glasses", glasses), weighted("artist:a", artist)}
 	assertSummaryTags(t, itemByID(t, scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{}), 301), plainFirst)
 	assertSummaryTags(t, itemByID(t, unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100}), 301), plainFirst)
-	setVerdict(t, s, 301, collectorapi.VerdictNotForMe)
-	notForMe := scorePage(t, s, "", collectorapi.CatalogOptions{Verdict: collectorapi.VerdictNotForMe})
-	assertSummaryTags(t, itemByID(t, notForMe, 301), plainFirst)
 }

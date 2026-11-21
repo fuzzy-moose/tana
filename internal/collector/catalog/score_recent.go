@@ -19,8 +19,8 @@ const RecentSampleSize = 2000
 const scoreWindowTenths = 10000
 
 // recent classes the newest RecentSampleSize galleries that pass the
-// predicate, in catalog order, by the first hiding rule that decides them:
-// their verdict, a "never hide" override, an "always hide" override. The rest
+// predicate, in catalog order, by the first hiding rule that decides them: a
+// "never hide" override, an "always hide" override. The rest
 // are counted by score under the candidate, when candidateID is set, and under
 // the active model, when the filter has one.
 func (f scoreFilter) recent(ctx context.Context, tx pgx.Tx, predicate string, args pgdb.Args, categories []string, candidateID *int64) (collectorapi.ScoreRecent, error) {
@@ -36,28 +36,22 @@ func (f scoreFilter) recent(ctx context.Context, tx pgx.Tx, predicate string, ar
 	if f.model != nil {
 		activeTenths = windowTenths(f.scoreTenths(args.Add(f.model.id) + "::bigint"))
 	}
-	rows, err := tx.Query(ctx, `SELECT COALESCE(v.verdict, ''), `+never+`, `+always+`, `+candidateTenths+`, `+activeTenths+`
+	rows, err := tx.Query(ctx, `SELECT `+never+`, `+always+`, `+candidateTenths+`, `+activeTenths+`
 		FROM (`+sample+`) sample
-		JOIN catalog_galleries g ON g.gallery_id = sample.gallery_id
-		LEFT JOIN panda_gallery_verdicts v ON v.gallery_id = g.gallery_id`, args...)
+		JOIN catalog_galleries g ON g.gallery_id = sample.gallery_id`, args...)
 	if err != nil {
 		return recent, err
 	}
 	defer rows.Close()
 	var candidateScores, activeScores []int
 	for rows.Next() {
-		var verdict string
 		var isNever, isAlways bool
 		var candidateScore, activeScore *int
-		if err := rows.Scan(&verdict, &isNever, &isAlways, &candidateScore, &activeScore); err != nil {
+		if err := rows.Scan(&isNever, &isAlways, &candidateScore, &activeScore); err != nil {
 			return recent, err
 		}
 		recent.Total++
 		switch {
-		case verdict == collectorapi.VerdictInteresting:
-			recent.Interesting++
-		case verdict == collectorapi.VerdictNotForMe:
-			recent.NotForMe++
 		case isNever:
 			recent.NeverHidden++
 		case isAlways:

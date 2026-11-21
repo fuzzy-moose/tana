@@ -77,101 +77,81 @@ func TestSetAuthorBonusStoresANumberAboveZero(t *testing.T) {
 	}
 }
 
-// seedBonusGalleries applies a model from seedScoreEvidence plus three
-// "Interesting" galleries with artist:good, and retains galleries without a
-// verdict: 105 with artist:a, 106 with artist:rare and female:glasses, 107
-// with artist:b and 108 with artist:good. artist:a, artist:rare and
-// artist:good are favorite authors; artist:rare has no calculated weight.
-func seedBonusGalleries(t *testing.T, db *pgxpool.Pool, s *Service, favorites bool) collectorapi.ScorePreview {
+// goodWeight is the weight of artist:good in the model of
+// seedBonusGalleries.
+var goodWeight = math.Log(2.5)
+
+// seedBonusGalleries applies a model with storedScoreWeights and artist:good,
+// and retains galleries 105 with artist:a, 106 with artist:rare and
+// female:glasses, 107 with artist:b and 108 with artist:good. artist:a,
+// artist:rare and artist:good are favorite authors; artist:rare has no
+// calculated weight.
+func seedBonusGalleries(t *testing.T, db *pgxpool.Pool, s *Service) {
 	t.Helper()
-	seedScoreEvidence(t, db, s)
-	seedVerdicts(t, db, s, 11, 3, collectorapi.VerdictInteresting, "", "", "artist:good")
-	preview := previewScore(t, s, favorites)
-	if preview.Candidate == nil {
-		t.Fatalf("preview = %+v", preview)
-	}
-	if err := s.ApplyScoreModel(t.Context(), preview.Candidate.ID, -3); err != nil {
-		t.Fatal(err)
-	}
+	seedScoreGalleries(t, db)
 	retainTagged(t, db, 105, "artist:a")
 	retainTagged(t, db, 106, "artist:rare", "female:glasses")
 	retainTagged(t, db, 107, "artist:b")
 	retainTagged(t, db, 108, "artist:good")
+	applyScoreModel(t, db, s, -3, append(storedScoreWeights(), storedWeight{collectorapi.ScoreKindTag, "artist:good", goodWeight})...)
 	for _, label := range []string{"artist:a", "artist:rare", "artist:good"} {
 		makeFavoriteAuthor(t, db, label)
 	}
-	return preview
 }
 
 func TestAuthorBonusLiftsFavoriteAuthorsInTheNextPage(t *testing.T) {
-	for _, favorites := range []bool{false, true} {
-		name := "without favorites"
-		if favorites {
-			name = "with favorites"
-		}
-		t.Run(name, func(t *testing.T) {
-			db, s := openCatalog(t)
-			preview := seedBonusGalleries(t, db, s, favorites)
-			if _, ok := findWeight(preview, collectorapi.ScoreKindTag, "artist:rare"); ok {
-				t.Fatal("artist:rare has a calculated weight")
-			}
-			artist := weightOf(t, preview, collectorapi.ScoreKindTag, "artist:a")
-			glasses := weightOf(t, preview, collectorapi.ScoreKindTag, "female:glasses")
-			good := weightOf(t, preview, collectorapi.ScoreKindTag, "artist:good")
-			if artist >= -0.3 || glasses >= -0.3 || good <= 0 || good >= 2 {
-				t.Fatalf("weights artist:a %g, female:glasses %g, artist:good %g", artist, glasses, good)
-			}
-			assertCalculated := func() {
-				t.Helper()
-				assertListed(t, scorePage(t, s, "", collectorapi.CatalogOptions{}), 108)
-				page := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
-				assertListed(t, page, 105, 106, 107)
-				assertWeights(t, itemByID(t, page, 105), []collectorapi.CatalogScoreWeight{
-					{Kind: collectorapi.ScoreKindTag, Label: "artist:a", Weight: artist}})
-				assertSummaryTags(t, itemByID(t, page, 106), []summaryTag{weighted("female:glasses", glasses), {label: "artist:rare"}})
-			}
-			assertCalculated()
-
-			bonus := 2.0
-			setBonus(t, s, &bonus)
-			page := scorePage(t, s, "", collectorapi.CatalogOptions{})
-			assertListed(t, page, 105, 106, 108)
-			item := itemByID(t, page, 105)
-			assertScoreValue(t, item, 2)
-			assertWeights(t, item, []collectorapi.CatalogScoreWeight{
-				{Kind: collectorapi.ScoreKindTag, Label: "artist:a", Weight: 2, Source: collectorapi.ScoreSourceAuthorBonus}})
-			assertSummaryTags(t, item, []summaryTag{bonusTag("artist:a", 2)})
-			item = itemByID(t, page, 106)
-			assertScoreValue(t, item, 2+glasses)
-			assertWeights(t, item, []collectorapi.CatalogScoreWeight{
-				{Kind: collectorapi.ScoreKindTag, Label: "artist:rare", Weight: 2, Source: collectorapi.ScoreSourceAuthorBonus},
-				{Kind: collectorapi.ScoreKindTag, Label: "female:glasses", Weight: glasses}})
-			assertSummaryTags(t, item, []summaryTag{bonusTag("artist:rare", 2), weighted("female:glasses", glasses)})
-			assertScoreValue(t, itemByID(t, page, 108), 2)
-			hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
-			assertListed(t, hidden, 107)
-			assertWeights(t, itemByID(t, hidden, 107), []collectorapi.CatalogScoreWeight{
-				{Kind: collectorapi.ScoreKindTag, Label: "artist:b", Weight: artist}})
-
-			below := good / 2
-			setBonus(t, s, &below)
-			page = scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{})
-			item = itemByID(t, page, 108)
-			assertScoreValue(t, item, good)
-			assertWeights(t, item, []collectorapi.CatalogScoreWeight{
-				{Kind: collectorapi.ScoreKindTag, Label: "artist:good", Weight: good}})
-			assertSummaryTags(t, item, []summaryTag{weighted("artist:good", good)})
-			assertScoreValue(t, itemByID(t, page, 105), below)
-
-			setBonus(t, s, nil)
-			assertCalculated()
-		})
+	db, s := openCatalog(t)
+	seedBonusGalleries(t, db, s)
+	artist, glasses, good := artistWeight, glassesWeight, goodWeight
+	assertCalculated := func() {
+		t.Helper()
+		assertListed(t, scorePage(t, s, "", collectorapi.CatalogOptions{}), 108)
+		page := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
+		assertListed(t, page, 105, 106, 107)
+		assertWeights(t, itemByID(t, page, 105), []collectorapi.CatalogScoreWeight{
+			{Kind: collectorapi.ScoreKindTag, Label: "artist:a", Weight: artist}})
+		assertSummaryTags(t, itemByID(t, page, 106), []summaryTag{weighted("female:glasses", glasses), {label: "artist:rare"}})
 	}
+	assertCalculated()
+
+	bonus := 2.0
+	setBonus(t, s, &bonus)
+	page := scorePage(t, s, "", collectorapi.CatalogOptions{})
+	assertListed(t, page, 105, 106, 108)
+	item := itemByID(t, page, 105)
+	assertScoreValue(t, item, 2)
+	assertWeights(t, item, []collectorapi.CatalogScoreWeight{
+		{Kind: collectorapi.ScoreKindTag, Label: "artist:a", Weight: 2, Source: collectorapi.ScoreSourceAuthorBonus}})
+	assertSummaryTags(t, item, []summaryTag{bonusTag("artist:a", 2)})
+	item = itemByID(t, page, 106)
+	assertScoreValue(t, item, 2+glasses)
+	assertWeights(t, item, []collectorapi.CatalogScoreWeight{
+		{Kind: collectorapi.ScoreKindTag, Label: "artist:rare", Weight: 2, Source: collectorapi.ScoreSourceAuthorBonus},
+		{Kind: collectorapi.ScoreKindTag, Label: "female:glasses", Weight: glasses}})
+	assertSummaryTags(t, item, []summaryTag{bonusTag("artist:rare", 2), weighted("female:glasses", glasses)})
+	assertScoreValue(t, itemByID(t, page, 108), 2)
+	hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
+	assertListed(t, hidden, 107)
+	assertWeights(t, itemByID(t, hidden, 107), []collectorapi.CatalogScoreWeight{
+		{Kind: collectorapi.ScoreKindTag, Label: "artist:b", Weight: artist}})
+
+	below := good / 2
+	setBonus(t, s, &below)
+	page = scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{})
+	item = itemByID(t, page, 108)
+	assertScoreValue(t, item, good)
+	assertWeights(t, item, []collectorapi.CatalogScoreWeight{
+		{Kind: collectorapi.ScoreKindTag, Label: "artist:good", Weight: good}})
+	assertSummaryTags(t, item, []summaryTag{weighted("artist:good", good)})
+	assertScoreValue(t, itemByID(t, page, 105), below)
+
+	setBonus(t, s, nil)
+	assertCalculated()
 }
 
 func TestPinWinsOverTheAuthorBonus(t *testing.T) {
 	db, s := openCatalog(t)
-	seedBonusGalleries(t, db, s, false)
+	seedBonusGalleries(t, db, s)
 	bonus := 2.0
 	setBonus(t, s, &bonus)
 	setPin(t, s, collectorapi.ScoreKindTag, "artist:a", -1)
@@ -222,7 +202,7 @@ func TestAuthorBonusHasNoEffectWithoutAnActiveModel(t *testing.T) {
 
 func TestSummaryTagsMarkFavoriteAuthors(t *testing.T) {
 	db, s := openCatalog(t)
-	seedBonusGalleries(t, db, s, false)
+	seedBonusGalleries(t, db, s)
 	retainTagged(t, db, 109, "artist:a", "artist:b", "artist:good", "artist:rare", "female:glasses")
 	setPin(t, s, collectorapi.ScoreKindTag, "artist:rare", 0.1)
 	setOverride(t, s, collectorapi.ScoreKindTag, "artist:good", collectorapi.ScoreRuleNeverHide)

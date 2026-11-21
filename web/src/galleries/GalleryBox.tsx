@@ -49,19 +49,17 @@ interface GalleryBoxProps extends Pick<ComponentProps<'a'>, 'href' | 'target' | 
   status?: ReactNode
   /** Dims the title and cover, for a gallery the user has already seen. */
   subdued?: boolean
-  /** Controls over the cover's top edge, rendered beside the link and never in it. */
-  actions?: ReactNode
 }
 
 /** One cell of a gallery grid: title, cover with its page count and status, and the tags that fit. */
-export default function GalleryBox({ title, cover, pageCount, tags, tooltip = title, status, subdued, actions, ...link }: GalleryBoxProps) {
+export default function GalleryBox({ title, cover, pageCount, tags, tooltip = title, status, subdued, ...link }: GalleryBoxProps) {
   const [coverRatio, setCoverRatio] = useState<number>()
   // A loaded cover shapes its frame inside the 2:3 slot, so the border and page count follow the image.
   const onCoverLoad: ReactEventHandler<HTMLImageElement> = ({ currentTarget: image }) => {
     setCoverRatio(image.naturalWidth / image.naturalHeight)
   }
   const coverShape = coverRatio === undefined ? '' : coverRatio > 2 / 3 ? ' gallery-cover-wide' : ' gallery-cover-tall'
-  const box = <Tooltip content={tooltip}><Box asChild p="3"><a className={subdued ? 'gallery-box gallery-box-subdued' : 'gallery-box'} {...link}>
+  return <Tooltip content={tooltip}><Box asChild p="3"><a className={subdued ? 'gallery-box gallery-box-subdued' : 'gallery-box'} {...link}>
     <Flex direction="column" gap="2">
       <Text asChild size="1" weight="medium"><h2>{title}</h2></Text>
       {subdued && <VisuallyHidden>Seen</VisuallyHidden>}
@@ -76,9 +74,4 @@ export default function GalleryBox({ title, cover, pageCount, tags, tooltip = ti
       <SummaryTags key={tags.map((tag) => `${tag.mark ? '+' : '-'}${tag.term}`).join(' ')} tags={tags} />
     </Flex>
   </a></Box></Tooltip>
-  if (!actions) return box
-  return <div className="gallery-box-cell">
-    {box}
-    <div className="gallery-box-actions">{actions}</div>
-  </div>
 }

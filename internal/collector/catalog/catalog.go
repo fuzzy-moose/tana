@@ -40,10 +40,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	if err != nil {
 		return result, err
 	}
-	if options.Verdict != "" && (!collectorapi.ValidVerdict(options.Verdict) || options.Unseen) {
-		return result, ErrInvalidQuery
-	}
-	if !collectorapi.ValidScoreFilter(options.ScoreFilter) || (options.Verdict != "" && options.ScoreFilter != "") {
+	if !collectorapi.ValidScoreFilter(options.ScoreFilter) {
 		return result, ErrInvalidQuery
 	}
 	if options.Unseen && cursor.Before {
@@ -82,8 +79,6 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 	}
 	unseenPredicate, unseenArgs := predicate, slices.Clone(args)
 	switch {
-	case options.Verdict != "":
-		// Verdict views never apply the score filter.
 	case !scored && options.ScoreFilter == collectorapi.ScoreFilterHidden:
 		predicate += " AND false"
 	case scored && options.ScoreFilter == "":
@@ -101,12 +96,7 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		}
 		predicate += " AND (g.ordered_at, g.gallery_id) " + comparison + " (" + args.Add(time.Unix(cursor.Posted, 0)) + ", " + args.Add(cursor.GalleryID) + ")"
 	}
-	var pageQuery string
-	if options.Verdict != "" {
-		pageQuery = verdictPageQuery(predicate, &args, options.Verdict, cursor.Before, result.PageSize+1)
-	} else {
-		pageQuery = catalogPageQuery(predicate, &args, pageCategories, cursor.Before, result.PageSize+1)
-	}
+	pageQuery := catalogPageQuery(predicate, &args, pageCategories, cursor.Before, result.PageSize+1)
 	order := "DESC"
 	if cursor.Before {
 		order = "ASC"
@@ -162,9 +152,6 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		return result, err
 	}
 	if err := markDisplayed(ctx, tx, result.Items); err != nil {
-		return result, err
-	}
-	if err := markVerdicts(ctx, tx, result.Items); err != nil {
 		return result, err
 	}
 	if scored {

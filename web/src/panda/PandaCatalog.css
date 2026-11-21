@@ -6,22 +6,5 @@
 .panda-default-categories p { margin: var(--space-1) 0 var(--space-3); }
 .panda-default-category-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 
-/* Overlays the bottom edge of the card area, directly above the pagination row, leaving Previous and Next free. */
-.panda-verdict-error {
-  position: absolute;
-  bottom: calc(100% + var(--space-2));
-  left: 50%;
-  z-index: 5;
-  width: max-content;
-  max-width: min(480px, 100%);
-  transform: translateX(-50%);
-  border-radius: var(--radius-3);
-  background: var(--color-panel-solid);
-  box-shadow: var(--shadow-4);
-}
-
-.panda-verdict-error-text { min-width: 0; }
-.panda-verdict-error-title { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: var(--font-weight-medium); }
-
 /* Caps the heading and the view control at the toolbar's width, so they wrap instead of overflowing on a phone. */
 .panda-catalog-heading { max-width: 100%; }

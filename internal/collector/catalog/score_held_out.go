@@ -1,156 +1,78 @@
 package catalog
 
 import (
-	"context"
 	"math"
-	"slices"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
-	"github.com/fuzzy-moose/tana/internal/pgdb"
 )
 
-// SuggestedInterestingLoss is the largest share of the held-out "Interesting"
-// galleries that the suggested threshold hides.
-const SuggestedInterestingLoss = 0.05
+// heldOutAuthorFavorites is the number of stored favorites an author needs to
+// stay a favorite author without the held-out favorite, so that its tag gets
+// the author bonus in a held-out score.
+const heldOutAuthorFavorites = 3
 
-// heldOutFolds is the number of folds of the held-out scores: an evidence
-// gallery is in fold gallery_id % heldOutFolds.
-const heldOutFolds = 5
+// heldOutWeight is the weight of a value that a held-out favorite carries:
+// the weight from the other favorites only, with the catalog counts
+// unchanged.
+func heldOutWeight(favorites, favoritesInScope, catalog, catalogInScope int) (float64, bool) {
+	return scoreWeight(favorites-1, favoritesInScope-1, catalog, catalogInScope)
+}
 
-// heldOutTenths scores each evidence gallery, as floor(score * 10) limited to
-// the window of the histograms, with the effective weights of its fold under
-// the rule, whose calculated weights are those from the evidence outside the
-// fold. total and values are the counts of all the evidence. A fold whose
-// training evidence lacks one side calculates no weight, so only the pins and
-// the author bonus score its galleries.
-func heldOutTenths(evidence []evidenceGallery, total scoreCounts, values map[scoreValue]scoreCounts, rule *weightRule) map[int64]int {
-	var folds [heldOutFolds][]evidenceGallery
-	for _, gallery := range evidence {
-		fold := gallery.galleryID % heldOutFolds
-		folds[fold] = append(folds[fold], gallery)
-	}
-	scores := make(map[int64]int, len(evidence))
-	for _, fold := range folds {
-		foldTotal, foldValues := tallyScoreCounts(fold)
-		train := total.minus(foldTotal)
-		calculated := func(value scoreValue) (float64, bool) {
-			return scoreWeight(train, values[value].minus(foldValues[value]))
-		}
-		weight := func(value scoreValue) float64 {
-			w, _ := rule.effective(value, calculated)
-			return w
-		}
-		for _, gallery := range fold {
-			var score float64
-			for _, tagID := range gallery.tagIDs {
-				score += weight(scoreValue{kind: collectorapi.ScoreKindTag, tagID: tagID})
-			}
-			if gallery.uploader != "" {
-				score += weight(scoreValue{kind: collectorapi.ScoreKindUploader, value: gallery.uploader})
-			}
-			if gallery.category != "" {
-				score += weight(scoreValue{kind: collectorapi.ScoreKindCategory, value: gallery.category})
-			}
-			scores[gallery.galleryID] = int(max(-scoreWindowTenths, min(scoreWindowTenths, math.Floor(score*10))))
+// heldOut scores each favorite in scope with the weights of the calculation
+// held out from it, and counts it by the first rule that decides it: a "never
+// hide" override, an "always hide" override, else its score. A value without a
+// weight in the calculation has none held out either, so the weighted values'
+// counts and the totals are all it reads. Pins count as in the listing; the
+// tag of a favorite author gets the bonus only when the author has at least
+// heldOutAuthorFavorites stored favorites.
+func (f scoreFilter) heldOut(favorites []favoriteGallery, calculation scoreCalculation, authors []favoriteAuthor) collectorapi.ScoreHeldOut {
+	rule := &weightRule{pins: pinnedWeights(f.pins), authorBonus: f.authorBonus, favoriteAuthors: map[int64]bool{}}
+	for _, author := range authors {
+		if author.favorites >= heldOutAuthorFavorites {
+			rule.favoriteAuthors[author.tagID] = true
 		}
 	}
-	return scores
-}
-
-// weightRule holds what the weight rule needs besides the calculated
-// weights: the pins, the author bonus (nil while it is off) and the
-// catalog_tags IDs of the favorite authors. A nil rule has none of them.
-type weightRule struct {
-	pins            map[scoreValue]float64
-	authorBonus     *float64
-	favoriteAuthors map[int64]bool
-}
-
-// effective is the Go side of the weight rule: the pin of the value, else for
-// the tag of a favorite author while the bonus is on the larger of its
-// calculated weight and the bonus, else its calculated weight. ok is false
-// when it has none.
-func (r *weightRule) effective(value scoreValue, calculated func(scoreValue) (float64, bool)) (weight float64, ok bool) {
-	if r == nil {
-		return calculated(value)
+	calculated := func(value scoreValue) (float64, bool) {
+		if _, ok := calculation.weights[value]; !ok {
+			return 0, false
+		}
+		return heldOutWeight(calculation.favorites[value], calculation.favoritesInScope, calculation.catalog[value], calculation.catalogInScope)
 	}
-	if pin, ok := r.pins[value]; ok {
-		return pin, true
-	}
-	weight, ok = calculated(value)
-	if r.authorBonus != nil && value.kind == collectorapi.ScoreKindTag && r.favoriteAuthors[value.tagID] && (!ok || weight < *r.authorBonus) {
-		return *r.authorBonus, true
-	}
-	return weight, ok
-}
-
-func (c scoreCounts) minus(other scoreCounts) scoreCounts {
-	return scoreCounts{interesting: c.interesting - other.interesting, notForMe: c.notForMe - other.notForMe, neutral: c.neutral - other.neutral}
-}
-
-// heldOut classes the evidence galleries that pass the predicate by the
-// override rules, a "never hide" match first, and counts the held-out scores
-// of the rest per class. The verdict decides nothing here.
-func (f scoreFilter) heldOut(ctx context.Context, tx pgx.Tx, predicate string, args pgdb.Args, evidence []evidenceGallery, tenths map[int64]int) (collectorapi.ScoreHeldOut, error) {
-	var heldOut collectorapi.ScoreHeldOut
-	ids := make([]int64, 0, len(evidence))
-	for _, gallery := range evidence {
-		ids = append(ids, gallery.galleryID)
-	}
-	args = slices.Clone(args)
-	rows, err := tx.Query(ctx, "SELECT g.gallery_id FROM catalog_galleries g WHERE g.gallery_id = ANY("+args.Add(ids)+"::bigint[]) AND "+predicate, args...)
-	if err != nil {
-		return heldOut, err
-	}
-	passes, err := pgx.CollectRows(rows, pgx.RowTo[int64])
-	if err != nil {
-		return heldOut, err
-	}
-	passing := make(map[int64]bool, len(passes))
-	for _, id := range passes {
-		passing[id] = true
-	}
-	effects := map[scoreClass]*collectorapi.ScoreClassEffect{
-		scoreInteresting: &heldOut.Interesting, scoreNotForMe: &heldOut.NotForMe, scoreNeutral: &heldOut.Neutral,
-	}
-	scores := map[scoreClass][]int{}
-	for _, gallery := range evidence {
-		if !passing[gallery.galleryID] {
+	heldOut := collectorapi.ScoreHeldOut{Total: len(favorites)}
+	scores := make([]int, 0, len(favorites))
+	for _, gallery := range favorites {
+		if override, ok := f.decidingOverride(gallery.uploader, gallery.category, gallery.tagIDs); ok {
+			if override.Rule == collectorapi.ScoreRuleNeverHide {
+				heldOut.NeverHidden++
+			} else {
+				heldOut.AlwaysHidden++
+			}
 			continue
 		}
-		effect := effects[gallery.class]
-		effect.Total++
-		override, ok := f.decidingOverride(gallery.uploader, gallery.category, gallery.tagIDs)
-		switch {
-		case ok && override.Rule == collectorapi.ScoreRuleNeverHide:
-			effect.NeverHidden++
-		case ok:
-			effect.AlwaysHidden++
-		default:
-			scores[gallery.class] = append(scores[gallery.class], tenths[gallery.galleryID])
+		var score float64
+		for _, value := range gallery.values() {
+			weight, _ := rule.effective(value, calculated)
+			score += weight
 		}
+		scores = append(scores, int(max(-scoreWindowTenths, min(scoreWindowTenths, math.Floor(score*10)))))
 	}
-	for class, effect := range effects {
-		effect.Scores = *scoreHistogram(scores[class])
-	}
-	return heldOut, nil
+	heldOut.Scores = *scoreHistogram(scores)
+	return heldOut
 }
 
 // suggestedThreshold returns the highest threshold within the histogram's
-// buckets that hides at most SuggestedInterestingLoss of the class's
-// galleries, counting those an override always hides; the first bucket when
-// none does, and 0 without scored galleries.
-func suggestedThreshold(effect collectorapi.ScoreClassEffect) int {
-	histogram := effect.Scores
+// buckets that hides at most SuggestedFavoriteLoss of the held-out favorites,
+// counting those an override always hides; the lowest bucket when none does,
+// and 0 without scored favorites.
+func suggestedThreshold(heldOut collectorapi.ScoreHeldOut) int {
+	histogram := heldOut.Scores
 	if len(histogram.Counts) == 0 {
 		return 0
 	}
 	suggested := histogram.FirstBucket
-	hidden := effect.AlwaysHidden
+	hidden := heldOut.AlwaysHidden
 	for i, count := range histogram.Counts {
-		if float64(hidden) <= SuggestedInterestingLoss*float64(effect.Total) {
+		if float64(hidden) <= SuggestedFavoriteLoss*float64(heldOut.Total) {
 			suggested = histogram.FirstBucket + i
 		}
 		hidden += count

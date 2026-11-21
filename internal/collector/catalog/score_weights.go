@@ -8,43 +8,20 @@ import (
 
 // Constants of the score model calculation.
 const (
-	// NeutralWeight is how much a neutral gallery counts on the acceptable side,
-	// relative to an "Interesting" gallery.
-	NeutralWeight = 0.1
-	// PriorStrength is the number of galleries of prior that keeps a weight near
-	// zero while its own evidence is small.
+	// PriorStrength is the pseudo-count added to the favorites that carry a
+	// value and to their expected number, which keeps a weight near zero while
+	// few favorites carry the value.
 	PriorStrength = 10
-	// MinSupport is the number of evidence galleries a value needs for a weight.
+	// MinSupport is the number of favorites in scope a value needs for a
+	// weight.
 	MinSupport = 3
-	// FewVerdicts is the verdict count of either type under which a preview
+	// FewFavorites is the number of favorites in scope under which a preview
 	// warns that its weights are unreliable.
-	FewVerdicts = 20
+	FewFavorites = 50
+	// SuggestedFavoriteLoss is the largest share of the held-out favorites
+	// that the suggested threshold hides.
+	SuggestedFavoriteLoss = 0.05
 )
-
-type scoreClass int
-
-const (
-	scoreInteresting scoreClass = iota
-	scoreNotForMe
-	scoreNeutral
-)
-
-// scoreCounts holds numbers of evidence galleries per class. Interesting
-// includes counted favorites.
-type scoreCounts struct {
-	interesting, notForMe, neutral int
-}
-
-func (c *scoreCounts) add(class scoreClass) {
-	switch class {
-	case scoreInteresting:
-		c.interesting++
-	case scoreNotForMe:
-		c.notForMe++
-	case scoreNeutral:
-		c.neutral++
-	}
-}
 
 // scoreValue names a tag by its catalog_tags ID, or an uploader or category by
 // its text.
@@ -54,76 +31,47 @@ type scoreValue struct {
 	value string
 }
 
-// evidenceGallery is one evidence gallery with its class and catalog values.
-type evidenceGallery struct {
-	galleryID int64
-	class     scoreClass
-	uploader  string
-	category  string
-	tagIDs    []int64
-}
-
-// tallyScoreCounts counts the galleries per class, and per class the galleries
-// that carry each tag, each non-empty uploader and each non-empty category.
-func tallyScoreCounts(evidence []evidenceGallery) (scoreCounts, map[scoreValue]scoreCounts) {
-	var total scoreCounts
-	values := map[scoreValue]scoreCounts{}
-	count := func(value scoreValue, class scoreClass) {
-		counts := values[value]
-		counts.add(class)
-		values[value] = counts
-	}
-	for _, gallery := range evidence {
-		total.add(gallery.class)
-		for _, tagID := range gallery.tagIDs {
-			count(scoreValue{kind: collectorapi.ScoreKindTag, tagID: tagID}, gallery.class)
-		}
-		if gallery.uploader != "" {
-			count(scoreValue{kind: collectorapi.ScoreKindUploader, value: gallery.uploader}, gallery.class)
-		}
-		if gallery.category != "" {
-			count(scoreValue{kind: collectorapi.ScoreKindCategory, value: gallery.category}, gallery.class)
-		}
-	}
-	return total, values
-}
-
-// scoreSides returns the acceptable and the "Not for me" side of the counts.
-func scoreSides(c scoreCounts) (acceptable, rejected float64) {
-	return float64(c.interesting) + NeutralWeight*float64(c.neutral), float64(c.notForMe)
-}
-
-// scoreModelPossible reports whether the evidence has both sides.
-func scoreModelPossible(total scoreCounts) bool {
-	acceptable, rejected := scoreSides(total)
-	return acceptable > 0 && rejected > 0
-}
-
-// scoreWeight is the smoothed log odds ratio of the value's acceptable against
-// its "Not for me" evidence, relative to all evidence. A value that fewer than
-// MinSupport evidence galleries carry, or evidence without both sides, gives
-// no weight.
-func scoreWeight(total, value scoreCounts) (float64, bool) {
-	if !scoreModelPossible(total) || value.interesting+value.notForMe+value.neutral < MinSupport {
+// scoreWeight is the natural logarithm of the smoothed lift of a value that
+// favorites of the F favorites in scope and catalog of the N catalog galleries
+// in scope carry: how much more frequent it is in the favorites than in the
+// catalog. A value that fewer than MinSupport favorites carry, or that is not
+// more frequent in the favorites than in the catalog, gets no weight, so a
+// weight is always above 0.
+func scoreWeight(favorites, favoritesInScope, catalog, catalogInScope int) (float64, bool) {
+	if favorites < MinSupport || catalogInScope == 0 {
 		return 0, false
 	}
-	all, allRejected := scoreSides(total)
-	acceptable, rejected := scoreSides(value)
-	prior := all / (all + allRejected)
-	return math.Log((acceptable+PriorStrength*prior)/(rejected+PriorStrength*(1-prior))) - math.Log(all/allRejected), true
+	expected := float64(favoritesInScope) * float64(catalog) / float64(catalogInScope)
+	weight := math.Log((float64(favorites) + PriorStrength) / (expected + PriorStrength))
+	if !(weight > 0) {
+		return 0, false
+	}
+	return weight, true
 }
 
-// scoreWeights returns the weight of every value that gets one, or false when
-// the evidence gives no model.
-func scoreWeights(total scoreCounts, values map[scoreValue]scoreCounts) (map[scoreValue]float64, bool) {
-	if !scoreModelPossible(total) {
-		return nil, false
+// weightRule holds what the weight rule needs besides the calculated
+// weights: the pins, the author bonus (nil while it is off) and the
+// catalog_tags IDs of the favorite authors. A nil rule has none of them.
+type weightRule struct {
+	pins            map[scoreValue]float64
+	authorBonus     *float64
+	favoriteAuthors map[int64]bool
+}
+
+// effective is the Go side of the weight rule: the pin of the value, else for
+// the tag of a favorite author while the bonus is on the larger of its
+// calculated weight and the bonus, else its calculated weight. ok is false
+// when it has none.
+func (r *weightRule) effective(value scoreValue, calculated func(scoreValue) (float64, bool)) (weight float64, ok bool) {
+	if r == nil {
+		return calculated(value)
 	}
-	weights := map[scoreValue]float64{}
-	for value, counts := range values {
-		if weight, ok := scoreWeight(total, counts); ok {
-			weights[value] = weight
-		}
+	if pin, ok := r.pins[value]; ok {
+		return pin, true
 	}
-	return weights, true
+	weight, ok = calculated(value)
+	if r.authorBonus != nil && value.kind == collectorapi.ScoreKindTag && r.favoriteAuthors[value.tagID] && (!ok || weight < *r.authorBonus) {
+		return *r.authorBonus, true
+	}
+	return weight, ok
 }

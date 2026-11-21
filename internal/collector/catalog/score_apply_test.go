@@ -13,34 +13,9 @@ import (
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
-// seedVerdicts retains count galleries from first on with the uploader, the
-// category and the tags, each with the verdict.
-func seedVerdicts(t *testing.T, db *pgxpool.Pool, s *Service, first int64, count int, verdict, uploader, category string, tags ...string) {
-	t.Helper()
-	for id := first; id < first+int64(count); id++ {
-		retain(t, db, panda.Metadata{ID: id, Posted: id, Uploader: uploader, Category: category, Tags: tags}, true)
-		setVerdict(t, s, id, verdict)
-	}
-}
-
-var scoreArtists = []string{"artist:a", "artist:b", "artist:c", "artist:d", "artist:e", "artist:f"}
-
-// seedScoreEvidence gives galleries 1 to 5 "Not for me" with female:glasses,
-// 1 to 3 also with six artist tags and the uploader "Bad One", and galleries
-// 6 to 10 "Interesting" with male:hat, 6 to 8 also in the category Manga. A
-// model from it weighs female:glasses at about -0.69, each artist tag and the
-// uploader at about -0.47, male:hat at about 0.69 and manga at about 0.47.
-func seedScoreEvidence(t *testing.T, db *pgxpool.Pool, s *Service) {
-	t.Helper()
-	seedVerdicts(t, db, s, 1, 3, collectorapi.VerdictNotForMe, "Bad One", "", append([]string{"female:glasses"}, scoreArtists...)...)
-	seedVerdicts(t, db, s, 4, 2, collectorapi.VerdictNotForMe, "", "", "female:glasses")
-	seedVerdicts(t, db, s, 6, 3, collectorapi.VerdictInteresting, "", "Manga", "male:hat")
-	seedVerdicts(t, db, s, 9, 2, collectorapi.VerdictInteresting, "", "", "male:hat")
-}
-
-// seedScoredGalleries retains galleries without a verdict: 101 with
-// female:glasses (score tenths -7), 102 with male:hat (6), 103 without tags
-// (0) and 104 with the artist tags and female:glasses (-36).
+// seedScoredGalleries retains galleries 101 with female:glasses (score tenths
+// -7 under storedScoreWeights), 102 with male:hat (6), 103 without tags (0)
+// and 104 with the artist tags and female:glasses (-36).
 func seedScoredGalleries(t *testing.T, db *pgxpool.Pool) {
 	t.Helper()
 	for _, entry := range []panda.Metadata{
@@ -51,18 +26,6 @@ func seedScoredGalleries(t *testing.T, db *pgxpool.Pool) {
 	} {
 		retain(t, db, entry, true)
 	}
-}
-
-func applyCandidate(t *testing.T, s *Service, threshold int) collectorapi.ScorePreview {
-	t.Helper()
-	preview := previewScore(t, s, false)
-	if preview.Candidate == nil {
-		t.Fatalf("preview = %+v", preview)
-	}
-	if err := s.ApplyScoreModel(t.Context(), preview.Candidate.ID, threshold); err != nil {
-		t.Fatal(err)
-	}
-	return preview
 }
 
 type storedScoreModel struct {
@@ -116,18 +79,9 @@ func assertThreshold(t *testing.T, result collectorapi.CatalogResult, want int) 
 	}
 }
 
-func weightOf(t *testing.T, preview collectorapi.ScorePreview, kind, label string) float64 {
-	t.Helper()
-	weight, ok := findWeight(preview, kind, label)
-	if !ok {
-		t.Fatalf("no weight for %s %s", kind, label)
-	}
-	return weight.Weight
-}
-
 func TestAppliedModelHidesGalleriesBelowTheThreshold(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
 	for _, entry := range []panda.Metadata{
 		{ID: 105, Posted: 105, Tags: []string{"female:glasses"}, Uploader: "Some One"},
@@ -138,26 +92,26 @@ func TestAppliedModelHidesGalleriesBelowTheThreshold(t *testing.T) {
 	} {
 		retain(t, db, entry, true)
 	}
-	preview := applyCandidate(t, s, 0)
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
 	setOverride(t, s, collectorapi.ScoreKindUploader, "Some One", collectorapi.ScoreRuleNeverHide)
-	setVerdict(t, s, 106, collectorapi.VerdictInteresting)
-	setVerdict(t, s, 107, collectorapi.VerdictNotForMe)
 
 	on := scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, on, []int64{109, 106, 105, 103, 102, 10, 9, 8, 7, 6})
+	assertCatalogIDs(t, on, []int64{109, 107, 105, 103, 102, 10, 9, 8, 7, 6})
 	hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, hidden, []int64{108, 107, 104, 101, 5, 4, 3, 2, 1})
+	assertCatalogIDs(t, hidden, []int64{108, 106, 104, 101, 5, 4, 3, 2, 1})
 	all := scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{})
 	assertCatalogIDs(t, all, []int64{109, 108, 107, 106, 105, 104, 103, 102, 101, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1})
 	for _, result := range []collectorapi.CatalogResult{on, hidden, all} {
 		assertThreshold(t, result, 0)
 	}
 	for _, result := range []collectorapi.CatalogResult{hidden, all} {
-		for _, id := range []int64{101, 104, 108} {
+		for _, id := range []int64{101, 104, 106, 108} {
 			if score := itemByID(t, result, id).Score; score == nil || score.Rule != collectorapi.ScoreRuleBelowThreshold || score.Override != "" {
 				t.Fatalf("gallery %d score = %+v", id, score)
 			}
 		}
+	}
+	for _, result := range []collectorapi.CatalogResult{on, all} {
 		if score := itemByID(t, result, 107).Score; score == nil || score.Rule != "" {
 			t.Fatalf("gallery 107 score = %+v", score)
 		}
@@ -166,29 +120,24 @@ func TestAppliedModelHidesGalleriesBelowTheThreshold(t *testing.T) {
 		t.Fatalf("gallery 105 score = %+v", score)
 	}
 
-	glasses := weightOf(t, preview, collectorapi.ScoreKindTag, "female:glasses")
-	artist := weightOf(t, preview, collectorapi.ScoreKindTag, "artist:a")
-	hat := weightOf(t, preview, collectorapi.ScoreKindTag, "male:hat")
-	uploader := weightOf(t, preview, collectorapi.ScoreKindUploader, "Bad One")
-	manga := weightOf(t, preview, collectorapi.ScoreKindCategory, "manga")
 	for _, tc := range []struct {
 		id      int64
 		value   float64
 		weights []collectorapi.CatalogScoreWeight
 	}{
-		{102, hat, []collectorapi.CatalogScoreWeight{{Kind: collectorapi.ScoreKindTag, Label: "male:hat", Weight: hat}}},
+		{102, hatWeight, []collectorapi.CatalogScoreWeight{{Kind: collectorapi.ScoreKindTag, Label: "male:hat", Weight: hatWeight}}},
 		{103, 0, nil},
-		{108, uploader, []collectorapi.CatalogScoreWeight{{Kind: collectorapi.ScoreKindUploader, Label: "Bad One", Weight: uploader}}},
-		{109, hat + manga, []collectorapi.CatalogScoreWeight{
-			{Kind: collectorapi.ScoreKindTag, Label: "male:hat", Weight: hat},
-			{Kind: collectorapi.ScoreKindCategory, Label: "manga", Weight: manga},
+		{108, uploaderWeight, []collectorapi.CatalogScoreWeight{{Kind: collectorapi.ScoreKindUploader, Label: "Bad One", Weight: uploaderWeight}}},
+		{109, hatWeight + mangaWeight, []collectorapi.CatalogScoreWeight{
+			{Kind: collectorapi.ScoreKindTag, Label: "male:hat", Weight: hatWeight},
+			{Kind: collectorapi.ScoreKindCategory, Label: "manga", Weight: mangaWeight},
 		}},
-		{104, glasses + 6*artist, []collectorapi.CatalogScoreWeight{
-			{Kind: collectorapi.ScoreKindTag, Label: "female:glasses", Weight: glasses},
-			{Kind: collectorapi.ScoreKindTag, Label: "artist:a", Weight: artist},
-			{Kind: collectorapi.ScoreKindTag, Label: "artist:b", Weight: artist},
-			{Kind: collectorapi.ScoreKindTag, Label: "artist:c", Weight: artist},
-			{Kind: collectorapi.ScoreKindTag, Label: "artist:d", Weight: artist},
+		{104, glassesWeight + 6*artistWeight, []collectorapi.CatalogScoreWeight{
+			{Kind: collectorapi.ScoreKindTag, Label: "female:glasses", Weight: glassesWeight},
+			{Kind: collectorapi.ScoreKindTag, Label: "artist:a", Weight: artistWeight},
+			{Kind: collectorapi.ScoreKindTag, Label: "artist:b", Weight: artistWeight},
+			{Kind: collectorapi.ScoreKindTag, Label: "artist:c", Weight: artistWeight},
+			{Kind: collectorapi.ScoreKindTag, Label: "artist:d", Weight: artistWeight},
 		}},
 	} {
 		item := itemByID(t, all, tc.id)
@@ -205,25 +154,25 @@ func TestAppliedModelHidesGalleriesBelowTheThreshold(t *testing.T) {
 			}
 		}
 	}
-	ranked := []summaryTag{weighted("female:glasses", glasses)}
+	ranked := []summaryTag{weighted("female:glasses", glassesWeight)}
 	for _, label := range scoreArtists[:5] {
-		ranked = append(ranked, weighted(label, weightOf(t, preview, collectorapi.ScoreKindTag, label)))
+		ranked = append(ranked, weighted(label, artistWeight))
 	}
 	assertSummaryTags(t, itemByID(t, all, 104), ranked)
 }
 
 func TestApplyKeepsTheActiveModelForAMissingCandidate(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
-	first := applyCandidate(t, s, 0)
+	first := applyScoreModel(t, db, s, 0, storedScoreWeights()...)
 	active := activeModelRow(t, db)
 	before := scorePage(t, s, "", collectorapi.CatalogOptions{})
 
-	replaced := previewScore(t, s, false)
+	replaced := storeScoreCandidate(t, db, storedScoreWeights()...)
 	unchanged := func() {
 		t.Helper()
-		if got := activeModelRow(t, db); got != active || got.id != first.Candidate.ID {
+		if got := activeModelRow(t, db); got != active || got.id != first {
 			t.Fatalf("active model = %+v, want %+v", got, active)
 		}
 		if after := scorePage(t, s, "", collectorapi.CatalogOptions{}); !reflect.DeepEqual(before, after) {
@@ -231,36 +180,40 @@ func TestApplyKeepsTheActiveModelForAMissingCandidate(t *testing.T) {
 		}
 	}
 	unchanged()
-	if err := s.ApplyScoreModel(t.Context(), replaced.Candidate.ID+100, 5); !errors.Is(err, ErrScoreCandidateNotFound) {
+	if err := s.ApplyScoreModel(t.Context(), replaced+100, 5); !errors.Is(err, ErrScoreCandidateNotFound) {
 		t.Fatalf("unknown candidate: %v", err)
 	}
 	unchanged()
-	if err := s.ApplyScoreModel(t.Context(), first.Candidate.ID, 5); !errors.Is(err, ErrScoreCandidateNotFound) {
+	if err := s.ApplyScoreModel(t.Context(), first, 5); !errors.Is(err, ErrScoreCandidateNotFound) {
 		t.Fatalf("active model as candidate: %v", err)
 	}
 	unchanged()
-	latest := previewScore(t, s, false)
-	if err := s.ApplyScoreModel(t.Context(), replaced.Candidate.ID, 5); !errors.Is(err, ErrScoreCandidateNotFound) {
+	// A preview without evidence deletes every candidate and stores none.
+	if preview := previewScore(t, s); preview.Candidate != nil {
+		t.Fatalf("preview = %+v", preview)
+	}
+	latest := storeScoreCandidate(t, db, storedScoreWeights()...)
+	if err := s.ApplyScoreModel(t.Context(), replaced, 5); !errors.Is(err, ErrScoreCandidateNotFound) {
 		t.Fatalf("replaced candidate: %v", err)
 	}
 	unchanged()
-	if err := s.ApplyScoreModel(t.Context(), latest.Candidate.ID, -8); err != nil {
+	if err := s.ApplyScoreModel(t.Context(), latest, -8); err != nil {
 		t.Fatal(err)
 	}
 	models := storedScoreModels(t, db)
-	if len(models) != 1 || !models[0].active || models[0].id != latest.Candidate.ID || models[0].threshold != -8 ||
-		models[0].weights != latest.Candidate.WeightCount {
+	if len(models) != 1 || !models[0].active || models[0].id != latest || models[0].threshold != -8 ||
+		models[0].weights != len(storedScoreWeights()) {
 		t.Fatalf("models = %+v", models)
 	}
-	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{}), []int64{104, 5, 4, 3, 2, 1})
+	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{}), []int64{104, 3, 2, 1})
 }
 
 func TestApplyWaitsForARunningPreview(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	applyCandidate(t, s, 0)
+	seedScoreGalleries(t, db)
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
 	active := activeModelRow(t, db)
-	candidate := previewScore(t, s, false)
+	candidate := storeScoreCandidate(t, db, storedScoreWeights()...)
 
 	// A preview locks the table and deletes the candidate before it stores its own.
 	blocker, err := db.Begin(t.Context())
@@ -275,7 +228,7 @@ func TestApplyWaitsForARunningPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	errs := make(chan error, 1)
-	go func() { errs <- s.ApplyScoreModel(t.Context(), candidate.Candidate.ID, 5) }()
+	go func() { errs <- s.ApplyScoreModel(t.Context(), candidate, 5) }()
 	waitForLockWaiters(t, db, 1)
 	select {
 	case err := <-errs:
@@ -295,13 +248,9 @@ func TestApplyWaitsForARunningPreview(t *testing.T) {
 
 func TestConcurrentAppliesLeaveOneActiveModel(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	first := previewScore(t, s, false)
-	var second int64
-	if err := db.QueryRow(t.Context(), `INSERT INTO panda_score_models (favorites, calculated_at) VALUES (false, now())
-		RETURNING id`).Scan(&second); err != nil {
-		t.Fatal(err)
-	}
+	seedScoreGalleries(t, db)
+	first := storeScoreCandidate(t, db, storedScoreWeights()...)
+	second := storeScoreCandidate(t, db)
 	blocker, err := db.Begin(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -311,7 +260,7 @@ func TestConcurrentAppliesLeaveOneActiveModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	errs := make(chan error, 2)
-	for i, id := range []int64{first.Candidate.ID, second} {
+	for i, id := range []int64{first, second} {
 		go func() { errs <- s.ApplyScoreModel(t.Context(), id, i) }()
 		waitForLockWaiters(t, db, i+1)
 	}
@@ -330,15 +279,15 @@ func TestConcurrentAppliesLeaveOneActiveModel(t *testing.T) {
 
 func TestApplyingASecondCandidateDeletesTheFirst(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	first := applyCandidate(t, s, 0)
-	second := applyCandidate(t, s, 3)
+	seedScoreGalleries(t, db)
+	first := applyScoreModel(t, db, s, 0, storedScoreWeights()...)
+	second := applyScoreModel(t, db, s, 3, storedScoreWeights()[:2]...)
 	models := storedScoreModels(t, db)
-	if len(models) != 1 || models[0].id != second.Candidate.ID || !models[0].active || models[0].threshold != 3 {
+	if len(models) != 1 || models[0].id != second || !models[0].active || models[0].threshold != 3 || models[0].weights != 2 {
 		t.Fatalf("models = %+v", models)
 	}
 	var left int
-	if err := db.QueryRow(t.Context(), "SELECT count(*) FROM panda_score_weights WHERE model_id = $1", first.Candidate.ID).Scan(&left); err != nil {
+	if err := db.QueryRow(t.Context(), "SELECT count(*) FROM panda_score_weights WHERE model_id = $1", first).Scan(&left); err != nil {
 		t.Fatal(err)
 	}
 	if left != 0 {
@@ -348,14 +297,14 @@ func TestApplyingASecondCandidateDeletesTheFirst(t *testing.T) {
 
 func TestSetScoreThresholdChangesWhatIsHidden(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
 	if err := s.SetScoreThreshold(t.Context(), 0); !errors.Is(err, ErrNoActiveScoreModel) {
 		t.Fatalf("without a model: %v", err)
 	}
-	candidate := previewScore(t, s, false)
+	candidate := storeScoreCandidate(t, db, storedScoreWeights()...)
 	for _, threshold := range []int{math.MinInt32 - 1, math.MaxInt32 + 1} {
-		if err := s.ApplyScoreModel(t.Context(), candidate.Candidate.ID, threshold); !errors.Is(err, ErrInvalidScoreThreshold) {
+		if err := s.ApplyScoreModel(t.Context(), candidate, threshold); !errors.Is(err, ErrInvalidScoreThreshold) {
 			t.Fatalf("apply %d: %v", threshold, err)
 		}
 		if err := s.SetScoreThreshold(t.Context(), threshold); !errors.Is(err, ErrInvalidScoreThreshold) {
@@ -365,7 +314,7 @@ func TestSetScoreThresholdChangesWhatIsHidden(t *testing.T) {
 	if models := storedScoreModels(t, db); len(models) != 1 || models[0].active {
 		t.Fatalf("models = %+v", models)
 	}
-	if err := s.ApplyScoreModel(t.Context(), candidate.Candidate.ID, 0); err != nil {
+	if err := s.ApplyScoreModel(t.Context(), candidate, 0); err != nil {
 		t.Fatal(err)
 	}
 	before := activeModelRow(t, db)
@@ -374,18 +323,18 @@ func TestSetScoreThresholdChangesWhatIsHidden(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, result, []int64{103, 102, 101, 10, 9, 8, 7, 6})
+	assertCatalogIDs(t, result, []int64{103, 102, 101, 10, 9, 8, 7, 6, 5, 4})
 	assertThreshold(t, result, -8)
 	after := activeModelRow(t, db)
 	if after.id != before.id || after.weights != before.weights || after.sum != before.sum || after.threshold != -8 {
 		t.Fatalf("model before %+v, after %+v", before, after)
 	}
-	if err := s.SetScoreThreshold(t.Context(), 1001); err != nil {
+	if err := s.SetScoreThreshold(t.Context(), 11); err != nil {
 		t.Fatal(err)
 	}
 	result = scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, result, []int64{10, 9, 8, 7, 6})
-	assertThreshold(t, result, 1001)
+	assertCatalogIDs(t, result, []int64{8, 7, 6})
+	assertThreshold(t, result, 11)
 	for _, threshold := range []int{math.MinInt32, math.MaxInt32} {
 		if err := s.SetScoreThreshold(t.Context(), threshold); err != nil {
 			t.Fatalf("set %d: %v", threshold, err)
@@ -395,16 +344,16 @@ func TestSetScoreThresholdChangesWhatIsHidden(t *testing.T) {
 
 func TestRemoveScoreModelKeepsOverrides(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
 	retain(t, db, panda.Metadata{ID: 105, Posted: 105, Uploader: "Some One"}, true)
-	applyCandidate(t, s, 0)
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
 	setOverride(t, s, collectorapi.ScoreKindUploader, "Some One", collectorapi.ScoreRuleAlwaysHide)
 	if err := s.RemoveScoreModel(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	result := scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, result, []int64{104, 103, 102, 101, 10, 9, 8, 7, 6})
+	assertCatalogIDs(t, result, []int64{104, 103, 102, 101, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1})
 	if result.ScoreFilter == nil || result.ScoreFilter.ThresholdTenths != nil {
 		t.Fatalf("score filter = %+v", result.ScoreFilter)
 	}
@@ -429,8 +378,8 @@ func TestRemoveScoreModelKeepsOverrides(t *testing.T) {
 
 func TestAppliedModelScoresProvisionalThenCollectedTags(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	applyCandidate(t, s, 0)
+	seedScoreGalleries(t, db)
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
 	projectFeed(t, db, panda.FeedEntry{GalleryRef: panda.GalleryRef{ID: 201, Token: "token201"}, Title: "Feed",
 		Tags: []string{"female:glasses"}}, time.Now().UTC())
 	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{Query: "Feed"}), []int64{201})
@@ -441,12 +390,13 @@ func TestAppliedModelScoresProvisionalThenCollectedTags(t *testing.T) {
 
 func TestGalleryHiddenByItsScoreStaysUnseen(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
-	applyCandidate(t, s, 0)
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
 	page := unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100})
-	assertCatalogIDs(t, page, []int64{103, 102})
-	if err := s.RecordDisplays(t.Context(), []int64{103, 102}, ""); err != nil {
+	shown := []int64{103, 102, 10, 9, 8, 7, 6}
+	assertCatalogIDs(t, page, shown)
+	if err := s.RecordDisplays(t.Context(), shown); err != nil {
 		t.Fatal(err)
 	}
 	empty := unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100})
@@ -457,28 +407,5 @@ func TestGalleryHiddenByItsScoreStaysUnseen(t *testing.T) {
 	if err := s.SetScoreThreshold(t.Context(), -8); err != nil {
 		t.Fatal(err)
 	}
-	assertCatalogIDs(t, unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100}), []int64{101})
-}
-
-func TestVerdictViewIgnoresTheActiveModel(t *testing.T) {
-	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	views := map[string][]int64{
-		collectorapi.VerdictInteresting: {10, 9, 8, 7, 6},
-		collectorapi.VerdictNotForMe:    {5, 4, 3, 2, 1},
-	}
-	for verdict, want := range views {
-		assertCatalogIDs(t, scorePage(t, s, "", collectorapi.CatalogOptions{Verdict: verdict}), want)
-	}
-	applyCandidate(t, s, 1000)
-	for verdict, want := range views {
-		result := scorePage(t, s, "", collectorapi.CatalogOptions{Verdict: verdict})
-		assertCatalogIDs(t, result, want)
-		assertThreshold(t, result, 1000)
-		for _, item := range result.Items {
-			if item.Score == nil || item.Score.Value == nil {
-				t.Fatalf("gallery %d score = %+v", item.GalleryID, item.Score)
-			}
-		}
-	}
+	assertCatalogIDs(t, unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100}), []int64{101, 5, 4})
 }

@@ -82,10 +82,10 @@ func TestScoreTagWeightsWithoutAnActiveModel(t *testing.T) {
 
 func TestScoreTagWeightsUnderTheActiveModel(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	preview := applyCandidate(t, s, 0)
+	seedScoreGalleries(t, db)
+	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
 	retainTagged(t, db, 201, "artist:rare", "artist:fav")
-	hat := weightOf(t, preview, collectorapi.ScoreKindTag, "male:hat")
+	hat := hatWeight
 
 	glasses := setPin(t, s, collectorapi.ScoreKindTag, "Female:Glasses", 1.5)
 	artistB := setPin(t, s, collectorapi.ScoreKindTag, "artist:b", -1)
@@ -107,7 +107,7 @@ func TestScoreTagWeightsUnderTheActiveModel(t *testing.T) {
 	assertTagWeight(t, weights.Tags[6], false, nil, nil)
 
 	setBonus(t, s, nil)
-	artistA := weightOf(t, preview, collectorapi.ScoreKindTag, "artist:a")
+	artistA := artistWeight
 	weights = tagWeights(t, s, "artist:a", "artist:fav")
 	assertTagWeight(t, weights.Tags[0], true, &artistA, nil)
 	assertTagWeight(t, weights.Tags[1], true, nil, nil)

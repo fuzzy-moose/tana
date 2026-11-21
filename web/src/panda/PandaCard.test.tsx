@@ -62,20 +62,24 @@ test('details show the score, the page threshold and the strongest weights', () 
   expect(screen.queryByText(/^Score/)).toBeNull()
 })
 
-test('details name the rule that decides, the verdict first, only on a page with the score filter', () => {
-  const { rerender } = render(<PandaDetails gallery={{ ...collectedGallery, verdict: 'not_for_me', score: { rule: 'never_hide', override: 'female:glasses' } }} scoreFilter={{}} />)
-  expect(screen.getByText('Hidden by your "Not for me" verdict.')).toBeTruthy()
-  expect(screen.queryByText(/Never hidden/)).toBeNull()
-  rerender(<PandaDetails gallery={{ ...collectedGallery, verdict: 'interesting', score: { rule: 'always_hide', override: 'female:glasses' } }} scoreFilter={{}} />)
-  expect(screen.queryByText(/Hidden/)).toBeNull()
-  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'always_hide', override: 'Doujinshi' } }} scoreFilter={{}} />)
+test('details name the rule that decides, only on a page with the score filter', () => {
+  const { rerender } = render(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'always_hide', override: 'Doujinshi' } }} scoreFilter={{}} />)
   expect(screen.getByText('Hidden by the override for Doujinshi.')).toBeTruthy()
   rerender(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'never_hide', override: 'female:glasses' } }} scoreFilter={{}} />)
   expect(screen.getByText('Never hidden: female:glasses.')).toBeTruthy()
   rerender(<PandaDetails gallery={{ ...collectedGallery, score: { value: -2, rule: 'below_threshold' } }} scoreFilter={{ threshold_tenths: -5 }} />)
   expect(screen.getByText('Hidden: the score is below the threshold.')).toBeTruthy()
-  rerender(<PandaDetails gallery={{ ...collectedGallery, verdict: 'not_for_me' }} />)
+  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'always_hide', override: 'Doujinshi' } }} />)
   expect(screen.queryByText(/Hidden/)).toBeNull()
+})
+
+test('a card renders its link, cover, status and tags, and no button', () => {
+  render(<Theme><PandaCard gallery={{ ...feedGallery, thumbnail_url: 'https://covers.example/1.jpg', summary_tags: [tag('glasses')] }} /></Theme>)
+  expect(screen.getByRole('link').getAttribute('href')).toBe(feedGallery.url)
+  expect(screen.getByRole('link').querySelector('img')?.getAttribute('src')).toBe('https://covers.example/1.jpg')
+  expect(screen.getByText('Waiting for metadata')).toBeTruthy()
+  expect(stripTags()).toEqual([['glasses', 'gray']])
+  expect(screen.queryByRole('button')).toBeNull()
 })
 
 const tag = (value: string, weight?: number): PandaSummaryTag => ({ namespace: 'female', value, term: `female:${value}$`, ...(weight === undefined ? {} : { weight }) })

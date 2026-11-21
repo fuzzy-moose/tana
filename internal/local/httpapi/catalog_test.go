@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/fuzzy-moose/tana/internal/collector"
 	"github.com/fuzzy-moose/tana/internal/collector/catalog"
@@ -198,11 +201,11 @@ func TestLocalRecordCatalogDisplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	const path = "/api/collector/catalog/displays"
-	if w := request(client, "POST", path, `{"gallery_ids":[3,1]}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+	if w := request(client, "POST", path, `{"gallery_ids":[1,2]}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
 		t.Fatalf("record: %d %s", w.Code, w.Body)
 	}
-	if got := lastBody.Load(); got != `{"gallery_ids":[3,1]}` {
-		t.Fatalf("collector body without a score filter: %v", got)
+	if got := lastBody.Load(); got != `{"gallery_ids":[1,2]}` {
+		t.Fatalf("collector body: %v", got)
 	}
 	w := request(client, "GET", "/api/collector/catalog", "")
 	var page collectorapi.CatalogResult
@@ -213,25 +216,15 @@ func TestLocalRecordCatalogDisplays(t *testing.T) {
 	for _, item := range page.Items {
 		displayed[item.GalleryID] = item.Displayed
 	}
-	if !maps.Equal(displayed, map[int64]bool{1: true, 2: false, 3: true}) || !strings.Contains(w.Body.String(), `"displayed":true`) {
+	if !maps.Equal(displayed, map[int64]bool{1: true, 2: true, 3: false}) || !strings.Contains(w.Body.String(), `"displayed":true`) {
 		t.Fatalf("displayed flags: %s", w.Body)
-	}
-	if w := request(client, "POST", path, `{"gallery_ids":[2],"score_filter":"hidden"}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
-		t.Fatalf("record hidden: %d %s", w.Code, w.Body)
-	}
-	var evidence []bool
-	if err := db.QueryRow(t.Context(), "SELECT array_agg(evidence ORDER BY gallery_id) FROM panda_gallery_displays").Scan(&evidence); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(evidence, []bool{true, false, true}) {
-		t.Fatalf("evidence by gallery 1, 2, 3: %v", evidence)
 	}
 	tooMany := make([]string, collectorapi.MaxCatalogDisplays+1)
 	for i := range tooMany {
 		tooMany[i] = strconv.Itoa(i + 1)
 	}
 	before := requests.Load()
-	for _, body := range []string{`{"gallery_ids":[]}`, `{"gallery_ids":[` + strings.Join(tooMany, ",") + `]}`, `{"gallery_ids":[2,0]}`, `{"gallery_ids":[-1]}`, `{"gallery_ids":[2],"score_filter":"bogus"}`} {
+	for _, body := range []string{`{"gallery_ids":[]}`, `{"gallery_ids":[` + strings.Join(tooMany, ",") + `]}`, `{"gallery_ids":[2,0]}`, `{"gallery_ids":[-1]}`} {
 		if w := request(client, "POST", path, body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_batch") {
 			t.Fatalf("%s: %d %s", body, w.Code, w.Body)
 		}
@@ -326,119 +319,56 @@ func TestLocalCatalogCatchUp(t *testing.T) {
 	}
 }
 
-func TestLocalCatalogVerdicts(t *testing.T) {
+func TestLocalCatalogIgnoresVerdictParameter(t *testing.T) {
 	db := pgtest.Open(t, storage.Migrations())
-	tx, err := db.Begin(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES (2, 'token')"); err != nil {
-		t.Fatal(err)
-	}
-	if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: 2, Title: "Gallery 2", Posted: 2}); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(t.Context()); err != nil {
-		t.Fatal(err)
+	service := catalog.New(db, "https://panda.test")
+	for _, id := range []int64{2, 3} {
+		if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := db.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: id, Title: "Gallery", Posted: id}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatal(err)
+		}
 	}
 	logger := slog.New(slog.DiscardHandler)
-	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: catalog.New(db, "https://panda.test"), APIToken: "server-secret"})
-	var requests atomic.Int64
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		collectorHandler.ServeHTTP(w, r)
-	}))
+	upstream := httptest.NewServer(collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: service, APIToken: "server-secret"}))
 	defer upstream.Close()
-	request := func(client *collectorapi.Client, method, path, body string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, path, strings.NewReader(body))
-		r.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		NewHandler(&local.App{Logger: logger, Collector: client}).ServeHTTP(w, r)
-		return w
-	}
 	client, err := collectorapi.NewClient(upstream.URL, "server-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed := func() map[string]any {
+	handler := NewHandler(&local.App{Logger: logger, Collector: client})
+	listed := func(path string) []any {
 		t.Helper()
-		w := request(client, "GET", "/api/collector/catalog", "")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		var page struct {
 			Items []map[string]any `json:"items"`
 		}
-		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK || len(page.Items) != 1 {
-			t.Fatalf("catalog: %d %s, %v", w.Code, w.Body, err)
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s, %v", path, w.Code, w.Body, err)
 		}
-		return page.Items[0]
-	}
-	const path = "/api/collector/catalog/verdicts/2"
-	for _, verdict := range []string{"not_for_me", "interesting"} {
-		if w := request(client, "PUT", path, `{"verdict":"`+verdict+`"}`); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
-			t.Fatalf("put %s: %d %s", verdict, w.Code, w.Body)
+		ids := make([]any, 0, len(page.Items))
+		for _, item := range page.Items {
+			ids = append(ids, item["gallery_id"])
 		}
-		if item := listed(); item["verdict"] != verdict || item["displayed"] != true {
-			t.Fatalf("after %s: %v", verdict, item)
+		return ids
+	}
+	want := listed("/api/collector/catalog")
+	if !reflect.DeepEqual(want, []any{float64(3), float64(2)}) {
+		t.Fatalf("catalog without the parameter: %v", want)
+	}
+	for _, value := range []string{"not_for_me", "interesting", "maybe"} {
+		if got := listed("/api/collector/catalog?verdict=" + value); !reflect.DeepEqual(got, want) {
+			t.Fatalf("verdict=%s: %v, want %v", value, got, want)
 		}
-	}
-	if w := request(client, "DELETE", path, ""); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
-		t.Fatalf("delete: %d %s", w.Code, w.Body)
-	}
-	if item := listed(); item["verdict"] != nil || item["displayed"] != true {
-		t.Fatalf("after delete: %v", item)
-	}
-	if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES (3, 'token3')"); err != nil {
-		t.Fatal(err)
-	}
-	tx, err = db.Begin(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := catalog.Project(t.Context(), tx, panda.Metadata{ID: 3, Title: "Gallery 3", Posted: 3}); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	for id, verdict := range map[string]string{"2": "interesting", "3": "not_for_me"} {
-		if w := request(client, "PUT", "/api/collector/catalog/verdicts/"+id, `{"verdict":"`+verdict+`"}`); w.Code != http.StatusNoContent {
-			t.Fatalf("put %s: %d %s", id, w.Code, w.Body)
-		}
-	}
-	w := request(client, "GET", "/api/collector/catalog?verdict=not_for_me", "")
-	var view struct {
-		Items []map[string]any `json:"items"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil || w.Code != http.StatusOK || len(view.Items) != 1 || view.Items[0]["gallery_id"] != float64(3) {
-		t.Fatalf("not_for_me view: %d %s, %v", w.Code, w.Body, err)
-	}
-	if w := request(client, "GET", "/api/collector/catalog?verdict=maybe", ""); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_query") {
-		t.Fatalf("unknown verdict view: %d %s", w.Code, w.Body)
-	}
-	before := requests.Load()
-	for _, tc := range []struct{ method, path, body, code string }{
-		{"PUT", path, `{"verdict":"maybe"}`, "invalid_verdict"},
-		{"PUT", "/api/collector/catalog/verdicts/0", `{"verdict":"interesting"}`, "invalid_gallery_reference"},
-		{"PUT", "/api/collector/catalog/verdicts/-1", `{"verdict":"interesting"}`, "invalid_gallery_reference"},
-		{"PUT", "/api/collector/catalog/verdicts/x", `{"verdict":"interesting"}`, "invalid_gallery_reference"},
-		{"DELETE", "/api/collector/catalog/verdicts/0", "", "invalid_gallery_reference"},
-		{"DELETE", "/api/collector/catalog/verdicts/x", "", "invalid_gallery_reference"},
-	} {
-		if w := request(client, tc.method, tc.path, tc.body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), tc.code) {
-			t.Fatalf("%s %s %s: %d %s", tc.method, tc.path, tc.body, w.Code, w.Body)
-		}
-	}
-	if requests.Load() != before {
-		t.Fatal("invalid requests reached the collector")
-	}
-	wrong, err := collectorapi.NewClient(upstream.URL, "wrong-secret")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w := request(wrong, "PUT", path, `{"verdict":"interesting"}`); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "collector_unauthorized") {
-		t.Fatalf("wrong token: %d %s", w.Code, w.Body)
-	}
-	if w := request(nil, "DELETE", path, ""); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "collector_not_configured") {
-		t.Fatalf("unconfigured: %d %s", w.Code, w.Body)
 	}
 }
 
@@ -763,7 +693,7 @@ func TestLocalCatalogScoreFilter(t *testing.T) {
 func TestLocalScoreModel(t *testing.T) {
 	db := pgtest.Open(t, storage.Migrations())
 	service := catalog.New(db, "https://panda.test")
-	for id, tags := range map[int64][]string{2: {"male:hat"}, 3: {"female:glasses"}} {
+	for id, tags := range map[int64][]string{1: {"male:hat"}, 2: {"male:hat"}, 3: {"male:hat"}, 4: {"female:glasses"}} {
 		if _, err := db.Exec(t.Context(), "INSERT INTO gallery_refs (gallery_id, token) VALUES ($1, 'token')", id); err != nil {
 			t.Fatal(err)
 		}
@@ -778,10 +708,11 @@ func TestLocalScoreModel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for id, verdict := range map[int64]string{2: collectorapi.VerdictInteresting, 3: collectorapi.VerdictNotForMe} {
-		if err := service.SetVerdict(t.Context(), id, verdict); err != nil {
-			t.Fatal(err)
-		}
+	// Galleries 1 to 3 are Panda favorites, so the candidate weighs male:hat.
+	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_categories (id, host, account_key, category, name)
+			VALUES (1, 'https://panda.test', '42', 0, '');
+		INSERT INTO favorites (category_id, gallery_id, token, added_at) SELECT 1, g, 'token', now() FROM generate_series(1, 3) g`); err != nil {
+		t.Fatal(err)
 	}
 	logger := slog.New(slog.DiscardHandler)
 	collectorHandler := collectorhttp.NewHandler(&collector.App{Logger: logger, Catalog: service, APIToken: "server-secret"})
@@ -835,18 +766,31 @@ func TestLocalScoreModel(t *testing.T) {
 		return filter
 	}
 
-	result := preview(`{"favorites":false}`)
-	if result.Evidence.Interesting != 1 || result.Evidence.NotForMe != 1 || result.Candidate == nil || result.Candidate.ID == 0 {
+	w := request(client, "POST", previewPath, `{}`)
+	var answer struct {
+		Evidence  map[string]json.RawMessage `json:"evidence"`
+		Candidate struct {
+			Weights []map[string]json.RawMessage `json:"weights"`
+		} `json:"candidate"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &answer); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s, %v", w.Code, w.Body, err)
+	}
+	if got, want := slices.Sorted(maps.Keys(answer.Evidence)), []string{"favorites", "favorites_synced_at", "few_favorites", "new_favorites"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence keys = %v, want %v", got, want)
+	}
+	if len(answer.Candidate.Weights) != 1 || string(answer.Evidence["favorites"]) != "3" || string(answer.Evidence["new_favorites"]) != "null" {
+		t.Fatalf("preview: %s", w.Body)
+	}
+	if got, want := slices.Sorted(maps.Keys(answer.Candidate.Weights[0])), []string{"active_weight", "catalog", "favorites", "kind", "label", "weight"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("weight keys = %v, want %v", got, want)
+	}
+	result := preview(`{}`)
+	if result.Candidate == nil || result.Candidate.ID == 0 {
 		t.Fatalf("preview: %+v", result)
 	}
-	if body := sent(); string(body["favorites"]) != "false" || string(body["default_query"]) != `""` || string(body["default_categories"]) != "[]" {
+	if body := sent(); len(body) != 2 || string(body["default_query"]) != `""` || string(body["default_categories"]) != "[]" {
 		t.Fatalf("empty default filter sent as %s", previewBody)
-	}
-	for _, body := range []string{`{}`, `{"favorites":null}`} {
-		preview(body)
-		if favorites := string(sent()["favorites"]); favorites != "null" {
-			t.Fatalf("%s sent favorites %s", body, favorites)
-		}
 	}
 	filter, err := catalogfilter.Normalize(catalogfilter.Filter{Query: "hat", Categories: []string{"Manga", "Doujinshi"}})
 	if err != nil {
@@ -855,9 +799,14 @@ func TestLocalScoreModel(t *testing.T) {
 	if err := defaults.Save(t.Context(), filter); err != nil {
 		t.Fatal(err)
 	}
-	result = preview(`{"favorites":true}`)
-	if body := sent(); string(body["default_query"]) != `"hat"` || string(body["default_categories"]) != `["manga","doujinshi"]` {
+	result = preview(`{}`)
+	if body := sent(); len(body) != 2 || string(body["default_query"]) != `"hat"` || string(body["default_categories"]) != `["manga","doujinshi"]` {
 		t.Fatalf("default filter sent as %s", previewBody)
+	}
+	result = preview(`{"candidate_id":7}`)
+	if body := sent(); len(body) != 3 || string(body["candidate_id"]) != "7" || string(body["default_query"]) != `"hat"` ||
+		string(body["default_categories"]) != `["manga","doujinshi"]` {
+		t.Fatalf("candidate sent as %s", previewBody)
 	}
 	if err := defaults.Save(t.Context(), catalogfilter.Filter{}); err != nil {
 		t.Fatal(err)
@@ -866,15 +815,25 @@ func TestLocalScoreModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := request(client, "POST", previewPath, `{"favorites":false}`)
+	w = request(client, "POST", previewPath, `{}`)
 	var pinned struct {
-		Pins []map[string]any `json:"pins"`
+		Pins      []map[string]any `json:"pins"`
+		Candidate struct {
+			HeldOut struct {
+				Total int `json:"total"`
+			} `json:"held_out"`
+			SuggestedThresholdTenths int `json:"suggested_threshold_tenths"`
+		} `json:"candidate"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &pinned); err != nil || w.Code != http.StatusOK {
 		t.Fatalf("preview with a pin: %d %s, %v", w.Code, w.Body, err)
 	}
-	if want := []map[string]any{{"id": float64(pin.ID), "kind": "tag", "label": "male:hat", "weight": 2.5}}; !reflect.DeepEqual(pinned.Pins, want) {
+	if want := []map[string]any{{"id": float64(pin.ID), "kind": "tag", "label": "male:hat", "weight": 2.5, "model_weight": math.Log(13 / 12.25)}}; !reflect.DeepEqual(pinned.Pins, want) {
 		t.Fatalf("preview pins = %v, want %v", pinned.Pins, want)
+	}
+	// Each of the three held-out favorites scores the pin of male:hat.
+	if pinned.Candidate.HeldOut.Total != 3 || pinned.Candidate.SuggestedThresholdTenths != 25 {
+		t.Fatalf("preview with a pin: %s", w.Body)
 	}
 	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_authors (tag_id, favorites)
 		SELECT id, 4 FROM catalog_tags WHERE namespace = 'female' AND value = 'glasses'`); err != nil {
@@ -884,7 +843,7 @@ func TestLocalScoreModel(t *testing.T) {
 	if err := service.SetAuthorBonus(t.Context(), &bonus); err != nil {
 		t.Fatal(err)
 	}
-	w = request(client, "POST", previewPath, `{"favorites":false}`)
+	w = request(client, "POST", previewPath, `{}`)
 	var authors map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &authors); err != nil || w.Code != http.StatusOK {
 		t.Fatalf("preview with a favorite author: %d %s, %v", w.Code, w.Body, err)
@@ -899,7 +858,7 @@ func TestLocalScoreModel(t *testing.T) {
 	if _, err := db.Exec(t.Context(), "DELETE FROM favorite_authors"); err != nil {
 		t.Fatal(err)
 	}
-	result = preview(`{"favorites":false}`)
+	result = preview(`{}`)
 
 	const applyPath = "/api/collector/catalog/score/apply"
 	const thresholdPath = "/api/collector/catalog/score/threshold"
@@ -930,6 +889,16 @@ func TestLocalScoreModel(t *testing.T) {
 	if filter := scoreFilter(); filter["threshold_tenths"] != float64(7) {
 		t.Fatalf("score filter after threshold: %v", filter)
 	}
+	// Gallery 1 was first observed as a favorite after the active model was
+	// calculated, gallery 2 before.
+	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_observations (gallery_id, observed_at)
+		SELECT g, calculated_at + CASE g WHEN 1 THEN interval '1 hour' ELSE interval '-1 hour' END
+		FROM panda_score_models, generate_series(1, 2) g WHERE active`); err != nil {
+		t.Fatal(err)
+	}
+	if got := preview(`{}`).Evidence.NewFavorites; got == nil || *got != 1 {
+		t.Fatalf("new favorites = %v, want 1", got)
+	}
 	if w := request(client, "DELETE", modelPath, ""); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
 		t.Fatalf("remove: %d %s", w.Code, w.Body)
 	}
@@ -948,7 +917,7 @@ func TestLocalScoreModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, route := range []struct{ method, path, body, unknown string }{
-		{"POST", previewPath, `{"favorites":true}`, `{"favorites":true,"default_query":"x"}`},
+		{"POST", previewPath, `{}`, `{"default_query":"x"}`},
 		{"POST", applyPath, `{"candidate_id":1,"threshold_tenths":0}`, `{"candidate_id":1,"threshold":0}`},
 		{"PUT", thresholdPath, `{"threshold_tenths":0}`, `{"threshold":0}`},
 		{"DELETE", modelPath, "", ""},
@@ -974,6 +943,26 @@ func TestLocalScoreModel(t *testing.T) {
 	}
 }
 
+// applyTagModel stores a candidate score model that weighs female:glasses
+// at ln 0.5 and male:hat at ln 2, and applies it with the threshold 0.
+func applyTagModel(t *testing.T, db *pgxpool.Pool, service *catalog.Service) {
+	t.Helper()
+	var id int64
+	if err := db.QueryRow(t.Context(), `INSERT INTO panda_score_models (calculated_at, favorites_in_scope, catalog_in_scope)
+		VALUES (now(), 0, 0) RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(t.Context(), `INSERT INTO panda_score_weights (model_id, kind, tag_id, weight, favorites, catalog)
+		SELECT $1, 'tag', t.id, w.weight, 0, 0
+		FROM (VALUES ('female', 'glasses', ln(0.5)), ('male', 'hat', ln(2))) AS w(namespace, value, weight)
+		JOIN catalog_tags t ON t.namespace = w.namespace AND t.value_lower = w.value`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyScoreModel(t.Context(), id, 0); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLocalCatalogSummaryTagsRankWeightedTags(t *testing.T) {
 	db := pgtest.Open(t, storage.Migrations())
 	service := catalog.New(db, "https://panda.test")
@@ -996,15 +985,6 @@ func TestLocalCatalogSummaryTagsRankWeightedTags(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := tx.Commit(t.Context()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for id := int64(1); id <= 6; id++ {
-		verdict := collectorapi.VerdictNotForMe
-		if id > 3 {
-			verdict = collectorapi.VerdictInteresting
-		}
-		if err := service.SetVerdict(t.Context(), id, verdict); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1049,13 +1029,7 @@ func TestLocalCatalogSummaryTagsRankWeightedTags(t *testing.T) {
 		t.Fatalf("gallery without tags: %v", tags)
 	}
 
-	preview, err := service.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
-	if err != nil || preview.Candidate == nil {
-		t.Fatalf("preview: %+v, %v", preview, err)
-	}
-	if err := service.ApplyScoreModel(t.Context(), preview.Candidate.ID, 0); err != nil {
-		t.Fatal(err)
-	}
+	applyTagModel(t, db, service)
 	scored := summaryTags("/api/collector/catalog?score_filter=all")
 	if tags := scored[8]; tags == nil || len(tags) != 0 {
 		t.Fatalf("gallery without tags under a model: %v", tags)
@@ -1098,22 +1072,7 @@ func TestLocalCatalogMarksPinnedWeights(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for id := int64(1); id <= 6; id++ {
-		verdict := collectorapi.VerdictNotForMe
-		if id > 3 {
-			verdict = collectorapi.VerdictInteresting
-		}
-		if err := service.SetVerdict(t.Context(), id, verdict); err != nil {
-			t.Fatal(err)
-		}
-	}
-	preview, err := service.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
-	if err != nil || preview.Candidate == nil {
-		t.Fatalf("preview: %+v, %v", preview, err)
-	}
-	if err := service.ApplyScoreModel(t.Context(), preview.Candidate.ID, 0); err != nil {
-		t.Fatal(err)
-	}
+	applyTagModel(t, db, service)
 	if _, err := service.SetScorePin(t.Context(), collectorapi.ScoreKindTag, "artist:zed", 3); err != nil {
 		t.Fatal(err)
 	}
@@ -1184,22 +1143,7 @@ func TestLocalAuthorBonus(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for id := int64(1); id <= 6; id++ {
-		verdict := collectorapi.VerdictNotForMe
-		if id > 3 {
-			verdict = collectorapi.VerdictInteresting
-		}
-		if err := service.SetVerdict(t.Context(), id, verdict); err != nil {
-			t.Fatal(err)
-		}
-	}
-	preview, err := service.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
-	if err != nil || preview.Candidate == nil {
-		t.Fatalf("preview: %+v, %v", preview, err)
-	}
-	if err := service.ApplyScoreModel(t.Context(), preview.Candidate.ID, 0); err != nil {
-		t.Fatal(err)
-	}
+	applyTagModel(t, db, service)
 	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_authors (tag_id, favorites)
 		SELECT id, 2 FROM catalog_tags WHERE namespace = 'artist' AND value = 'zed'`); err != nil {
 		t.Fatal(err)

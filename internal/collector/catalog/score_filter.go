@@ -32,7 +32,6 @@ type scoreFilter struct {
 type activeScoreModel struct {
 	id              int64
 	thresholdTenths int
-	favorites       bool
 	calculatedAt    time.Time
 }
 
@@ -56,8 +55,8 @@ func readScoreFilter(ctx context.Context, tx pgx.Tx) (scoreFilter, error) {
 	}
 	filter := scoreFilter{overrides: overrides, pins: pins, authorBonus: bonus}
 	var model activeScoreModel
-	err = tx.QueryRow(ctx, `SELECT id, threshold_tenths, favorites, calculated_at
-		FROM panda_score_models WHERE active`).Scan(&model.id, &model.thresholdTenths, &model.favorites, &model.calculatedAt)
+	err = tx.QueryRow(ctx, `SELECT id, threshold_tenths, calculated_at
+		FROM panda_score_models WHERE active`).Scan(&model.id, &model.thresholdTenths, &model.calculatedAt)
 	switch {
 	case err == nil:
 		filter.model = &model
@@ -188,16 +187,15 @@ func (f scoreFilter) belowThreshold(args *pgdb.Args) string {
 	return f.scoreTenths(args.Add(f.model.id)+"::bigint") + " < " + args.Add(f.model.thresholdTenths) + "::integer"
 }
 
-// hidden returns the condition on alias g that the filter hides the gallery:
-// its verdict decides first, then a "never hide" match, then an "always hide"
-// match, then a score below the threshold. Each part probes the candidate by
-// key, so the ordered catalog scan stops at its limit.
+// hidden returns the condition on alias g that the filter hides the gallery,
+// by the first rule that matches: a "never hide" match shows it, an "always
+// hide" match hides it, a score below the threshold hides it. Each part probes
+// the candidate by key, so the ordered catalog scan stops at its limit.
 func (f scoreFilter) hidden(args *pgdb.Args) string {
 	never := f.matches(collectorapi.ScoreRuleNeverHide, args)
 	always := f.matches(collectorapi.ScoreRuleAlwaysHide, args)
 	below := f.belowThreshold(args)
-	return `COALESCE((SELECT v.verdict = ` + args.Add(collectorapi.VerdictNotForMe) + `
-		FROM panda_gallery_verdicts v WHERE v.gallery_id = g.gallery_id), NOT (` + never + `) AND (` + always + ` OR ` + below + `))`
+	return `NOT (` + never + `) AND (` + always + ` OR ` + below + `)`
 }
 
 // matches returns the condition that an override with the rule matches one of
@@ -238,7 +236,7 @@ func (f scoreFilter) matches(rule string, args *pgdb.Args) string {
 
 // markScores sets Score on the page's items, never on every candidate: the
 // first of the "never hide", "always hide" and threshold rules that matches,
-// without regard to the verdict, with the label of the deciding override, and
+// with the label of the deciding override, and
 // with an active model the item's score and its strongest weights.
 func (f scoreFilter) markScores(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogItem) error {
 	byID := make(map[int64]*collectorapi.CatalogItem, len(items))

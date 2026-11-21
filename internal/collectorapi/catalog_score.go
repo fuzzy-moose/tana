@@ -53,8 +53,8 @@ type CatalogScoreFilter struct {
 	HiddenUnseen    bool `json:"hidden_unseen,omitempty"`
 }
 
-// CatalogItemScore names the rule that matches a catalog item, without regard
-// to its verdict, and the label of the deciding override. With an active model
+// CatalogItemScore names the rule that decides a catalog item and the label of
+// the deciding override. With an active model
 // it also gives the item's score and its strongest weights.
 type CatalogItemScore struct {
 	Rule     string               `json:"rule,omitempty"`
@@ -93,29 +93,26 @@ type ScorePin struct {
 	ModelWeight *float64 `json:"model_weight,omitempty"`
 }
 
-// The reasons a preview offers no model: no verdicts at all, no "Not for me"
-// evidence, or no "Interesting" and no neutral evidence.
-const (
-	ScoreNoVerdicts   = "no_verdicts"
-	ScoreNoNotForMe   = "no_not_for_me"
-	ScoreNoAcceptable = "no_acceptable"
-)
+// ScoreNoFavorites is the reason a preview offers no model: no Panda favorite
+// is inside the default filter.
+const ScoreNoFavorites = "no_favorites"
 
-// ScorePreviewOptions asks for a candidate score model. Favorites counts Panda
-// favorites without a verdict as "Interesting". The default filter describes
-// the listing as the user sees it.
+// ScorePreviewOptions asks for a candidate score model from the Panda
+// favorites inside the default filter. The default filter describes the
+// listing as the user sees it and limits both the favorites and the catalog
+// the model is calculated from.
 type ScorePreviewOptions struct {
-	Favorites         *bool    `json:"favorites"`
 	DefaultQuery      string   `json:"default_query"`
 	DefaultCategories []string `json:"default_categories"`
+	// CandidateID names the stored candidate to measure again; 0 calculates.
+	CandidateID int64 `json:"candidate_id,omitempty"`
 }
 
 // ScorePreview is a calculated candidate, or the reason there is none, with
-// the evidence it came from, the current overrides and the pins, by ID, the
+// the numbers of its evidence, the current overrides and the pins, by ID, the
 // author bonus (nil while it is off), the number of favorite authors and those
 // with the most favorites.
 type ScorePreview struct {
-	Favorites bool            `json:"favorites"`
 	Evidence  ScoreEvidence   `json:"evidence"`
 	Candidate *ScoreCandidate `json:"candidate"`
 	NoModel   string          `json:"no_model,omitempty"`
@@ -157,19 +154,15 @@ type ScoreTagWeight struct {
 // ScoreActive describes the active model.
 type ScoreActive struct {
 	CalculatedAt    time.Time `json:"calculated_at"`
-	Favorites       bool      `json:"favorites"`
 	ThresholdTenths int       `json:"threshold_tenths"`
 }
 
 // ScoreRecent classes the newest catalog galleries that pass the default
-// filter by the first hiding rule that decides them: their verdict, a "never
-// hide" override, an "always hide" override, and for the rest their score
-// under the candidate and under the active model. A histogram is nil without
-// its model.
+// filter by the first hiding rule that decides them: a "never hide" override,
+// an "always hide" override, and for the rest their score under the candidate
+// and under the active model. A histogram is nil without its model.
 type ScoreRecent struct {
 	Total        int             `json:"total"`
-	Interesting  int             `json:"interesting"`
-	NotForMe     int             `json:"not_for_me"`
 	NeverHidden  int             `json:"never_hidden"`
 	AlwaysHidden int             `json:"always_hidden"`
 	Candidate    *ScoreHistogram `json:"candidate"`
@@ -186,18 +179,16 @@ type ScoreHistogram struct {
 	Counts      []int `json:"counts"`
 }
 
-// ScoreEvidence counts the evidence galleries of a preview. NewVerdicts is the
-// number of verdicts given or changed after the active model was calculated,
-// nil without one. FewVerdicts is set while either verdict count is under the
-// warning limit.
+// ScoreEvidence describes the evidence of a preview: the number of Panda
+// favorites inside the default filter, the latest sync time of any favorite
+// collection, nil without one, and the number of favorites in scope that are
+// new since the active model was calculated, nil without one. FewFavorites is
+// set while the favorites in scope are under the warning limit.
 type ScoreEvidence struct {
-	Interesting       int        `json:"interesting"`
-	NotForMe          int        `json:"not_for_me"`
-	Neutral           int        `json:"neutral"`
-	CountedFavorites  int        `json:"counted_favorites"`
+	Favorites         int        `json:"favorites"`
 	FavoritesSyncedAt *time.Time `json:"favorites_synced_at"`
-	NewVerdicts       *int       `json:"new_verdicts"`
-	FewVerdicts       bool       `json:"few_verdicts"`
+	NewFavorites      *int       `json:"new_favorites"`
+	FewFavorites      bool       `json:"few_favorites"`
 }
 
 // ScoreCandidate is the stored candidate model with its strongest weights.
@@ -205,7 +196,6 @@ type ScoreEvidence struct {
 type ScoreCandidate struct {
 	ID           int64         `json:"id"`
 	CalculatedAt time.Time     `json:"calculated_at"`
-	Favorites    bool          `json:"favorites"`
 	WeightCount  int           `json:"weight_count"`
 	Weights      []ScoreWeight `json:"weights"`
 	// SuggestedThresholdTenths is the start threshold the preview suggests
@@ -214,19 +204,10 @@ type ScoreCandidate struct {
 	HeldOut                  ScoreHeldOut `json:"held_out"`
 }
 
-// ScoreHeldOut gives, per evidence class, the effect of the candidate on the
-// evidence galleries that pass the default filter, each scored by a model
-// calculated without it.
+// ScoreHeldOut counts the held-out favorites: those an override always
+// hides or never hides, and the scores of the rest. A threshold of t tenths
+// hides AlwaysHidden plus the buckets below t.
 type ScoreHeldOut struct {
-	Interesting ScoreClassEffect `json:"interesting"`
-	NotForMe    ScoreClassEffect `json:"not_for_me"`
-	Neutral     ScoreClassEffect `json:"neutral"`
-}
-
-// ScoreClassEffect counts the evidence galleries of one class: those an
-// override always hides or never hides, and the held-out scores of the rest.
-// A threshold of t tenths hides AlwaysHidden plus the buckets below t.
-type ScoreClassEffect struct {
 	Total        int            `json:"total"`
 	AlwaysHidden int            `json:"always_hidden"`
 	NeverHidden  int            `json:"never_hidden"`
@@ -234,16 +215,15 @@ type ScoreClassEffect struct {
 }
 
 // ScoreWeight is the weight of one tag, uploader or category, labelled like an
-// override, with the numbers of evidence galleries of each class that carry it.
-// Interesting includes counted favorites. ActiveWeight is the value's weight
-// in the active model, nil without one.
+// override, with the numbers of favorites and of catalog galleries in scope
+// that carry it. ActiveWeight is the value's weight in the active model, nil
+// without one.
 type ScoreWeight struct {
 	Kind         string   `json:"kind"`
 	Label        string   `json:"label"`
 	Weight       float64  `json:"weight"`
-	Interesting  int      `json:"interesting"`
-	NotForMe     int      `json:"not_for_me"`
-	Neutral      int      `json:"neutral"`
+	Favorites    int      `json:"favorites"`
+	Catalog      int      `json:"catalog"`
 	ActiveWeight *float64 `json:"active_weight"`
 }
 

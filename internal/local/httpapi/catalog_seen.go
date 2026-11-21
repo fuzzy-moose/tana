@@ -13,14 +13,12 @@ func HandleCollectorRecordCatalogDisplays(client *collectorapi.Client) http.Hand
 			return
 		}
 		var input struct {
-			GalleryIDs  []int64 `json:"gallery_ids"`
-			ScoreFilter string  `json:"score_filter"`
+			GalleryIDs []int64 `json:"gallery_ids"`
 		}
 		if !server.DecodeJSON(w, r, &input) {
 			return
 		}
-		valid := len(input.GalleryIDs) > 0 && len(input.GalleryIDs) <= collectorapi.MaxCatalogDisplays &&
-			collectorapi.ValidScoreFilter(input.ScoreFilter)
+		valid := len(input.GalleryIDs) > 0 && len(input.GalleryIDs) <= collectorapi.MaxCatalogDisplays
 		for _, id := range input.GalleryIDs {
 			valid = valid && id > 0
 		}
@@ -28,7 +26,7 @@ func HandleCollectorRecordCatalogDisplays(client *collectorapi.Client) http.Hand
 			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_batch"})
 			return
 		}
-		if err := client.RecordCatalogDisplays(r.Context(), input.GalleryIDs, input.ScoreFilter); err != nil {
+		if err := client.RecordCatalogDisplays(r.Context(), input.GalleryIDs); err != nil {
 			writeCatalogCollectorError(w, err)
 			return
 		}

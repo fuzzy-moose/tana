@@ -29,9 +29,6 @@ func TestCatalogPaginationAndQueryValidation(t *testing.T) {
 		{"/api/catalog?include_expunged=maybe", "invalid_query"},
 		{"/api/catalog?unseen=maybe", "invalid_query"},
 		{"/api/catalog?unseen=true", ""},
-		{"/api/catalog?verdict=interesting", ""},
-		{"/api/catalog?verdict=maybe", "invalid_query"},
-		{"/api/catalog?verdict=interesting&unseen=true", "invalid_query"},
 		{"/api/catalog?score_filter=bogus", "invalid_query"},
 		{"/api/catalog?q=unknown:value", "invalid_query"},
 		{"/api/catalog?q=%22unfinished", "invalid_query"},
@@ -76,10 +73,11 @@ func TestRecordCatalogDisplaysValidation(t *testing.T) {
 		want int
 		code string
 	}{
-		{`{"gallery_ids":[2,1]}`, http.StatusNoContent, ""},
-		{`{"gallery_ids":[1],"score_filter":"hidden"}`, http.StatusNoContent, ""},
+		{`{"gallery_ids":[1,2]}`, http.StatusNoContent, ""},
 		{`{"gallery_ids":[]}`, http.StatusBadRequest, "invalid_batch"},
-		{`{"gallery_ids":[1],"score_filter":"bogus"}`, http.StatusBadRequest, "invalid_batch"},
+		{`{"gallery_ids":[` + strings.Repeat("1,", collectorapi.MaxCatalogDisplays) + `1]}`, http.StatusBadRequest, "invalid_batch"},
+		{`{"gallery_ids":[1,0]}`, http.StatusBadRequest, "invalid_batch"},
+		{`{"gallery_ids":[-1]}`, http.StatusBadRequest, "invalid_batch"},
 		{`{"gallery_ids":[1],"unknown":true}`, http.StatusBadRequest, "invalid_json"},
 	} {
 		t.Run(tc.body, func(t *testing.T) {
@@ -101,6 +99,10 @@ func TestRecordCatalogDisplaysValidation(t *testing.T) {
 				t.Fatalf("response = %s, %v", response.Body.String(), err)
 			}
 		})
+	}
+	var displayed string
+	if err := db.QueryRow(t.Context(), "SELECT string_agg(gallery_id::text, ',' ORDER BY gallery_id) FROM panda_gallery_displays").Scan(&displayed); err != nil || displayed != "1,2" {
+		t.Fatalf("displayed = %q, %v", displayed, err)
 	}
 }
 
@@ -132,50 +134,6 @@ func TestCatalogCatchUpValidation(t *testing.T) {
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
-			if response.Code != tc.want {
-				t.Fatalf("response = %d %s", response.Code, response.Body.String())
-			}
-			if tc.code == "" {
-				if response.Body.Len() != 0 {
-					t.Fatalf("body = %q", response.Body.String())
-				}
-				return
-			}
-			var result map[string]string
-			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result["error"] != tc.code {
-				t.Fatalf("response = %s, %v", response.Body.String(), err)
-			}
-		})
-	}
-}
-
-func TestCatalogVerdictValidation(t *testing.T) {
-	db := pgtest.Open(t, storage.Migrations())
-	service := catalog.New(db, "https://favorites.example.test")
-	mux := http.NewServeMux()
-	mux.Handle("PUT /api/catalog/verdicts/{id}", HandleSetCatalogVerdict(service))
-	mux.Handle("DELETE /api/catalog/verdicts/{id}", HandleRemoveCatalogVerdict(service))
-	for _, tc := range []struct {
-		method string
-		path   string
-		body   string
-		want   int
-		code   string
-	}{
-		{http.MethodPut, "/api/catalog/verdicts/7", `{"verdict":"interesting"}`, http.StatusNoContent, ""},
-		{http.MethodPut, "/api/catalog/verdicts/7", `{"verdict":"maybe"}`, http.StatusBadRequest, "invalid_verdict"},
-		{http.MethodPut, "/api/catalog/verdicts/7", `{"verdict":"interesting","unknown":true}`, http.StatusBadRequest, "invalid_json"},
-		{http.MethodPut, "/api/catalog/verdicts/0", `{"verdict":"interesting"}`, http.StatusBadRequest, "invalid_gallery_reference"},
-		{http.MethodPut, "/api/catalog/verdicts/x", `{"verdict":"interesting"}`, http.StatusBadRequest, "invalid_gallery_reference"},
-		{http.MethodDelete, "/api/catalog/verdicts/7", "", http.StatusNoContent, ""},
-		{http.MethodDelete, "/api/catalog/verdicts/0", "", http.StatusBadRequest, "invalid_gallery_reference"},
-		{http.MethodDelete, "/api/catalog/verdicts/x", "", http.StatusBadRequest, "invalid_gallery_reference"},
-	} {
-		t.Run(tc.method+" "+tc.path+" "+tc.body, func(t *testing.T) {
-			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			request.Header.Set("Content-Type", "application/json")
-			response := httptest.NewRecorder()
-			mux.ServeHTTP(response, request)
 			if response.Code != tc.want {
 				t.Fatalf("response = %d %s", response.Code, response.Body.String())
 			}
@@ -378,10 +336,11 @@ func TestScorePreviewValidation(t *testing.T) {
 		want int
 		code string
 	}{
-		{`{"favorites":false,"default_query":"","default_categories":[]}`, http.StatusOK, ""},
-		{`{"favorites":null,"default_categories":["unknown"]}`, http.StatusBadRequest, "invalid_category"},
+		{`{"default_query":"","default_categories":[]}`, http.StatusOK, ""},
+		{`{"default_query":"","default_categories":[],"candidate_id":7}`, http.StatusOK, ""},
+		{`{"default_categories":["unknown"]}`, http.StatusBadRequest, "invalid_category"},
 		{`{"default_query":"\"unfinished"}`, http.StatusBadRequest, "invalid_query"},
-		{`{"favorites":true,"unknown":1}`, http.StatusBadRequest, "invalid_json"},
+		{`{"unknown":1}`, http.StatusBadRequest, "invalid_json"},
 	} {
 		t.Run(tc.body, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/api/catalog/score/preview", strings.NewReader(tc.body))
@@ -402,7 +361,7 @@ func TestScorePreviewValidation(t *testing.T) {
 				return
 			}
 			if result["evidence"] == nil || string(result["overrides"]) != "[]" || string(result["candidate"]) != "null" ||
-				string(result["no_model"]) != `"no_verdicts"` {
+				string(result["no_model"]) != `"no_favorites"` {
 				t.Fatalf("preview = %s", response.Body.String())
 			}
 		})
@@ -417,8 +376,8 @@ func TestScoreModelValidation(t *testing.T) {
 	mux.Handle("PUT /api/catalog/score/threshold", HandleSetScoreThreshold(service))
 	mux.Handle("DELETE /api/catalog/score/model", HandleRemoveScoreModel(service))
 	var candidate int64
-	if err := db.QueryRow(t.Context(), `INSERT INTO panda_score_models (favorites, calculated_at) VALUES (false, now())
-		RETURNING id`).Scan(&candidate); err != nil {
+	if err := db.QueryRow(t.Context(), `INSERT INTO panda_score_models (calculated_at, favorites_in_scope, catalog_in_scope)
+		VALUES (now(), 0, 0) RETURNING id`).Scan(&candidate); err != nil {
 		t.Fatal(err)
 	}
 	const apply, threshold, model = "/api/catalog/score/apply", "/api/catalog/score/threshold", "/api/catalog/score/model"

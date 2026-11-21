@@ -10,13 +10,11 @@ import (
 // MaxCatalogDisplays bounds one record of displayed galleries: one listing page.
 const MaxCatalogDisplays = 100
 
-// RecordCatalogDisplays records the galleries a Panda listing page displayed in
-// the score filter state scoreFilter.
-func (c *Client) RecordCatalogDisplays(ctx context.Context, ids []int64, scoreFilter string) error {
+// RecordCatalogDisplays records the galleries a Panda listing page displayed.
+func (c *Client) RecordCatalogDisplays(ctx context.Context, ids []int64) error {
 	return c.postCatalogSeen(ctx, "/api/catalog/displays", struct {
-		GalleryIDs  []int64 `json:"gallery_ids"`
-		ScoreFilter string  `json:"score_filter,omitempty"`
-	}{ids, scoreFilter})
+		GalleryIDs []int64 `json:"gallery_ids"`
+	}{ids})
 }
 
 // CatalogCatchUp marks the gallery's catalog position and everything older as

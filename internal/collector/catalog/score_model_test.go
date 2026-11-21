@@ -3,8 +3,10 @@ package catalog
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,9 +17,9 @@ import (
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
-func previewScore(t *testing.T, s *Service, favorites bool) collectorapi.ScorePreview {
+func previewScore(t *testing.T, s *Service) collectorapi.ScorePreview {
 	t.Helper()
-	preview, err := s.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{Favorites: &favorites})
+	preview, err := s.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,247 +59,387 @@ func scoreModelIDs(t *testing.T, db *pgxpool.Pool) []int64 {
 	return ids
 }
 
-func evidenceCounts(preview collectorapi.ScorePreview) [4]int {
-	e := preview.Evidence
-	return [4]int{e.Interesting, e.NotForMe, e.Neutral, e.CountedFavorites}
+// favor makes the galleries favorites of the favorite collection category of
+// the account, creating the collection and the gallery refs when missing.
+func favor(t *testing.T, db *pgxpool.Pool, account string, category int, ids ...int64) {
+	t.Helper()
+	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_categories (host, account_key, category, name)
+		VALUES ('https://panda.test', $1, $2, '') ON CONFLICT DO NOTHING;`, account, category); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(t.Context(), `INSERT INTO gallery_refs (gallery_id, token)
+		SELECT id, 'token' || id FROM unnest($1::bigint[]) id ON CONFLICT DO NOTHING`, ids); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(t.Context(), `INSERT INTO favorites (category_id, gallery_id, token, added_at)
+		SELECT c.id, g, 'token' || g, now() FROM favorite_categories c, unnest($3::bigint[]) g
+		WHERE c.account_key = $1 AND c.category = $2`, account, category, ids); err != nil {
+		t.Fatal(err)
+	}
 }
 
-func TestPreviewCountsEachEvidenceGalleryOnce(t *testing.T) {
-	db, s := openCatalog(t)
-	for id := int64(1); id <= 4; id++ {
-		retain(t, db, panda.Metadata{ID: id, Posted: id}, true)
+// retainRange retains the galleries from first to last with the entry's
+// values.
+func retainRange(t *testing.T, db *pgxpool.Pool, first, last int64, entry panda.Metadata) {
+	t.Helper()
+	for id := first; id <= last; id++ {
+		entry.ID, entry.Posted = id, id
+		retain(t, db, entry, true)
 	}
-	for range 3 {
-		if err := s.RecordDisplays(t.Context(), []int64{1, 2, 99}, ""); err != nil {
+}
+
+func TestPreviewCountsEachFavoriteInScopeOnce(t *testing.T) {
+	db, s := openCatalog(t)
+	retainRange(t, db, 1, 3, panda.Metadata{Category: "Manga"})
+	retain(t, db, panda.Metadata{ID: 5, Posted: 5, Category: "Doujinshi"}, true)
+	retain(t, db, panda.Metadata{ID: 6, Posted: 6, Category: "Manga", Tags: []string{"language:english"}}, true)
+	retain(t, db, panda.Metadata{ID: 7, Posted: 7, Category: "Manga", Expunged: true}, true)
+	retain(t, db, panda.Metadata{ID: 8, Posted: 8, Category: "Manga"}, true)
+	// Gallery 3 is a favorite of both accounts; gallery 4 has no catalog
+	// entry; gallery 8 is no favorite.
+	favor(t, db, "42", 0, 1, 3, 4, 5, 6, 7)
+	favor(t, db, "43", 1, 2, 3)
+	options := collectorapi.ScorePreviewOptions{DefaultQuery: "-l:english$", DefaultCategories: []string{"manga"}}
+	if got := previewWith(t, s, options).Evidence.Favorites; got != 4 {
+		t.Fatalf("favorites in scope = %d, want 4", got)
+	}
+	if got := previewScore(t, s).Evidence.Favorites; got != 6 {
+		t.Fatalf("favorites without a default filter = %d, want 6", got)
+	}
+}
+
+func TestPreviewWeighsValuesByTheirLiftAgainstTheCatalog(t *testing.T) {
+	db, s := openCatalog(t)
+	// Favorites 1 to 4 in the catalog of 20: other:a on 3 favorites and 5
+	// galleries, other:common on 3 and 15, other:pair on 2 and 2, the
+	// uploader "Up" on 3 and 3, the category manga on 4 and 6.
+	retainRange(t, db, 1, 3, panda.Metadata{Uploader: "Up", Category: "Manga", Tags: []string{"other:a", "other:common", "other:pair"}})
+	retain(t, db, panda.Metadata{ID: 4, Posted: 4, Category: "Manga"}, true)
+	retainRange(t, db, 5, 6, panda.Metadata{Category: "Manga", Tags: []string{"other:a", "other:common"}})
+	retainRange(t, db, 7, 16, panda.Metadata{Tags: []string{"other:common"}})
+	retainRange(t, db, 17, 20, panda.Metadata{})
+	if _, err := db.Exec(t.Context(), `DELETE FROM catalog_gallery_tags gt USING catalog_tags t
+		WHERE t.id = gt.tag_id AND t.value = 'pair' AND gt.gallery_id = 3`); err != nil {
+		t.Fatal(err)
+	}
+	favor(t, db, "42", 0, 1, 2, 3, 4)
+
+	preview := previewScore(t, s)
+	if preview.NoModel != "" || preview.Candidate == nil {
+		t.Fatalf("no model %q, candidate %+v", preview.NoModel, preview.Candidate)
+	}
+	want := []collectorapi.ScoreWeight{
+		{Kind: collectorapi.ScoreKindCategory, Label: "manga", Weight: math.Log(14 / 11.2), Favorites: 4, Catalog: 6},
+		{Kind: collectorapi.ScoreKindUploader, Label: "Up", Weight: math.Log(13 / 10.6), Favorites: 3, Catalog: 3},
+		{Kind: collectorapi.ScoreKindTag, Label: "other:a", Weight: math.Log(13.0 / 11), Favorites: 3, Catalog: 5},
+	}
+	got := preview.Candidate.Weights
+	if len(got) != len(want) || preview.Candidate.WeightCount != len(want) {
+		t.Fatalf("weights = %+v, count %d, want %+v", got, preview.Candidate.WeightCount, want)
+	}
+	for i := range want {
+		if math.Abs(got[i].Weight-want[i].Weight) > 1e-12 {
+			t.Fatalf("weight %d = %+v, want %+v", i, got[i], want[i])
+		}
+		got[i].Weight = want[i].Weight
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("weights = %+v, want %+v", got, want)
+	}
+
+	rows, err := db.Query(t.Context(), `SELECT w.kind, COALESCE(t.namespace || ':' || t.value, w.value), w.favorites, w.catalog, w.weight > 0
+		FROM panda_score_weights w LEFT JOIN catalog_tags t ON t.id = w.tag_id WHERE w.model_id = $1`, preview.Candidate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type storedCounts struct {
+		favorites, catalog int
+		positive           bool
+	}
+	stored := map[string]storedCounts{}
+	for rows.Next() {
+		var kind, label string
+		var counts storedCounts
+		if err := rows.Scan(&kind, &label, &counts.favorites, &counts.catalog, &counts.positive); err != nil {
 			t.Fatal(err)
 		}
+		stored[kind+" "+label] = counts
 	}
-	if err := s.RecordDisplays(t.Context(), []int64{3}, collectorapi.ScoreFilterHidden); err != nil {
+	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	setVerdict(t, s, 2, collectorapi.VerdictInteresting)
-	setVerdict(t, s, 4, collectorapi.VerdictNotForMe)
-	if _, err := db.Exec(t.Context(), `INSERT INTO panda_gallery_verdicts (gallery_id, verdict, given_at) VALUES (98, 'not_for_me', now())`); err != nil {
+	wantStored := map[string]storedCounts{}
+	for _, weight := range want {
+		wantStored[weight.Kind+" "+weight.Label] = storedCounts{weight.Favorites, weight.Catalog, true}
+	}
+	if !reflect.DeepEqual(stored, wantStored) {
+		t.Fatalf("stored weights = %v, want %v", stored, wantStored)
+	}
+	var favorites, catalog int
+	if err := db.QueryRow(t.Context(), "SELECT favorites_in_scope, catalog_in_scope FROM panda_score_models WHERE id = $1",
+		preview.Candidate.ID).Scan(&favorites, &catalog); err != nil {
 		t.Fatal(err)
 	}
-	preview := previewScore(t, s, true)
-	if got := evidenceCounts(preview); got != [4]int{1, 1, 1, 0} {
-		t.Fatalf("evidence = %v", got)
-	}
-	if preview.Evidence.FavoritesSyncedAt != nil || !preview.Evidence.FewVerdicts {
-		t.Fatalf("evidence = %+v", preview.Evidence)
+	if favorites != 4 || catalog != 20 {
+		t.Fatalf("stored model scope = %d favorites, %d catalog", favorites, catalog)
 	}
 }
 
-func TestPreviewCountsFavoritesOnlyWithTheSwitch(t *testing.T) {
+func TestPreviewGivesAnUnknownUploaderOrCategoryNoWeight(t *testing.T) {
 	db, s := openCatalog(t)
-	tags := []string{"female:glasses"}
-	for id := int64(1); id <= 3; id++ {
-		retain(t, db, panda.Metadata{ID: id, Posted: id, Tags: tags}, true)
-	}
-	retain(t, db, panda.Metadata{ID: 4, Posted: 4}, true)
-	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_categories (id, host, account_key, category, name, synced_at) VALUES
-		(1, 'https://panda.test', '42', 1, 'One', to_timestamp(200)), (2, 'https://panda.test', '43', 1, 'Two', to_timestamp(100)),
-		(3, 'https://panda.test', '43', 2, 'Three', NULL);
-		INSERT INTO favorites (category_id, gallery_id, token, added_at) VALUES
-		(1, 1, 'token1', to_timestamp(100)), (2, 1, 'token1', to_timestamp(300)), (1, 2, 'token2', to_timestamp(200))`); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RecordDisplays(t.Context(), []int64{1}, ""); err != nil {
-		t.Fatal(err)
-	}
-	setVerdict(t, s, 2, collectorapi.VerdictNotForMe)
-	setVerdict(t, s, 3, collectorapi.VerdictInteresting)
-	setVerdict(t, s, 4, collectorapi.VerdictNotForMe)
-
-	with := previewScore(t, s, true)
-	if got := evidenceCounts(with); got != [4]int{1, 2, 0, 1} || !with.Favorites {
-		t.Fatalf("with favorites: evidence = %v, favorites %v", got, with.Favorites)
-	}
-	if weight, ok := findWeight(with, collectorapi.ScoreKindTag, "female:glasses"); !ok || weight.Interesting != 2 || weight.NotForMe != 1 || weight.Neutral != 0 {
-		t.Fatalf("with favorites: weight = %+v, %v", weight, ok)
-	}
-	if at := with.Evidence.FavoritesSyncedAt; at == nil || !at.Equal(time.Unix(200, 0)) {
-		t.Fatalf("favorites synced at = %v", at)
-	}
-
-	without := previewScore(t, s, false)
-	if got := evidenceCounts(without); got != [4]int{1, 2, 1, 0} || without.Favorites || without.Candidate.Favorites {
-		t.Fatalf("without favorites: evidence = %v, favorites %v", got, without.Favorites)
-	}
-	if weight, ok := findWeight(without, collectorapi.ScoreKindTag, "female:glasses"); !ok || weight.Interesting != 1 || weight.NotForMe != 1 || weight.Neutral != 1 {
-		t.Fatalf("without favorites: weight = %+v, %v", weight, ok)
-	}
-
-	nilFavorites, err := s.PreviewScoreModel(t.Context(), collectorapi.ScorePreviewOptions{})
-	if err != nil || nilFavorites.Favorites || nilFavorites.Evidence.CountedFavorites != 0 {
-		t.Fatalf("nil favorites = %+v, %v", nilFavorites, err)
+	retainRange(t, db, 1, 3, panda.Metadata{})
+	retainRange(t, db, 4, 10, panda.Metadata{Uploader: "Someone", Category: "Manga"})
+	favor(t, db, "42", 0, 1, 2, 3)
+	if candidate := previewScore(t, s).Candidate; candidate == nil || candidate.WeightCount != 0 {
+		t.Fatalf("candidate = %+v", candidate)
 	}
 }
 
-func TestPreviewWeighsTagsUploadersAndCategories(t *testing.T) {
+func TestPreviewCountsTheCatalogInScope(t *testing.T) {
 	db, s := openCatalog(t)
-	// Galleries 1 to 3 are "Not for me", 4 to 9 "Interesting", 10 neutral.
-	for id := int64(1); id <= 3; id++ {
-		tags := []string{"female:glasses"}
-		if id != 2 {
-			tags = append(tags, "other:rare")
-		}
-		retain(t, db, panda.Metadata{ID: id, Posted: id, Uploader: "Some One", Category: "Manga", Tags: tags}, true)
-		setVerdict(t, s, id, collectorapi.VerdictNotForMe)
-	}
-	for id := int64(4); id <= 9; id++ {
-		retain(t, db, panda.Metadata{ID: id, Posted: id, Tags: []string{"male:hat"}}, true)
-		setVerdict(t, s, id, collectorapi.VerdictInteresting)
-	}
-	projectFeed(t, db, panda.FeedEntry{GalleryRef: panda.GalleryRef{ID: 10, Token: "token10"}, Title: "Feed",
-		Tags: []string{"male:hat"}, Category: "doujinshi", Uploader: "Feed One"}, time.Now().UTC())
-	setVerdict(t, s, 10, collectorapi.VerdictInteresting)
-	retain(t, db, panda.Metadata{ID: 11, Posted: 11, Tags: []string{"female:glasses"}}, true)
-	if err := s.RecordDisplays(t.Context(), []int64{11}, ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SetScoreOverride(t.Context(), collectorapi.ScoreKindTag, "female:Glasses", collectorapi.ScoreRuleAlwaysHide); err != nil {
-		t.Fatal(err)
-	}
-	before, err := s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
+	retainRange(t, db, 1, 3, panda.Metadata{Category: "Manga", Tags: []string{"other:a"}})
+	retain(t, db, panda.Metadata{ID: 4, Posted: 4, Category: "Manga", Expunged: true, Tags: []string{"other:a"}}, true)
+	projectFeed(t, db, panda.FeedEntry{GalleryRef: panda.GalleryRef{ID: 5, Token: "token5"}, Title: "Feed", Category: "manga", Tags: []string{"other:a"}}, time.Unix(5, 0))
+	retainRange(t, db, 6, 10, panda.Metadata{Category: "Manga"})
+	retainRange(t, db, 11, 20, panda.Metadata{Category: "Doujinshi", Tags: []string{"other:a"}})
+	favor(t, db, "42", 0, 1, 2, 3)
 
-	preview := previewScore(t, s, false)
-	if preview.Candidate == nil || preview.NoModel != "" {
-		t.Fatalf("preview = %+v", preview)
-	}
-	glasses, ok := findWeight(preview, collectorapi.ScoreKindTag, "female:glasses")
-	if !ok || glasses.Weight >= 0 || glasses.Interesting != 0 || glasses.NotForMe != 3 || glasses.Neutral != 1 {
-		t.Fatalf("glasses = %+v, %v", glasses, ok)
-	}
-	if len(preview.Overrides) != 1 || preview.Overrides[0].Label != glasses.Label || preview.Overrides[0].Kind != collectorapi.ScoreKindTag ||
-		preview.Overrides[0].Rule != collectorapi.ScoreRuleAlwaysHide || preview.Overrides[0].ID <= 0 {
-		t.Fatalf("overrides = %+v", preview.Overrides)
-	}
-	if hat, ok := findWeight(preview, collectorapi.ScoreKindTag, "male:hat"); !ok || hat.Weight <= 0 || hat.Interesting != 7 {
-		t.Fatalf("hat (with feed tags) = %+v, %v", hat, ok)
-	}
-	if uploader, ok := findWeight(preview, collectorapi.ScoreKindUploader, "Some One"); !ok || uploader.Weight >= 0 {
-		t.Fatalf("uploader = %+v, %v", uploader, ok)
-	}
-	if category, ok := findWeight(preview, collectorapi.ScoreKindCategory, "manga"); !ok || category.Weight >= 0 {
-		t.Fatalf("category = %+v, %v", category, ok)
-	}
-	if _, ok := findWeight(preview, collectorapi.ScoreKindTag, "other:rare"); ok {
-		t.Fatal("tag on two galleries has a weight")
-	}
-	weights := preview.Candidate.Weights
-	for i, weight := range weights {
-		if weight.Label == "" {
-			t.Fatalf("weight without label: %+v", weight)
+	for _, tc := range []struct {
+		name       string
+		categories []string
+		catalog    int
+		weight     float64
+	}{
+		{"whole catalog", nil, 15, math.Log(13 / (10 + 3*15/20.0))},
+		{"manga", []string{"manga"}, 5, math.Log(13 / (10 + 3*5/10.0))},
+	} {
+		preview := previewWith(t, s, collectorapi.ScorePreviewOptions{DefaultCategories: tc.categories})
+		weight, ok := findWeight(preview, collectorapi.ScoreKindTag, "other:a")
+		if !ok || weight.Catalog != tc.catalog || math.Abs(weight.Weight-tc.weight) > 1e-12 {
+			t.Fatalf("%s: other:a = %+v, %v; want catalog %d, weight %g", tc.name, weight, ok, tc.catalog, tc.weight)
 		}
-		if i > 0 && math.Abs(weight.Weight) > math.Abs(weights[i-1].Weight) {
-			t.Fatalf("weights out of order: %+v", weights)
-		}
-	}
-	var stored int
-	if err := db.QueryRow(t.Context(), "SELECT count(*) FROM panda_score_weights WHERE model_id = $1", preview.Candidate.ID).Scan(&stored); err != nil {
-		t.Fatal(err)
-	}
-	if stored != preview.Candidate.WeightCount || stored != len(weights) {
-		t.Fatalf("stored %d, weight count %d, returned %d", stored, preview.Candidate.WeightCount, len(weights))
-	}
-	if preview.Candidate.CalculatedAt.IsZero() || preview.Candidate.CalculatedAt.Location() != time.UTC {
-		t.Fatalf("calculated at = %v", preview.Candidate.CalculatedAt)
-	}
-
-	second := previewScore(t, s, false)
-	if ids := scoreModelIDs(t, db); len(ids) != 1 || ids[0] != second.Candidate.ID || second.Candidate.ID == preview.Candidate.ID {
-		t.Fatalf("models = %v, second %d", ids, second.Candidate.ID)
-	}
-	after, err := s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(before, after) {
-		t.Fatalf("listing changed:\n%+v\n%+v", before, after)
 	}
 }
 
-func TestPreviewWithoutAModelNamesTheMissingSide(t *testing.T) {
+func TestPreviewWithoutAWeightStillStoresACandidate(t *testing.T) {
 	db, s := openCatalog(t)
-	for id := int64(1); id <= 4; id++ {
-		retain(t, db, panda.Metadata{ID: id, Posted: id}, true)
-	}
-	if _, err := db.Exec(t.Context(), `INSERT INTO favorite_categories (id, host, account_key, category, name) VALUES (1, 'https://panda.test', '42', 1, 'One');
-		INSERT INTO favorites (category_id, gallery_id, token, added_at) VALUES (1, 1, 'token1', now())`); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RecordDisplays(t.Context(), []int64{2}, ""); err != nil {
-		t.Fatal(err)
-	}
-	// A stored candidate from earlier evidence does not survive a preview without a model.
-	if _, err := db.Exec(t.Context(), "INSERT INTO panda_score_models (favorites, calculated_at) VALUES (false, now())"); err != nil {
-		t.Fatal(err)
-	}
-	expect := func(want string) {
-		t.Helper()
-		preview := previewScore(t, s, true)
-		if preview.Candidate != nil || preview.NoModel != want {
-			t.Fatalf("preview = %+v, want %q", preview, want)
-		}
-		if ids := scoreModelIDs(t, db); len(ids) != 0 {
-			t.Fatalf("models = %v", ids)
-		}
-	}
-	expect(collectorapi.ScoreNoVerdicts)
-	setVerdict(t, s, 3, collectorapi.VerdictInteresting)
-	expect(collectorapi.ScoreNoNotForMe)
-
-	db2, s2 := openCatalog(t)
-	retain(t, db2, panda.Metadata{ID: 1, Posted: 1}, true)
-	setVerdict(t, s2, 1, collectorapi.VerdictNotForMe)
-	if preview := previewScore(t, s2, false); preview.Candidate != nil || preview.NoModel != collectorapi.ScoreNoAcceptable {
-		t.Fatalf("preview = %+v", preview)
-	}
-	if ids := scoreModelIDs(t, db2); len(ids) != 0 {
-		t.Fatalf("models = %v", ids)
-	}
-}
-
-func TestPreviewJSONHasEmptyOverridesAndFewVerdicts(t *testing.T) {
-	db, s := openCatalog(t)
-	for id := int64(1); id <= 2*FewVerdicts; id++ {
-		retain(t, db, panda.Metadata{ID: id, Posted: id}, true)
-		verdict := collectorapi.VerdictInteresting
-		if id%2 == 0 {
-			verdict = collectorapi.VerdictNotForMe
-		}
-		setVerdict(t, s, id, verdict)
-	}
-	preview := previewScore(t, s, false)
-	if preview.Evidence.FewVerdicts {
-		t.Fatalf("evidence = %+v", preview.Evidence)
-	}
-	setVerdict(t, s, 1, collectorapi.VerdictNotForMe)
-	preview = previewScore(t, s, false)
-	if !preview.Evidence.FewVerdicts {
-		t.Fatalf("evidence = %+v", preview.Evidence)
+	retainRange(t, db, 1, 2, panda.Metadata{Tags: []string{"other:a"}})
+	favor(t, db, "42", 0, 1)
+	preview := previewScore(t, s)
+	if preview.NoModel != "" || preview.Candidate == nil || preview.Candidate.WeightCount != 0 {
+		t.Fatalf("no model %q, candidate %+v", preview.NoModel, preview.Candidate)
 	}
 	body, err := json.Marshal(preview)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, part := range []string{`"overrides":[]`, `"weights":[]`, `"favorites_synced_at":null`} {
-		if !strings.Contains(string(body), part) {
-			t.Fatalf("preview JSON lacks %s: %s", part, body)
-		}
+	if !strings.Contains(string(body), `"weights":[]`) || strings.Contains(string(body), "no_model") {
+		t.Fatalf("preview JSON = %s", body)
 	}
-	if strings.Contains(string(body), "no_model") {
-		t.Fatalf("preview JSON with a candidate has no_model: %s", body)
+	if got := scoreModelIDs(t, db); !reflect.DeepEqual(got, []int64{preview.Candidate.ID}) {
+		t.Fatalf("models = %v", got)
+	}
+
+	if _, err := db.Exec(t.Context(), "DELETE FROM favorites"); err != nil {
+		t.Fatal(err)
+	}
+	preview = previewScore(t, s)
+	if preview.NoModel != collectorapi.ScoreNoFavorites || preview.Candidate != nil {
+		t.Fatalf("no model %q, candidate %+v", preview.NoModel, preview.Candidate)
+	}
+	if got := scoreModelIDs(t, db); len(got) != 0 {
+		t.Fatalf("models = %v", got)
+	}
+}
+
+func TestPreviewEvidenceWarnsAndNamesTheLastSync(t *testing.T) {
+	db, s := openCatalog(t)
+	retainRange(t, db, 1, FewFavorites, panda.Metadata{})
+	ids := make([]int64, 0, FewFavorites)
+	for id := int64(1); id <= FewFavorites; id++ {
+		ids = append(ids, id)
+	}
+	favor(t, db, "42", 0, ids[:FewFavorites-1]...)
+	favor(t, db, "42", 1)
+	evidence := previewScore(t, s).Evidence
+	if evidence.Favorites != FewFavorites-1 || !evidence.FewFavorites || evidence.FavoritesSyncedAt != nil {
+		t.Fatalf("evidence = %+v", evidence)
+	}
+
+	favor(t, db, "42", 1, ids[FewFavorites-1])
+	synced := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	if _, err := db.Exec(t.Context(), `UPDATE favorite_categories SET synced_at = CASE category WHEN 0 THEN $1::timestamptz ELSE $1::timestamptz - interval '1 day' END`,
+		synced); err != nil {
+		t.Fatal(err)
+	}
+	evidence = previewScore(t, s).Evidence
+	if evidence.Favorites != FewFavorites || evidence.FewFavorites || evidence.FavoritesSyncedAt == nil || !evidence.FavoritesSyncedAt.Equal(synced) {
+		t.Fatalf("evidence = %+v", evidence)
+	}
+}
+
+// storedModelRows lists the stored weights of the model with their counts,
+// and its threshold.
+func storedModelRows(t *testing.T, db *pgxpool.Pool, id int64) []string {
+	t.Helper()
+	rows, err := db.Query(t.Context(), `SELECT concat_ws(' ', w.kind, w.tag_id, w.value, w.weight, w.favorites, w.catalog, m.threshold_tenths)
+		FROM panda_score_weights w JOIN panda_score_models m ON m.id = w.model_id WHERE w.model_id = $1 ORDER BY 1`, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored []string
+	for rows.Next() {
+		var row string
+		if err := rows.Scan(&row); err != nil {
+			t.Fatal(err)
+		}
+		stored = append(stored, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return stored
+}
+
+func TestPreviewLeavesTheActiveModelUnchanged(t *testing.T) {
+	db, s := openCatalog(t)
+	retainRange(t, db, 1, 3, panda.Metadata{Category: "Manga", Tags: []string{"other:a"}})
+	retainRange(t, db, 4, 10, panda.Metadata{Category: "Doujinshi"})
+	favor(t, db, "42", 0, 1, 2, 3)
+	candidate := previewScore(t, s).Candidate
+	if candidate == nil || candidate.WeightCount == 0 {
+		t.Fatalf("candidate = %+v", candidate)
+	}
+	if err := s.ApplyScoreModel(t.Context(), candidate.ID, 4); err != nil {
+		t.Fatal(err)
+	}
+	before := storedModelRows(t, db, candidate.ID)
+	if len(before) != candidate.WeightCount {
+		t.Fatalf("stored rows = %v", before)
+	}
+	previewScore(t, s)
+	favor(t, db, "42", 0, 4, 5, 6)
+	previewScore(t, s)
+	previewWith(t, s, collectorapi.ScorePreviewOptions{DefaultCategories: []string{"doujinshi"}})
+	if after := storedModelRows(t, db, candidate.ID); !reflect.DeepEqual(after, before) {
+		t.Fatalf("active model rows = %v, want %v", after, before)
+	}
+}
+
+func TestPreviewKeepsOnlyCandidateAndActiveWeights(t *testing.T) {
+	db, s := openCatalog(t)
+	retainRange(t, db, 1, 3, panda.Metadata{Tags: []string{"other:a"}})
+	retainRange(t, db, 4, 6, panda.Metadata{Tags: []string{"other:new"}})
+	retainRange(t, db, 7, 10, panda.Metadata{})
+	favor(t, db, "42", 0, 1, 2, 3)
+	active := previewScore(t, s)
+	if err := s.ApplyScoreModel(t.Context(), active.Candidate.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	favor(t, db, "42", 0, 4, 5, 6)
+	previewScore(t, s)
+	preview := previewScore(t, s)
+	if active.Candidate.WeightCount == 0 || preview.Candidate.WeightCount < 2 {
+		t.Fatalf("active %+v, candidate %+v", active.Candidate, preview.Candidate)
+	}
+	var weights int
+	if err := db.QueryRow(t.Context(), "SELECT count(*) FROM panda_score_weights").Scan(&weights); err != nil {
+		t.Fatal(err)
+	}
+	if want := active.Candidate.WeightCount + preview.Candidate.WeightCount; weights != want {
+		t.Fatalf("stored weights = %d, want %d", weights, want)
+	}
+	if got, want := scoreModelIDs(t, db), []int64{active.Candidate.ID, preview.Candidate.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("models = %v, want %v", got, want)
+	}
+}
+
+func TestPreviewRecentCountsTheGalleriesTheListingShows(t *testing.T) {
+	db, s := openCatalog(t)
+	retainRange(t, db, 1, 3, panda.Metadata{Category: "Manga", Tags: []string{"other:a"}})
+	retainRange(t, db, 4, 8, panda.Metadata{Category: "Manga"})
+	retain(t, db, panda.Metadata{ID: 9, Posted: 9, Category: "Manga", Uploader: "Keep"}, true)
+	retain(t, db, panda.Metadata{ID: 10, Posted: 10, Category: "Manga", Uploader: "Drop"}, true)
+	retain(t, db, panda.Metadata{ID: 11, Posted: 11, Category: "Manga", Expunged: true}, true)
+	retain(t, db, panda.Metadata{ID: 12, Posted: 12, Category: "Doujinshi"}, true)
+	favor(t, db, "42", 0, 1, 2, 3)
+	setOverride(t, s, collectorapi.ScoreKindUploader, "Keep", collectorapi.ScoreRuleNeverHide)
+	setOverride(t, s, collectorapi.ScoreKindUploader, "Drop", collectorapi.ScoreRuleAlwaysHide)
+
+	recent := previewWith(t, s, collectorapi.ScorePreviewOptions{DefaultCategories: []string{"manga"}}).Recent
+	if recent.Candidate == nil || recent.Active != nil {
+		t.Fatalf("recent = %+v", recent)
+	}
+	scored := 0
+	for _, count := range recent.Candidate.Counts {
+		scored += count
+	}
+	if recent.Total != 10 || recent.NeverHidden != 1 || recent.AlwaysHidden != 1 || recent.Total != recent.NeverHidden+recent.AlwaysHidden+scored {
+		t.Fatalf("recent = %+v, %d scored", recent, scored)
+	}
+}
+
+// jsonKeys returns the sorted keys of the JSON object.
+func jsonKeys(t *testing.T, body []byte) []string {
+	t.Helper()
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		t.Fatalf("%s: %v", body, err)
+	}
+	return slices.Sorted(maps.Keys(object))
+}
+
+func TestPreviewJSON(t *testing.T) {
+	db, s := openCatalog(t)
+	body, err := json.Marshal(previewScore(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var preview map[string]json.RawMessage
+	if err := json.Unmarshal(body, &preview); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := jsonKeys(t, preview["evidence"]), []string{"favorites", "favorites_synced_at", "few_favorites", "new_favorites"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("evidence keys = %v, want %v", got, want)
+	}
+	if got, want := jsonKeys(t, preview["recent"]), []string{"active", "always_hidden", "candidate", "never_hidden", "total"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("recent keys = %v, want %v", got, want)
+	}
+	if string(preview["no_model"]) != `"no_favorites"` || string(preview["candidate"]) != "null" || string(preview["overrides"]) != "[]" {
+		t.Fatalf("preview JSON = %s", body)
+	}
+
+	retainRange(t, db, 1, 3, panda.Metadata{Tags: []string{"other:a"}})
+	retain(t, db, panda.Metadata{ID: 4, Posted: 4}, true)
+	favor(t, db, "42", 0, 1, 2, 3)
+	body, err = json.Marshal(previewScore(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var withCandidate struct {
+		Candidate struct {
+			Weights []json.RawMessage `json:"weights"`
+			HeldOut json.RawMessage   `json:"held_out"`
+		} `json:"candidate"`
+	}
+	if err := json.Unmarshal(body, &withCandidate); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(withCandidate.Candidate.HeldOut), `{"total":3,"always_hidden":0,"never_hidden":0,"scores":{"first_bucket":0,"counts":[3]}}`; got != want {
+		t.Fatalf("held out = %s, want %s", got, want)
+	}
+	if len(withCandidate.Candidate.Weights) != 1 {
+		t.Fatalf("preview JSON = %s", body)
+	}
+	if got, want := jsonKeys(t, withCandidate.Candidate.Weights[0]), []string{"active_weight", "catalog", "favorites", "kind", "label", "weight"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("weight keys = %v, want %v", got, want)
 	}
 }
 
 func TestPreviewRejectsAnInvalidDefaultFilter(t *testing.T) {
-	_, s := openCatalog(t)
+	db, s := openCatalog(t)
+	retain(t, db, panda.Metadata{ID: 1, Posted: 1}, true)
+	favor(t, db, "42", 0, 1)
 	for _, tc := range []struct {
 		options collectorapi.ScorePreviewOptions
 		want    error
@@ -308,5 +450,8 @@ func TestPreviewRejectsAnInvalidDefaultFilter(t *testing.T) {
 		if _, err := s.PreviewScoreModel(t.Context(), tc.options); !errors.Is(err, tc.want) {
 			t.Fatalf("%+v: %v, want %v", tc.options, err, tc.want)
 		}
+	}
+	if got := scoreModelIDs(t, db); len(got) != 0 {
+		t.Fatalf("models = %v", got)
 	}
 }

@@ -33,8 +33,6 @@ func NewHandler(app *local.App) http.Handler {
 	mux.Handle("POST /api/collector/catalog/lookup", HandleCollectorGalleryLookup(app.Collector))
 	mux.Handle("POST /api/collector/catalog/displays", HandleCollectorRecordCatalogDisplays(app.Collector))
 	mux.Handle("POST /api/collector/catalog/catch-up", HandleCollectorCatalogCatchUp(app.Collector))
-	mux.Handle("PUT /api/collector/catalog/verdicts/{id}", HandleCollectorSetCatalogVerdict(app.Collector))
-	mux.Handle("DELETE /api/collector/catalog/verdicts/{id}", HandleCollectorRemoveCatalogVerdict(app.Collector))
 	mux.Handle("POST /api/collector/catalog/score/overrides", HandleCollectorSetScoreOverride(app.Collector))
 	mux.Handle("DELETE /api/collector/catalog/score/overrides/{id}", HandleCollectorRemoveScoreOverride(app.Collector))
 	mux.Handle("POST /api/collector/catalog/score/pins", HandleCollectorSetScorePin(app.Collector))

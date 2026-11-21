@@ -3,9 +3,10 @@ package catalog
 import (
 	"cmp"
 	"context"
-	"math"
+	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -20,9 +21,12 @@ const scorePreviewWeights = 500
 // favorites that a preview returns.
 const scorePreviewAuthors = 500
 
-// PreviewScoreModel calculates a candidate score model from the evidence and
-// stores it as the one candidate, replacing every other model that is not
-// active. Without a model it stores none and names the side that is missing.
+// PreviewScoreModel calculates a candidate score model from the Panda
+// favorites inside the default filter, against the Panda catalog under the
+// same filter, and stores it as the one candidate, replacing every other model
+// that is not active. Without a favorite in scope it stores none. With the
+// CandidateID of the stored candidate it calculates nothing and measures that
+// candidate again with the current favorites, pins, overrides and bonus.
 func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.ScorePreviewOptions) (collectorapi.ScorePreview, error) {
 	var preview collectorapi.ScorePreview
 	tx, err := s.db.Begin(ctx)
@@ -40,35 +44,25 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 		return preview, err
 	}
 	active := filter.model
-	switch {
-	case options.Favorites != nil:
-		preview.Favorites = *options.Favorites
-	case active != nil:
-		preview.Favorites = active.favorites
-	}
-	predicate, predicateArgs, pageCategories, err := catalogPredicate(ctx, tx, collectorapi.CatalogOptions{
-		DefaultQuery: options.DefaultQuery, DefaultCategories: options.DefaultCategories,
-	})
+	defaults := collectorapi.CatalogOptions{DefaultQuery: options.DefaultQuery, DefaultCategories: options.DefaultCategories}
+	// The recent sample is what the listing shows; the scope of the
+	// calculation also holds expunged galleries, about which the default
+	// filter says nothing.
+	predicate, predicateArgs, pageCategories, err := catalogPredicate(ctx, tx, defaults)
 	if err != nil {
 		return preview, err
 	}
-	evidence, err := readEvidence(ctx, tx, preview.Favorites)
+	defaults.IncludeExpunged = true
+	scope, scopeArgs, _, err := catalogPredicate(ctx, tx, defaults)
 	if err != nil {
 		return preview, err
 	}
-	for _, gallery := range evidence {
-		switch {
-		case gallery.class == scoreNotForMe:
-			preview.Evidence.NotForMe++
-		case gallery.class == scoreNeutral:
-			preview.Evidence.Neutral++
-		case gallery.favorite:
-			preview.Evidence.CountedFavorites++
-		default:
-			preview.Evidence.Interesting++
-		}
+	favorites, err := favoritesInScope(ctx, tx, scope, scopeArgs)
+	if err != nil {
+		return preview, err
 	}
-	preview.Evidence.FewVerdicts = preview.Evidence.Interesting < FewVerdicts || preview.Evidence.NotForMe < FewVerdicts
+	preview.Evidence.Favorites = len(favorites)
+	preview.Evidence.FewFavorites = len(favorites) < FewFavorites
 	if err := tx.QueryRow(ctx, "SELECT max(synced_at) FROM favorite_categories").Scan(&preview.Evidence.FavoritesSyncedAt); err != nil {
 		return preview, err
 	}
@@ -94,49 +88,54 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 	var activeWeights map[scoreValue]float64
 	if active != nil {
 		preview.Active = &collectorapi.ScoreActive{
-			CalculatedAt: active.calculatedAt.UTC(), Favorites: active.favorites, ThresholdTenths: active.thresholdTenths,
+			CalculatedAt: active.calculatedAt.UTC(), ThresholdTenths: active.thresholdTenths,
 		}
-		var newVerdicts int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM panda_gallery_verdicts v
-			JOIN catalog_galleries g ON g.gallery_id = v.gallery_id WHERE v.given_at > $1`, active.calculatedAt).Scan(&newVerdicts); err != nil {
-			return preview, err
-		}
-		preview.Evidence.NewVerdicts = &newVerdicts
 		if activeWeights, err = modelWeights(ctx, tx, active.id); err != nil {
 			return preview, err
 		}
+		if preview.Evidence.NewFavorites, err = newFavorites(ctx, tx, favorites, active.calculatedAt); err != nil {
+			return preview, err
+		}
 	}
-	if _, err := tx.Exec(ctx, "DELETE FROM panda_score_models WHERE NOT active"); err != nil {
-		return preview, err
-	}
-	galleries := make([]evidenceGallery, 0, len(evidence))
-	for _, gallery := range evidence {
-		galleries = append(galleries, gallery.evidenceGallery)
-	}
-	total, values := tallyScoreCounts(galleries)
-	weights, ok := scoreWeights(total, values)
-	switch {
-	case preview.Evidence.Interesting+preview.Evidence.NotForMe == 0:
-		preview.NoModel = collectorapi.ScoreNoVerdicts
-	case !ok && total.notForMe == 0:
-		preview.NoModel = collectorapi.ScoreNoNotForMe
-	case !ok:
-		preview.NoModel = collectorapi.ScoreNoAcceptable
-	default:
-		candidate, err := storeCandidate(ctx, tx, preview.Favorites, weights, activeWeights, values)
+	var calculation scoreCalculation
+	if options.CandidateID != 0 {
+		// A measurement keeps the stored candidate as calculated.
+		stored, calculatedAt, ok, err := storedCalculation(ctx, tx, options.CandidateID)
 		if err != nil {
 			return preview, err
 		}
-		tenths := heldOutTenths(galleries, total, values, rule)
-		if candidate.HeldOut, err = filter.heldOut(ctx, tx, predicate, predicateArgs, galleries, tenths); err != nil {
+		if ok {
+			calculation = stored
+			preview.Candidate = &collectorapi.ScoreCandidate{ID: options.CandidateID, CalculatedAt: calculatedAt.UTC()}
+		}
+	}
+	if preview.Candidate == nil {
+		if _, err := tx.Exec(ctx, "DELETE FROM panda_score_models WHERE NOT active"); err != nil {
 			return preview, err
 		}
-		candidate.SuggestedThresholdTenths = suggestedThreshold(candidate.HeldOut.Interesting)
-		preview.Candidate = &candidate
+		if len(favorites) == 0 {
+			preview.NoModel = collectorapi.ScoreNoFavorites
+		} else {
+			if calculation, err = calculateScoreModel(ctx, tx, scope, scopeArgs, favorites); err != nil {
+				return preview, err
+			}
+			candidate, err := storeCandidate(ctx, tx, calculation)
+			if err != nil {
+				return preview, err
+			}
+			preview.Candidate = &candidate
+		}
 	}
 	var candidateWeights map[scoreValue]float64
 	if preview.Candidate != nil {
-		candidateWeights = weights
+		candidate := preview.Candidate
+		candidate.WeightCount = len(calculation.weights)
+		if candidate.Weights, err = listedWeights(ctx, tx, calculation, activeWeights); err != nil {
+			return preview, err
+		}
+		candidate.HeldOut = filter.heldOut(favorites, calculation, authors)
+		candidate.SuggestedThresholdTenths = suggestedThreshold(candidate.HeldOut)
+		candidateWeights = calculation.weights
 	}
 	// All weights of the candidate, not only those it lists: a pin is
 	// typically set on a value with a weak weight.
@@ -166,6 +165,135 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 		return preview, err
 	}
 	return preview, tx.Commit(ctx)
+}
+
+// favoriteGallery is a favorite in scope with its catalog values.
+type favoriteGallery struct {
+	galleryID int64
+	uploader  string
+	category  string
+	tagIDs    []int64
+}
+
+// values lists the values the gallery carries: its tags, its uploader and its
+// category, the last two only when known.
+func (g favoriteGallery) values() []scoreValue {
+	values := make([]scoreValue, 0, len(g.tagIDs)+2)
+	for _, tagID := range g.tagIDs {
+		values = append(values, scoreValue{kind: collectorapi.ScoreKindTag, tagID: tagID})
+	}
+	if g.uploader != "" {
+		values = append(values, scoreValue{kind: collectorapi.ScoreKindUploader, value: g.uploader})
+	}
+	if g.category != "" {
+		values = append(values, scoreValue{kind: collectorapi.ScoreKindCategory, value: g.category})
+	}
+	return values
+}
+
+// favoritesInScope reads once each gallery that is a favorite in any
+// collection and whose catalog entry passes the scope, with its values.
+func favoritesInScope(ctx context.Context, tx pgx.Tx, scope string, args pgdb.Args) ([]favoriteGallery, error) {
+	rows, err := tx.Query(ctx, `SELECT g.gallery_id, g.uploader, g.category,
+			ARRAY(SELECT gt.tag_id FROM catalog_gallery_tags gt WHERE gt.gallery_id = g.gallery_id)
+		FROM catalog_galleries g
+		WHERE g.gallery_id IN (SELECT gallery_id FROM favorites) AND (`+scope+`)
+		ORDER BY g.gallery_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (favoriteGallery, error) {
+		var gallery favoriteGallery
+		err := row.Scan(&gallery.galleryID, &gallery.uploader, &gallery.category, &gallery.tagIDs)
+		return gallery, err
+	})
+}
+
+// newFavorites counts the favorites in scope that the collector first
+// observed after the time.
+func newFavorites(ctx context.Context, tx pgx.Tx, favorites []favoriteGallery, since time.Time) (*int, error) {
+	ids := make([]int64, len(favorites))
+	for i, gallery := range favorites {
+		ids[i] = gallery.galleryID
+	}
+	var count int
+	err := tx.QueryRow(ctx, "SELECT count(*) FROM favorite_observations WHERE gallery_id = ANY($1::bigint[]) AND observed_at > $2",
+		ids, since).Scan(&count)
+	return &count, err
+}
+
+// scoreCalculation is a calculated model with what it was calculated from:
+// the numbers of favorites and catalog galleries in scope, and for each
+// weighted value the numbers of those that carry it.
+type scoreCalculation struct {
+	favoritesInScope, catalogInScope int
+	weights                          map[scoreValue]float64
+	favorites, catalog               map[scoreValue]int
+}
+
+// calculateScoreModel weighs every value that at least MinSupport favorites
+// carry against its frequency in the catalog in scope. The catalog is
+// counted in the database, and only for those values.
+func calculateScoreModel(ctx context.Context, tx pgx.Tx, scope string, args pgdb.Args, favorites []favoriteGallery) (scoreCalculation, error) {
+	calculation := scoreCalculation{favoritesInScope: len(favorites), weights: map[scoreValue]float64{}, catalog: map[scoreValue]int{}}
+	carried := map[scoreValue]int{}
+	for _, gallery := range favorites {
+		for _, value := range gallery.values() {
+			carried[value]++
+		}
+	}
+	var tagIDs []int64
+	var uploaders, categories []string
+	for value, count := range carried {
+		if count < MinSupport {
+			delete(carried, value)
+			continue
+		}
+		switch value.kind {
+		case collectorapi.ScoreKindTag:
+			tagIDs = append(tagIDs, value.tagID)
+		case collectorapi.ScoreKindUploader:
+			uploaders = append(uploaders, value.value)
+		case collectorapi.ScoreKindCategory:
+			categories = append(categories, value.value)
+		}
+	}
+	if err := tx.QueryRow(ctx, "SELECT count(*) FROM catalog_galleries g WHERE "+scope, args...).Scan(&calculation.catalogInScope); err != nil {
+		return calculation, err
+	}
+	counted := slices.Clone(args)
+	tagsArg, uploadersArg, categoriesArg := counted.Add(tagIDs), counted.Add(uploaders), counted.Add(categories)
+	rows, err := tx.Query(ctx, `SELECT 'tag', gt.tag_id, '', count(*)
+		FROM catalog_gallery_tags gt JOIN catalog_galleries g ON g.gallery_id = gt.gallery_id
+		WHERE gt.tag_id = ANY(`+tagsArg+`::bigint[]) AND (`+scope+`) GROUP BY gt.tag_id
+		UNION ALL
+		SELECT 'uploader', 0, g.uploader, count(*) FROM catalog_galleries g
+		WHERE g.uploader = ANY(`+uploadersArg+`::text[]) AND (`+scope+`) GROUP BY g.uploader
+		UNION ALL
+		SELECT 'category', 0, g.category, count(*) FROM catalog_galleries g
+		WHERE g.category = ANY(`+categoriesArg+`::text[]) AND (`+scope+`) GROUP BY g.category`, counted...)
+	if err != nil {
+		return calculation, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var value scoreValue
+		var count int
+		if err := rows.Scan(&value.kind, &value.tagID, &value.value, &count); err != nil {
+			return calculation, err
+		}
+		calculation.catalog[value] = count
+	}
+	if err := rows.Err(); err != nil {
+		return calculation, err
+	}
+	calculation.favorites = carried
+	for value, count := range carried {
+		if weight, ok := scoreWeight(count, calculation.favoritesInScope, calculation.catalog[value], calculation.catalogInScope); ok {
+			calculation.weights[value] = weight
+		}
+	}
+	return calculation, nil
 }
 
 // modelWeights reads every weight of the model.
@@ -216,112 +344,92 @@ func favoriteAuthors(ctx context.Context, tx pgx.Tx) ([]favoriteAuthor, error) {
 	return authors, nil
 }
 
-// classifiedGallery is an evidence gallery that also says whether it counts
-// as "Interesting" because it is a favorite.
-type classifiedGallery struct {
-	evidenceGallery
-	favorite bool
-}
-
-// readEvidence reads every evidence gallery once, with its class: its
-// verdict; else, with favorites, "Interesting" when it is in any favorite
-// collection; else neutral when a display of it is evidence. A gallery without
-// a catalog entry gives no evidence.
-func readEvidence(ctx context.Context, tx pgx.Tx, favorites bool) ([]classifiedGallery, error) {
-	rows, err := tx.Query(ctx, `WITH favorite AS (
-			SELECT DISTINCT gallery_id FROM favorites WHERE $1::boolean
-		), candidate AS (
-			SELECT gallery_id FROM panda_gallery_verdicts
-			UNION SELECT gallery_id FROM favorite
-			UNION SELECT gallery_id FROM panda_gallery_displays WHERE evidence
-		)
-		SELECT g.gallery_id, COALESCE(v.verdict, ''), f.gallery_id IS NOT NULL, g.uploader, g.category,
-			ARRAY(SELECT gt.tag_id FROM catalog_gallery_tags gt WHERE gt.gallery_id = g.gallery_id)
-		FROM candidate c
-		JOIN catalog_galleries g ON g.gallery_id = c.gallery_id
-		LEFT JOIN panda_gallery_verdicts v ON v.gallery_id = c.gallery_id
-		LEFT JOIN favorite f ON f.gallery_id = c.gallery_id
-		ORDER BY g.gallery_id`, favorites)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var evidence []classifiedGallery
-	for rows.Next() {
-		var gallery classifiedGallery
-		var verdict string
-		var favorite bool
-		if err := rows.Scan(&gallery.galleryID, &verdict, &favorite, &gallery.uploader, &gallery.category, &gallery.tagIDs); err != nil {
-			return nil, err
-		}
-		switch {
-		case verdict == collectorapi.VerdictNotForMe:
-			gallery.class = scoreNotForMe
-		case verdict == collectorapi.VerdictInteresting:
-			gallery.class = scoreInteresting
-		case favorite:
-			gallery.class = scoreInteresting
-			gallery.favorite = true
-		default:
-			gallery.class = scoreNeutral
-		}
-		evidence = append(evidence, gallery)
-	}
-	return evidence, rows.Err()
-}
-
-// storeCandidate stores the model and all its weights in two statements and
-// returns it with its strongest weights, each with its weight in the active
-// model when that has one.
-func storeCandidate(ctx context.Context, tx pgx.Tx, favorites bool, weights, activeWeights map[scoreValue]float64, values map[scoreValue]scoreCounts) (collectorapi.ScoreCandidate, error) {
-	candidate := collectorapi.ScoreCandidate{Favorites: favorites, WeightCount: len(weights)}
-	if err := tx.QueryRow(ctx, `INSERT INTO panda_score_models (favorites, calculated_at) VALUES ($1, now())
-		RETURNING id, calculated_at`, favorites).Scan(&candidate.ID, &candidate.CalculatedAt); err != nil {
+// storeCandidate stores the model with the numbers it was calculated from
+// and all its weights in two statements, and returns its ID and calculation
+// time.
+func storeCandidate(ctx context.Context, tx pgx.Tx, calculation scoreCalculation) (collectorapi.ScoreCandidate, error) {
+	var candidate collectorapi.ScoreCandidate
+	if err := tx.QueryRow(ctx, `INSERT INTO panda_score_models (calculated_at, favorites_in_scope, catalog_in_scope)
+		VALUES (now(), $1, $2) RETURNING id, calculated_at`,
+		calculation.favoritesInScope, calculation.catalogInScope).Scan(&candidate.ID, &candidate.CalculatedAt); err != nil {
 		return candidate, err
 	}
 	candidate.CalculatedAt = candidate.CalculatedAt.UTC()
-	labels, err := tagLabels(ctx, tx, weights)
-	if err != nil {
-		return candidate, err
-	}
-	rows := make([]collectorapi.ScoreWeight, 0, len(weights))
 	var kinds, texts []string
 	var tagIDs []int64
 	var weightValues []float64
-	var interesting, notForMe, neutral []int32
-	for value, weight := range weights {
-		counts := values[value]
+	var favorites, catalog []int32
+	for value, weight := range calculation.weights {
+		kinds = append(kinds, value.kind)
+		texts = append(texts, value.value)
+		tagIDs = append(tagIDs, value.tagID)
+		weightValues = append(weightValues, weight)
+		favorites = append(favorites, int32(calculation.favorites[value]))
+		catalog = append(catalog, int32(calculation.catalog[value]))
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO panda_score_weights (model_id, kind, tag_id, value, weight, favorites, catalog)
+		SELECT $1, w.kind, NULLIF(w.tag_id, 0), w.value, w.weight, w.favorites, w.catalog
+		FROM unnest($2::text[], $3::bigint[], $4::text[], $5::float8[], $6::int[], $7::int[])
+			AS w(kind, tag_id, value, weight, favorites, catalog)`,
+		candidate.ID, kinds, tagIDs, texts, weightValues, favorites, catalog)
+	return candidate, err
+}
+
+// storedCalculation reads the stored candidate with the ID, which is not the
+// active model, as it was calculated: its weights with their counts and the
+// two totals. ok is false when no such candidate is stored.
+func storedCalculation(ctx context.Context, tx pgx.Tx, id int64) (calculation scoreCalculation, calculatedAt time.Time, ok bool, err error) {
+	err = tx.QueryRow(ctx, "SELECT calculated_at, favorites_in_scope, catalog_in_scope FROM panda_score_models WHERE id = $1 AND NOT active",
+		id).Scan(&calculatedAt, &calculation.favoritesInScope, &calculation.catalogInScope)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return calculation, calculatedAt, false, nil
+	}
+	if err != nil {
+		return calculation, calculatedAt, false, err
+	}
+	rows, err := tx.Query(ctx, "SELECT kind, COALESCE(tag_id, 0), value, weight, favorites, catalog FROM panda_score_weights WHERE model_id = $1", id)
+	if err != nil {
+		return calculation, calculatedAt, false, err
+	}
+	defer rows.Close()
+	calculation.weights, calculation.favorites, calculation.catalog = map[scoreValue]float64{}, map[scoreValue]int{}, map[scoreValue]int{}
+	for rows.Next() {
+		var value scoreValue
+		var weight float64
+		var favorites, catalog int
+		if err := rows.Scan(&value.kind, &value.tagID, &value.value, &weight, &favorites, &catalog); err != nil {
+			return calculation, calculatedAt, false, err
+		}
+		calculation.weights[value], calculation.favorites[value], calculation.catalog[value] = weight, favorites, catalog
+	}
+	return calculation, calculatedAt, true, rows.Err()
+}
+
+// listedWeights returns the strongest weights of the calculation with their
+// counts, each with its weight in the active model when that has one.
+func listedWeights(ctx context.Context, tx pgx.Tx, calculation scoreCalculation, activeWeights map[scoreValue]float64) ([]collectorapi.ScoreWeight, error) {
+	labels, err := tagLabels(ctx, tx, calculation.weights)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]collectorapi.ScoreWeight, 0, len(calculation.weights))
+	for value, weight := range calculation.weights {
 		label := value.value
 		if value.kind == collectorapi.ScoreKindTag {
 			label = labels[value.tagID]
 		}
 		row := collectorapi.ScoreWeight{Kind: value.kind, Label: label, Weight: weight,
-			Interesting: counts.interesting, NotForMe: counts.notForMe, Neutral: counts.neutral}
+			Favorites: calculation.favorites[value], Catalog: calculation.catalog[value]}
 		if activeWeight, ok := activeWeights[value]; ok {
 			row.ActiveWeight = &activeWeight
 		}
 		rows = append(rows, row)
-		kinds = append(kinds, value.kind)
-		texts = append(texts, value.value)
-		tagIDs = append(tagIDs, value.tagID)
-		weightValues = append(weightValues, weight)
-		interesting = append(interesting, int32(counts.interesting))
-		notForMe = append(notForMe, int32(counts.notForMe))
-		neutral = append(neutral, int32(counts.neutral))
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO panda_score_weights (model_id, kind, tag_id, value, weight, interesting, not_for_me, neutral)
-		SELECT $1, w.kind, NULLIF(w.tag_id, 0), w.value, w.weight, w.interesting, w.not_for_me, w.neutral
-		FROM unnest($2::text[], $3::bigint[], $4::text[], $5::float8[], $6::int[], $7::int[], $8::int[])
-			AS w(kind, tag_id, value, weight, interesting, not_for_me, neutral)`,
-		candidate.ID, kinds, tagIDs, texts, weightValues, interesting, notForMe, neutral); err != nil {
-		return candidate, err
 	}
 	slices.SortFunc(rows, func(a, b collectorapi.ScoreWeight) int {
-		return cmp.Or(cmp.Compare(math.Abs(b.Weight), math.Abs(a.Weight)),
+		return cmp.Or(cmp.Compare(b.Weight, a.Weight),
 			cmp.Compare(scoreKindOrder[a.Kind], scoreKindOrder[b.Kind]), strings.Compare(a.Label, b.Label))
 	})
-	candidate.Weights = rows[:min(len(rows), scorePreviewWeights)]
-	return candidate, nil
+	return rows[:min(len(rows), scorePreviewWeights)], nil
 }
 
 // tagLabels reads namespace:value, in the stored spelling, for each weighted

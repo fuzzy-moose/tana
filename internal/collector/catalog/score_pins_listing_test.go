@@ -9,8 +9,8 @@ import (
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
 
-// listedIDs returns the listed galleries above 100: the evidence galleries of
-// seedScoreEvidence are decided by their verdicts.
+// listedIDs returns the listed galleries above 100, leaving out the galleries
+// of seedScoreGalleries.
 func listedIDs(result collectorapi.CatalogResult) []int64 {
 	ids := make([]int64, 0, len(result.Items))
 	for _, item := range result.Items {
@@ -56,12 +56,10 @@ func pinnedTag(label string, weight float64) summaryTag {
 
 func TestPinReplacesTheCalculatedWeightInTheNextPage(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
-	preview := applyCandidate(t, s, -5)
-	glasses := weightOf(t, preview, collectorapi.ScoreKindTag, "female:glasses")
-	artist := weightOf(t, preview, collectorapi.ScoreKindTag, "artist:a")
-	hat := weightOf(t, preview, collectorapi.ScoreKindTag, "male:hat")
+	applyScoreModel(t, db, s, -5, storedScoreWeights()...)
+	glasses, artist, hat := glassesWeight, artistWeight, hatWeight
 	assertListed(t, scorePage(t, s, "", collectorapi.CatalogOptions{}), 102, 103)
 
 	pin := setPin(t, s, collectorapi.ScoreKindTag, "female:glasses", 0)
@@ -112,8 +110,8 @@ func TestPinReplacesTheCalculatedWeightInTheNextPage(t *testing.T) {
 
 func TestPinCountsForAValueWithoutACalculatedWeight(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
-	applyCandidate(t, s, -5)
+	seedScoreGalleries(t, db)
+	applyScoreModel(t, db, s, -5, storedScoreWeights()...)
 	retainTagged(t, db, 105, "other:rare", "artist:u1")
 	retain(t, db, panda.Metadata{ID: 106, Posted: 106, Uploader: "Someone", Category: "Doujinshi"}, true)
 	retain(t, db, panda.Metadata{ID: 107, Posted: 107, Uploader: "Someone"}, true)
@@ -147,31 +145,30 @@ func TestPinCountsForAValueWithoutACalculatedWeight(t *testing.T) {
 
 func TestPinKeepsTheOrderOfTheHidingRules(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
-	applyCandidate(t, s, -5)
+	applyScoreModel(t, db, s, -5, storedScoreWeights()...)
 	retain(t, db, panda.Metadata{ID: 107, Posted: 107, Uploader: "Keeper", Tags: []string{"female:glasses"}}, true)
 	retain(t, db, panda.Metadata{ID: 108, Posted: 108, Category: "Doujinshi", Tags: []string{"male:hat"}}, true)
-	setVerdict(t, s, 101, collectorapi.VerdictInteresting)
 	setOverride(t, s, collectorapi.ScoreKindUploader, "Keeper", collectorapi.ScoreRuleNeverHide)
 	setOverride(t, s, collectorapi.ScoreKindCategory, "Doujinshi", collectorapi.ScoreRuleAlwaysHide)
 	setPin(t, s, collectorapi.ScoreKindTag, "female:glasses", -100)
 	setPin(t, s, collectorapi.ScoreKindTag, "male:hat", 100)
 
 	page := scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertListed(t, page, 101, 102, 103, 107)
+	assertListed(t, page, 102, 103, 107)
 	assertScore(t, itemByID(t, page, 107), collectorapi.ScoreRuleNeverHide, "Keeper")
 	hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
-	assertListed(t, hidden, 104, 108)
+	assertListed(t, hidden, 101, 104, 108)
 	assertScore(t, itemByID(t, hidden, 108), collectorapi.ScoreRuleAlwaysHide, "doujinshi")
 }
 
 func TestSummaryTagsCarryThePinOfAnOverrideTag(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
-	preview := applyCandidate(t, s, -5)
-	artist := weightOf(t, preview, collectorapi.ScoreKindTag, "artist:a")
+	applyScoreModel(t, db, s, -5, storedScoreWeights()...)
+	artist := artistWeight
 	setOverride(t, s, collectorapi.ScoreKindTag, "female:glasses", collectorapi.ScoreRuleNeverHide)
 	setPin(t, s, collectorapi.ScoreKindTag, "artist:b", 3)
 	weight := 5.0
@@ -188,7 +185,7 @@ func TestSummaryTagsCarryThePinOfAnOverrideTag(t *testing.T) {
 
 func TestPinsHaveNoEffectWithoutAnActiveModel(t *testing.T) {
 	db, s := openCatalog(t)
-	seedScoreEvidence(t, db, s)
+	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
 	setPin(t, s, collectorapi.ScoreKindTag, "female:glasses", -100)
 	setPin(t, s, collectorapi.ScoreKindUploader, "Bad One", -100)
@@ -214,14 +211,14 @@ func TestPinsHaveNoEffectWithoutAnActiveModel(t *testing.T) {
 	}
 	assertNoPinEffect()
 
-	applyCandidate(t, s, -5)
+	applyScoreModel(t, db, s, -5, storedScoreWeights()...)
 	assertListed(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{}), 101, 104)
 	if err := s.RemoveScoreModel(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	assertNoPinEffect()
 
-	applyCandidate(t, s, -5)
+	applyScoreModel(t, db, s, -5, storedScoreWeights()...)
 	item := itemByID(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{}), 101)
 	assertScoreValue(t, item, -100)
 }

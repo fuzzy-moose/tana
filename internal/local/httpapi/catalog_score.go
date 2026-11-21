@@ -97,19 +97,20 @@ func HandleCollectorRemoveScorePin(client *collectorapi.Client) http.Handler {
 }
 
 // HandleCollectorScorePreview always sends the default filter: the preview
-// describes the listing as the user sees it, so it has no bypass.
+// describes the listing as the user sees it, so it has no bypass. The body
+// names at most the candidate to measure again.
 func HandleCollectorScorePreview(client *collectorapi.Client, defaults *catalogfilter.Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !catalogCollectorConfigured(w, client) {
 			return
 		}
 		var input struct {
-			Favorites *bool `json:"favorites"`
+			CandidateID int64 `json:"candidate_id"`
 		}
 		if !server.DecodeJSON(w, r, &input) {
 			return
 		}
-		options := collectorapi.ScorePreviewOptions{Favorites: input.Favorites, DefaultCategories: []string{}}
+		options := collectorapi.ScorePreviewOptions{DefaultCategories: []string{}, CandidateID: input.CandidateID}
 		if defaults != nil {
 			filter, err := defaults.Load(r.Context())
 			if err != nil {

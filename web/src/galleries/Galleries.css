@@ -89,35 +89,6 @@
 .gallery-page-count { position: absolute; right: var(--space-2); bottom: var(--space-2); }
 .gallery-cover-status { position: absolute; left: var(--space-2); bottom: var(--space-2); }
 
-/* A card with actions: the strip overlays the cover slot, whose offset in the card is fixed by padding, title and gap. */
-.gallery-box-cell { position: relative; height: 100%; }
-.gallery-box-cell:hover .gallery-box { background: var(--gray-a3); }
-
-.gallery-box-actions {
-  position: absolute;
-  top: calc(var(--space-3) + 2 * var(--line-height-1) + var(--space-2) + var(--space-1));
-  left: calc(var(--space-3) + var(--space-1));
-  right: calc(var(--space-3) + var(--space-1));
-  display: flex;
-  justify-content: space-between;
-  pointer-events: none;
-}
-
-.gallery-box-actions > * { pointer-events: auto; }
-.gallery-box-actions .rt-IconButton.rt-variant-soft { background-color: var(--color-panel-solid); box-shadow: inset 0 0 0 1px var(--gray-a6); }
-.gallery-box-actions .rt-IconButton.rt-variant-soft:hover { background-color: var(--gray-3); }
-.gallery-box-actions .rt-IconButton[aria-disabled="true"] { cursor: progress; }
-
-/* Hidden by opacity, so a hidden control stays in the Tab order. */
-@media (hover: hover) and (pointer: fine) {
-  .gallery-box-actions .rt-IconButton:not([aria-pressed="true"]) { opacity: 0; }
-  .gallery-box-cell:is(:hover, :has(:focus-visible)) .gallery-box-actions .rt-IconButton { opacity: 1; }
-}
-
-@media (pointer: coarse) {
-  .gallery-box-actions .rt-IconButton { min-width: 44px; }
-}
-
 .gallery-box h2 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
