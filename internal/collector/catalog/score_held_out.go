@@ -19,24 +19,18 @@ func heldOutWeight(favorites, favoritesInScope, catalog, catalogInScope int) (fl
 }
 
 // heldOut scores each favorite in scope with the weights of the calculation
-// held out from it, and counts it by the first rule that decides it: a "never
-// hide" override, an "always hide" override, else its score.
+// held out from it.
 func (f scoreFilter) heldOut(favorites []favoriteGallery, calculation scoreCalculation, authors []favoriteAuthor) collectorapi.ScoreHeldOut {
-	heldOut := collectorapi.ScoreHeldOut{Total: len(favorites)}
-	var scores []int
-	scores, heldOut.NeverHidden, heldOut.AlwaysHidden = f.heldOutScores(favorites, calculation, authors)
-	heldOut.Scores = *scoreHistogram(scores)
-	return heldOut
+	return collectorapi.ScoreHeldOut{Total: len(favorites), Scores: *scoreHistogram(f.heldOutScores(favorites, calculation, authors))}
 }
 
 // heldOutScores returns the held-out favorite scores in tenths, clamped to
-// the score window, and the numbers of favorites that a "never hide" or an
-// "always hide" override decides instead. A value without a weight in the
+// the score window, one for each favorite. A value without a weight in the
 // calculation has none held out either, so the weighted values' counts and
 // the totals are all it reads. Pins count as in the listing; the tag of a
 // favorite author gets the bonus only when the author has at least
 // heldOutAuthorFavorites stored favorites.
-func (f scoreFilter) heldOutScores(favorites []favoriteGallery, calculation scoreCalculation, authors []favoriteAuthor) (scores []int, neverHidden, alwaysHidden int) {
+func (f scoreFilter) heldOutScores(favorites []favoriteGallery, calculation scoreCalculation, authors []favoriteAuthor) []int {
 	rule := &weightRule{pins: pinnedWeights(f.pins), authorBonus: f.authorBonus, favoriteAuthors: map[int64]bool{}}
 	for _, author := range authors {
 		if author.favorites >= heldOutAuthorFavorites {
@@ -49,16 +43,8 @@ func (f scoreFilter) heldOutScores(favorites []favoriteGallery, calculation scor
 		}
 		return heldOutWeight(calculation.favorites[value], calculation.favoritesInScope, calculation.catalog[value], calculation.catalogInScope)
 	}
-	scores = make([]int, 0, len(favorites))
+	scores := make([]int, 0, len(favorites))
 	for _, gallery := range favorites {
-		if override, ok := f.decidingOverride(gallery.uploader, gallery.category, gallery.tagIDs); ok {
-			if override.Rule == collectorapi.ScoreRuleNeverHide {
-				neverHidden++
-			} else {
-				alwaysHidden++
-			}
-			continue
-		}
 		var score float64
 		for _, value := range gallery.values() {
 			weight, _ := rule.effective(value, calculated)
@@ -66,7 +52,7 @@ func (f scoreFilter) heldOutScores(favorites []favoriteGallery, calculation scor
 		}
 		scores = append(scores, scoreTenthsInWindow(score))
 	}
-	return scores, neverHidden, alwaysHidden
+	return scores
 }
 
 // scoreTenthsInWindow returns floor(score * 10), clamped to the score window.
@@ -75,16 +61,15 @@ func scoreTenthsInWindow(score float64) int {
 }
 
 // suggestedThreshold returns the highest threshold within the histogram's
-// buckets that hides at most SuggestedFavoriteLoss of the held-out favorites,
-// counting those an override always hides; the lowest bucket when none does,
-// and 0 without scored favorites.
+// buckets that hides at most SuggestedFavoriteLoss of the held-out favorites;
+// the lowest bucket when none does, and 0 without favorites.
 func suggestedThreshold(heldOut collectorapi.ScoreHeldOut) int {
 	histogram := heldOut.Scores
 	if len(histogram.Counts) == 0 {
 		return 0
 	}
 	suggested := histogram.FirstBucket
-	hidden := heldOut.AlwaysHidden
+	hidden := 0
 	for i, count := range histogram.Counts {
 		if float64(hidden) <= SuggestedFavoriteLoss*float64(heldOut.Total) {
 			suggested = histogram.FirstBucket + i

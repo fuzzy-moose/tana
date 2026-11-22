@@ -45,16 +45,12 @@ func TestScoreGradesCompareWithTheHeldOutFavoriteScores(t *testing.T) {
 		setPin(t, s, collectorapi.ScoreKindTag, tag, float64(i+1))
 	}
 
-	// No model: no grade, even while an override puts the filter in force.
-	setOverride(t, s, collectorapi.ScoreKindTag, "other:a1", collectorapi.ScoreRuleNeverHide)
+	// No model: no grade.
 	result := listGraded(t, s)
 	for _, item := range result.Items {
 		if item.Score != nil && (item.Score.Grade != "" || item.Score.FavoritesAbove != nil) {
 			t.Fatalf("gallery %d is graded without a model: %+v", item.GalleryID, item.Score)
 		}
-	}
-	if _, err := db.Exec(t.Context(), "DELETE FROM panda_score_overrides"); err != nil {
-		t.Fatal(err)
 	}
 
 	candidate := previewScore(t, s).Candidate
@@ -87,17 +83,18 @@ func TestScoreGradesCompareWithTheHeldOutFavoriteScores(t *testing.T) {
 	}
 	assertGrade(t, result, 6, collectorapi.ScoreGradeTopQuarter, 0)
 
-	// A favorite that an override decides has no held-out favorite score:
-	// without favorite 2 the scores are 0.5, 1 and 3.
-	setOverride(t, s, collectorapi.ScoreKindTag, "other:a2", collectorapi.ScoreRuleAlwaysHide)
+	// An extreme pin keeps its favorite among the held-out favorite scores:
+	// -100, 0.5, 1 and 3.
+	setPin(t, s, collectorapi.ScoreKindTag, "other:a2", -100)
 	result, err = s.List(t.Context(), collectorapi.CatalogOptions{PageSize: 24, ScoreFilter: collectorapi.ScoreFilterAll})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ScoreFilter.HeldOutFavorites != 3 {
+	if result.ScoreFilter.HeldOutFavorites != 4 {
 		t.Fatalf("held-out favorites = %d", result.ScoreFilter.HeldOutFavorites)
 	}
 	assertGrade(t, result, 8, "", 3)
+	assertGrade(t, result, 7, "", 3)
 
 	// Removing a pin changes the scores too: favorite 4 scores 0, like gallery 8.
 	pin := setPin(t, s, collectorapi.ScoreKindTag, "other:a4", 0.5)
@@ -110,14 +107,8 @@ func TestScoreGradesCompareWithTheHeldOutFavoriteScores(t *testing.T) {
 	}
 	assertGrade(t, result, 8, "", 2)
 
-	// Removing the override brings favorite 2 back: 0, 1, 2 and 3.
-	var overrideID int64
-	if err := db.QueryRow(t.Context(), "SELECT id FROM panda_score_overrides").Scan(&overrideID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RemoveScoreOverride(t.Context(), overrideID); err != nil {
-		t.Fatal(err)
-	}
+	// Pinning favorite 2 back gives 0, 1, 2 and 3.
+	setPin(t, s, collectorapi.ScoreKindTag, "other:a2", 2)
 	assertGrade(t, listAll(t, s), 8, "", 3)
 
 	// The author bonus lifts favorite 4 to 10.
@@ -141,6 +132,10 @@ func TestScoreGradesCompareWithTheHeldOutFavoriteScores(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGrade(t, listAll(t, s), 8, "", 4)
+
+	// A gallery with a +1000 pin gets the top score grade, above favorite 3.
+	setPin(t, s, collectorapi.ScoreKindTag, "other:a3", 1000)
+	assertGrade(t, listAll(t, s), 6, collectorapi.ScoreGradeTopQuarter, 0)
 }
 
 func listAll(t *testing.T, s *Service) collectorapi.CatalogResult {

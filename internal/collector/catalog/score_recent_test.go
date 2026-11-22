@@ -66,8 +66,6 @@ func TestPreviewRecentScoresUnderTheCandidateAndTheActiveModel(t *testing.T) {
 	retain(t, db, panda.Metadata{ID: 12, Posted: 12, Category: "Doujinshi"}, true)
 	favor(t, db, "42", 0, 1, 2, 3)
 	applyScoreModel(t, db, s, 0, storedWeight{collectorapi.ScoreKindTag, "other:b", 1.5})
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Keep", collectorapi.ScoreRuleNeverHide)
-	setOverride(t, s, collectorapi.ScoreKindTag, "other:drop", collectorapi.ScoreRuleAlwaysHide)
 	setPin(t, s, collectorapi.ScoreKindTag, "other:pinned", 2)
 	setPin(t, s, collectorapi.ScoreKindTag, "other:high", 1e12)
 	setPin(t, s, collectorapi.ScoreKindTag, "other:low", -1e6)
@@ -76,11 +74,12 @@ func TestPreviewRecentScoresUnderTheCandidateAndTheActiveModel(t *testing.T) {
 	setBonus(t, s, float(3))
 
 	recent := previewWith(t, s, collectorapi.ScorePreviewOptions{DefaultCategories: []string{"manga"}}).Recent
-	if recent.Total != 10 || recent.NeverHidden != 1 || recent.AlwaysHidden != 1 {
+	if recent.Total != 10 {
 		t.Fatalf("recent = %+v", recent)
 	}
 	// The scope of the candidate holds the expunged gallery 11: N = 11.
-	edges := map[int]int{20: 1, 30: 1, scoreWindowTenths: 1, -scoreWindowTenths: 1}
+	// Galleries 7, 9 and 10 carry the pin beyond the window.
+	edges := map[int]int{20: 1, 30: 1, scoreWindowTenths: 3, -scoreWindowTenths: 1}
 	wantCandidate := map[int]int{tenths(math.Log(13 / (10 + 9/11.0))): 3, 0: 1}
 	wantActive := map[int]int{0: 3, 15: 1}
 	for bucket, count := range edges {

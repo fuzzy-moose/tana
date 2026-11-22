@@ -359,8 +359,8 @@ func TestPreviewRecentCountsTheGalleriesTheListingShows(t *testing.T) {
 	retain(t, db, panda.Metadata{ID: 11, Posted: 11, Category: "Manga", Expunged: true}, true)
 	retain(t, db, panda.Metadata{ID: 12, Posted: 12, Category: "Doujinshi"}, true)
 	favor(t, db, "42", 0, 1, 2, 3)
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Keep", collectorapi.ScoreRuleNeverHide)
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Drop", collectorapi.ScoreRuleAlwaysHide)
+	setPin(t, s, collectorapi.ScoreKindUploader, "Keep", 1000)
+	setPin(t, s, collectorapi.ScoreKindUploader, "Drop", -100)
 
 	recent := previewWith(t, s, collectorapi.ScorePreviewOptions{DefaultCategories: []string{"manga"}}).Recent
 	if recent.Candidate == nil || recent.Active != nil {
@@ -370,7 +370,7 @@ func TestPreviewRecentCountsTheGalleriesTheListingShows(t *testing.T) {
 	for _, count := range recent.Candidate.Counts {
 		scored += count
 	}
-	if recent.Total != 10 || recent.NeverHidden != 1 || recent.AlwaysHidden != 1 || recent.Total != recent.NeverHidden+recent.AlwaysHidden+scored {
+	if recent.Total != 10 || scored != recent.Total {
 		t.Fatalf("recent = %+v, %d scored", recent, scored)
 	}
 }
@@ -395,13 +395,17 @@ func TestPreviewJSON(t *testing.T) {
 	if err := json.Unmarshal(body, &preview); err != nil {
 		t.Fatal(err)
 	}
+	if got, want := jsonKeys(t, body), []string{"active", "author_bonus", "candidate", "evidence", "favorite_author_count", "favorite_authors",
+		"no_model", "pins", "recent"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("preview keys = %v, want %v", got, want)
+	}
 	if got, want := jsonKeys(t, preview["evidence"]), []string{"favorites", "favorites_synced_at", "few_favorites", "new_favorites"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("evidence keys = %v, want %v", got, want)
 	}
-	if got, want := jsonKeys(t, preview["recent"]), []string{"active", "always_hidden", "candidate", "never_hidden", "total"}; !reflect.DeepEqual(got, want) {
+	if got, want := jsonKeys(t, preview["recent"]), []string{"active", "candidate", "total"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("recent keys = %v, want %v", got, want)
 	}
-	if string(preview["no_model"]) != `"no_favorites"` || string(preview["candidate"]) != "null" || string(preview["overrides"]) != "[]" {
+	if string(preview["no_model"]) != `"no_favorites"` || string(preview["candidate"]) != "null" {
 		t.Fatalf("preview JSON = %s", body)
 	}
 
@@ -421,7 +425,7 @@ func TestPreviewJSON(t *testing.T) {
 	if err := json.Unmarshal(body, &withCandidate); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(withCandidate.Candidate.HeldOut), `{"total":3,"always_hidden":0,"never_hidden":0,"scores":{"first_bucket":0,"counts":[3]}}`; got != want {
+	if got, want := string(withCandidate.Candidate.HeldOut), `{"total":3,"scores":{"first_bucket":0,"counts":[3]}}`; got != want {
 		t.Fatalf("held out = %s, want %s", got, want)
 	}
 	if len(withCandidate.Candidate.Weights) != 1 {

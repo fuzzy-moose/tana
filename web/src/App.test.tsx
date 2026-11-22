@@ -71,7 +71,7 @@ test('defaults to galleries, searches and paginates, then opens gallery details 
 test('local gallery cards keep gray tags whatever their summary tags carry', async () => {
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => Response.json({ items: [{
     id: 1, title: 'Weighted', page_count: 3,
-    summary_tags: [{ namespace: 'female', value: 'glasses', term: 'female:glasses$', weight: 2, override: 'always_hide' }],
+    summary_tags: [{ namespace: 'female', value: 'glasses', term: 'female:glasses$', weight: 2, source: 'pin', favorite_author: true }],
   }], total: 1, page: 1, page_size: 24 })))
   window.history.replaceState(null, '', '#/galleries')
   render(<App />)

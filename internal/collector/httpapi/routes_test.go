@@ -211,7 +211,7 @@ func TestBatchAPIRejectsInvalidRequests(t *testing.T) {
 
 func TestCatalogIgnoresVerdictParameter(t *testing.T) {
 	handler, db := pausedHandler(t)
-	// Gallery 3 is seen and gallery 2 is hidden by an override, so the unseen
+	// Gallery 3 is seen and gallery 2 is hidden by its score, so the unseen
 	// view and the hidden galleries each differ from the whole catalog.
 	if _, err := db.Exec(t.Context(), `
 		INSERT INTO gallery_refs (gallery_id, token) SELECT g, 'token' FROM generate_series(1, 3) g;
@@ -234,8 +234,16 @@ func TestCatalogIgnoresVerdictParameter(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if w := apiRequest(handler, http.MethodPost, "/api/catalog/score/overrides", `{"kind":"uploader","value":"Some One","rule":"always_hide"}`); w.Code != http.StatusNoContent {
-		t.Fatalf("override: %d %s", w.Code, w.Body)
+	var candidateID int64
+	if err := db.QueryRow(t.Context(), `INSERT INTO panda_score_models (calculated_at, favorites_in_scope, catalog_in_scope)
+		VALUES (now(), 0, 0) RETURNING id`).Scan(&candidateID); err != nil {
+		t.Fatal(err)
+	}
+	if w := apiRequest(handler, http.MethodPost, "/api/catalog/score/apply", fmt.Sprintf(`{"candidate_id":%d,"threshold_tenths":0}`, candidateID)); w.Code != http.StatusNoContent {
+		t.Fatalf("apply: %d %s", w.Code, w.Body)
+	}
+	if w := apiRequest(handler, http.MethodPost, "/api/catalog/score/pins", `{"kind":"uploader","value":"Some One","weight":-1}`); w.Code != http.StatusOK {
+		t.Fatalf("pin: %d %s", w.Code, w.Body)
 	}
 	listed := func(path string) []int64 {
 		t.Helper()

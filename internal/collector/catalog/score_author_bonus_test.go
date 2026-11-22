@@ -195,9 +195,6 @@ func TestAuthorBonusHasNoEffectWithoutAnActiveModel(t *testing.T) {
 		}
 	}
 	assertNoBonus(page)
-
-	setOverride(t, s, collectorapi.ScoreKindTag, "female:glasses", collectorapi.ScoreRuleAlwaysHide)
-	assertNoBonus(scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{}))
 }
 
 func TestSummaryTagsMarkFavoriteAuthors(t *testing.T) {
@@ -205,7 +202,6 @@ func TestSummaryTagsMarkFavoriteAuthors(t *testing.T) {
 	seedBonusGalleries(t, db, s)
 	retainTagged(t, db, 109, "artist:a", "artist:b", "artist:good", "artist:rare", "female:glasses")
 	setPin(t, s, collectorapi.ScoreKindTag, "artist:rare", 0.1)
-	setOverride(t, s, collectorapi.ScoreKindTag, "artist:good", collectorapi.ScoreRuleNeverHide)
 	want := []string{"artist:a", "artist:good", "artist:rare"}
 	assertMarks := func() {
 		t.Helper()

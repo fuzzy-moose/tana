@@ -23,7 +23,7 @@
 /* Keeps the place of "Remove pin" in a row without a pin, so the pin fields of all rows stand in one column. */
 .score-pin-slot { flex: none; width: var(--space-5); }
 
-/* A long list scrolls inside a frame that fits below the pin or override form and the tabs, so both stay in reach. */
+/* A long list scrolls inside a frame that fits below the pin form and the tabs, so both stay in reach. */
 .score-scroll { --score-scroll-height: max(20rem, calc(100dvh - 25rem)); }
 .score-scroll.score-rows { max-height: var(--score-scroll-height); overflow-y: auto; }
 .score-scroll .rt-ScrollAreaViewport { max-height: var(--score-scroll-height); }

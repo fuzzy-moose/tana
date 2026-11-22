@@ -151,51 +151,6 @@ func TestCatalogCatchUpValidation(t *testing.T) {
 	}
 }
 
-func TestScoreOverrideValidation(t *testing.T) {
-	db := pgtest.Open(t, storage.Migrations())
-	service := catalog.New(db, "https://favorites.example.test")
-	mux := http.NewServeMux()
-	mux.Handle("POST /api/catalog/score/overrides", HandleSetScoreOverride(service))
-	mux.Handle("DELETE /api/catalog/score/overrides/{id}", HandleRemoveScoreOverride(service))
-	const path = "/api/catalog/score/overrides"
-	for _, tc := range []struct {
-		method string
-		path   string
-		body   string
-		want   int
-		code   string
-	}{
-		{http.MethodPost, path, `{"kind":"uploader","value":"Some One","rule":"always_hide"}`, http.StatusNoContent, ""},
-		{http.MethodPost, path, `{"kind":"category","value":"comics","rule":"always_hide"}`, http.StatusBadRequest, "invalid_override"},
-		{http.MethodPost, path, `{"kind":"uploader","value":"Some One","rule":"maybe"}`, http.StatusBadRequest, "invalid_override"},
-		{http.MethodPost, path, `{"kind":"tag","value":"female:glasses","rule":"never_hide"}`, http.StatusNotFound, "tag_not_found"},
-		{http.MethodPost, path, `{"kind":"uploader","value":"Some One","rule":"always_hide","unknown":true}`, http.StatusBadRequest, "invalid_json"},
-		{http.MethodDelete, path + "/3", "", http.StatusNoContent, ""},
-		{http.MethodDelete, path + "/0", "", http.StatusBadRequest, "invalid_override"},
-		{http.MethodDelete, path + "/x", "", http.StatusBadRequest, "invalid_override"},
-	} {
-		t.Run(tc.method+" "+tc.path+" "+tc.body, func(t *testing.T) {
-			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			request.Header.Set("Content-Type", "application/json")
-			response := httptest.NewRecorder()
-			mux.ServeHTTP(response, request)
-			if response.Code != tc.want {
-				t.Fatalf("response = %d %s", response.Code, response.Body.String())
-			}
-			if tc.code == "" {
-				if response.Body.Len() != 0 {
-					t.Fatalf("body = %q", response.Body.String())
-				}
-				return
-			}
-			var result map[string]string
-			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result["error"] != tc.code {
-				t.Fatalf("response = %s, %v", response.Body.String(), err)
-			}
-		})
-	}
-}
-
 func TestScorePinValidation(t *testing.T) {
 	db := pgtest.Open(t, storage.Migrations())
 	service := catalog.New(db, "https://favorites.example.test")
@@ -360,7 +315,7 @@ func TestScorePreviewValidation(t *testing.T) {
 				}
 				return
 			}
-			if result["evidence"] == nil || string(result["overrides"]) != "[]" || string(result["candidate"]) != "null" ||
+			if result["evidence"] == nil || string(result["pins"]) != "[]" || string(result["candidate"]) != "null" ||
 				string(result["no_model"]) != `"no_favorites"` {
 				t.Fatalf("preview = %s", response.Body.String())
 			}

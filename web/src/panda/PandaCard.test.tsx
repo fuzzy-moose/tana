@@ -4,7 +4,6 @@ import { Theme } from '@radix-ui/themes'
 import { afterEach, expect, test, vi } from 'vitest'
 import PandaCard, { PandaDetails } from './PandaCard'
 import type { PandaGallery, PandaSummaryTag } from './api'
-import type { ScoreRule } from './score'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -58,18 +57,16 @@ test('details show the score, the page threshold and the strongest weights', () 
   expect(screen.getByText(/^Score 1\.37/).textContent).toBe('Score 1.37 · Threshold 0.5')
   expect(screen.getByText('+1.20 female:glasses')).toBeTruthy()
   expect(screen.getByText('-0.46 Uploader Some uploader')).toBeTruthy()
-  rerender(<PandaDetails gallery={{ ...scored, score: { rule: 'always_hide', override: 'Some uploader' } }} scoreFilter={{}} />)
+  rerender(<PandaDetails gallery={{ ...scored, score: { rule: 'below_threshold' } }} scoreFilter={{}} />)
   expect(screen.queryByText(/^Score/)).toBeNull()
 })
 
-test('details name the rule that decides, only on a page with the score filter', () => {
-  const { rerender } = render(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'always_hide', override: 'Doujinshi' } }} scoreFilter={{}} />)
-  expect(screen.getByText('Hidden by the override for Doujinshi.')).toBeTruthy()
-  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'never_hide', override: 'female:glasses' } }} scoreFilter={{}} />)
-  expect(screen.getByText('Never hidden: female:glasses.')).toBeTruthy()
-  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { value: -2, rule: 'below_threshold' } }} scoreFilter={{ threshold_tenths: -5 }} />)
+test('details say a gallery is hidden by its score, only on a page with the score filter', () => {
+  const { rerender } = render(<PandaDetails gallery={{ ...collectedGallery, score: { value: -2, rule: 'below_threshold' } }} scoreFilter={{ threshold_tenths: -5 }} />)
   expect(screen.getByText('Hidden: the score is below the threshold.')).toBeTruthy()
-  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { rule: 'always_hide', override: 'Doujinshi' } }} />)
+  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { value: 2 } }} scoreFilter={{ threshold_tenths: -5 }} />)
+  expect(screen.queryByText(/Hidden/)).toBeNull()
+  rerender(<PandaDetails gallery={{ ...collectedGallery, score: { value: -2, rule: 'below_threshold' } }} />)
   expect(screen.queryByText(/Hidden/)).toBeNull()
 })
 
@@ -105,22 +102,6 @@ test('cards without weights show one gray badge per tag', () => {
   expect(stripTags()).toEqual([['glasses', 'gray'], ['sole female', 'gray']])
 })
 
-const overrideTag = (value: string, override: ScoreRule, weight?: number): PandaSummaryTag => ({ ...tag(value, weight), override })
-
-test('cards mark an override tag with its rule, coloured by the rule whatever its weight', () => {
-  const { rerender } = render(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [overrideTag('glasses', 'always_hide', 1.5), overrideTag('sole female', 'never_hide', -1.5)] }} /></Theme>)
-  expect(stripTags()).toEqual([['Always hide: glasses', 'red'], ['Never hide: sole female', 'green']])
-  const [hidden, kept] = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
-  for (const item of [hidden, kept]) {
-    expect(item.querySelectorAll('svg')).toHaveLength(1)
-    expect(item.querySelector('.rt-Badge')?.firstElementChild?.tagName.toLowerCase()).toBe('svg')
-  }
-  expect(hidden.querySelector('svg')!.innerHTML).not.toBe(kept.querySelector('svg')!.innerHTML)
-  rerender(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [tag('plain', 0.9), overrideTag('glasses', 'always_hide')] }} /></Theme>)
-  expect(stripTags()).toEqual([['plain', 'green'], ['Always hide: glasses', 'red']])
-  expect(within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')[0].querySelector('svg')).toBeNull()
-})
-
 test('a card fits its strip again when a tag gains or loses its mark, not for a new array of the same tags', () => {
   const observed: Element[] = []
   vi.stubGlobal('ResizeObserver', class {
@@ -131,10 +112,10 @@ test('a card fits its strip again when a tag gains or loses its mark, not for a 
   const card = (summaryTags: PandaSummaryTag[]) => <Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: summaryTags }} /></Theme>
   const { rerender } = render(card([tag('glasses'), tag('sole female')]))
   expect(observed).toHaveLength(1)
-  rerender(card([overrideTag('glasses', 'never_hide'), tag('sole female')]))
+  rerender(card([{ ...tag('glasses'), source: 'pin' }, tag('sole female')]))
   expect(observed).toHaveLength(2)
   expect(observed[1]).toBe(screen.getByRole('list', { name: 'Tags' }))
-  rerender(card([overrideTag('glasses', 'never_hide'), tag('sole female')]))
+  rerender(card([{ ...tag('glasses'), source: 'pin' }, tag('sole female')]))
   expect(observed).toHaveLength(2)
   rerender(card([tag('glasses'), tag('sole female')]))
   expect(observed).toHaveLength(3)
@@ -154,7 +135,7 @@ test('cards mark a pinned tag with a pin, coloured by its weight', () => {
   expect(screen.queryByRole('button')).toBeNull()
 })
 
-test('cards star a favorite author unless the tag is pinned, and an override shows only its own mark', () => {
+test('cards star a favorite author unless the tag is pinned', () => {
   const { rerender } = render(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [
     { ...tag('bonus', 0.9), favorite_author: true, source: 'author_bonus' }, { ...tag('model', -0.5), favorite_author: true }, { ...tag('pinned', 0.1), source: 'pin' },
   ] }} /></Theme>)
@@ -168,14 +149,12 @@ test('cards star a favorite author unless the tag is pinned, and an override sho
   const pinIcon = pinned.querySelector('svg')!.innerHTML
   expect(bonus.querySelector('svg')!.innerHTML).not.toBe(pinIcon)
   rerender(<Theme><PandaCard gallery={{ ...collectedGallery, summary_tags: [
-    { ...tag('both', 0.9), favorite_author: true, source: 'pin' },
-    { ...overrideTag('hidden', 'always_hide', 0.9), source: 'pin' }, { ...overrideTag('kept', 'never_hide'), favorite_author: true },
-    tag('plain'),
+    { ...tag('both', -0.9), favorite_author: true, source: 'pin' }, tag('plain'),
   ] }} /></Theme>)
-  expect(stripTags()).toEqual([['Pinned: both', 'green'], ['Always hide: hidden', 'red'], ['Never hide: kept', 'green'], ['plain', 'gray']])
-  const [both, hidden, kept, plain] = items()
+  expect(stripTags()).toEqual([['Pinned: both', 'red'], ['plain', 'gray']])
+  const [both, plain] = items()
+  expect(both.querySelectorAll('svg')).toHaveLength(1)
   expect(both.querySelector('svg')!.innerHTML).toBe(pinIcon)
-  for (const item of [both, hidden, kept]) expect(item.querySelectorAll('svg')).toHaveLength(1)
   expect(plain.querySelector('svg')).toBeNull()
 })
 

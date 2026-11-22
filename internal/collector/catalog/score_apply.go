@@ -71,7 +71,7 @@ func (s *Service) SetScoreThreshold(ctx context.Context, thresholdTenths int) er
 }
 
 // RemoveScoreModel deletes the active model, if there is one. Candidates and
-// overrides stay.
+// pins stay.
 func (s *Service) RemoveScoreModel(ctx context.Context) error {
 	_, err := s.db.Exec(ctx, "DELETE FROM panda_score_models WHERE active")
 	return err

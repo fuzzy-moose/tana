@@ -153,32 +153,29 @@ The search and Panda gallery categories that the user saves to limit every Panda
 Every Panda catalog gallery that passes the default filter, expunged galleries included. The collector keeps how many galleries it holds and how many carry each tag, uploader, and Panda gallery category, for the default filter of the latest score model preview.
 
 **Panda score model**:
-A set of weights for tags, uploaders, and Panda gallery categories, together with a score threshold. A value's weight measures how much more frequent the value is in the Panda favorites than in the Panda catalog, both limited to the default filter. Favorites of all favorite collections count. A calculated weight is never negative: only pinned weights and score overrides express dislike. At most one model is active.
+A set of weights for tags, uploaders, and Panda gallery categories, together with a score threshold. A value's weight measures how much more frequent the value is in the Panda favorites than in the Panda catalog, both limited to the default filter. Favorites of all favorite collections count. A calculated weight is never negative: only pinned weights express dislike. At most one model is active.
 
 **Panda gallery score**:
 The sum of the weights of a gallery's tags, uploader, and category under the active Panda score model. A pinned weight replaces the model's weight of its value, and the tag of a favorite author weighs at least the author bonus.
 
 **Held-out favorite score**:
-The Panda gallery score of a Panda favorite, with weights calculated from the other favorites only. A favorite that a score override decides has no held-out favorite score.
+The Panda gallery score of a Panda favorite, with weights calculated from the other favorites only. Every favorite in scope has one.
 
 **Score grade**:
-The level of a Panda gallery score among the held-out favorite scores of the active Panda score model: top quarter or top half. A gallery below the top half has no score grade. The grade follows the current pinned weights, score overrides, and author bonus, and does not depend on the score threshold.
+The level of a Panda gallery score among the held-out favorite scores of the active Panda score model: top quarter or top half. A gallery below the top half has no score grade. The grade follows the current pinned weights and author bonus, and does not depend on the score threshold.
 _Avoid_: Highlight, rank
 
 **Score threshold**:
 The score below which the score filter hides a gallery.
 
-**Score override**:
-A user rule, "always hide" or "never hide", for one tag, uploader, or Panda gallery category.
-
 **Pinned weight**:
-A weight that the user sets by hand for one tag, uploader, or Panda gallery category, also for a value that has no weight in the model. It belongs to no Panda score model and stays until the user removes it. A pinned weight of 0 ignores the value.
+A weight that the user sets by hand for one tag, uploader, or Panda gallery category, also for a value that has no weight in the model. It belongs to no Panda score model and stays until the user removes it. A pinned weight of 0 ignores the value. Pinned weights add up with the other weights; no pin is absolute.
 
 **Favorite author**:
 An `artist` tag carried by at least two Panda favorites whose tags the Panda catalog has, as of the last completed Panda favorite sync. A gallery in several Panda favorite collections counts once. The author bonus is the one weight that the user sets as the minimum for the tag of every favorite author. It is off until set, and a pinned weight on the tag wins.
 
 **Score filter**:
-The hiding of Panda galleries in the catalog listing by the active Panda score model and the score overrides. It is in force while a model is active or an override exists.
+The hiding of Panda galleries in the catalog listing whose Panda gallery score is below the score threshold. It is in force only while a Panda score model is active.
 
 **Metadata refresh time**:
 The time of the last successful retrieval of collected Panda metadata. Failed retrieval attempts do not advance it.

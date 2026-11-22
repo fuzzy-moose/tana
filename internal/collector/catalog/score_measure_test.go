@@ -77,13 +77,13 @@ func TestMeasurementCountsNothingAgain(t *testing.T) {
 	}
 }
 
-func TestMeasurementFollowsPinsOverridesAndTheBonus(t *testing.T) {
+func TestMeasurementFollowsPinsAndTheBonus(t *testing.T) {
 	db, s := openCatalog(t)
 	seedHeldOutFavorites(t, db)
 	setFavoriteAuthor(t, db, "other:t2", 4)
 	calculated := previewScore(t, s)
 	setPin(t, s, collectorapi.ScoreKindTag, "other:three", 1)
-	setOverride(t, s, collectorapi.ScoreKindTag, "other:single", collectorapi.ScoreRuleNeverHide)
+	setPin(t, s, collectorapi.ScoreKindTag, "other:single", 1000)
 	setBonus(t, s, float(2))
 
 	measured := measure(t, s, calculated.Candidate.ID)
@@ -100,19 +100,18 @@ func TestMeasurementFollowsPinsOverridesAndTheBonus(t *testing.T) {
 		Suggested       int
 		Recent          collectorapi.ScoreRecent
 		Pins            []collectorapi.ScorePin
-		Overrides       []collectorapi.ScoreOverride
 		AuthorBonus     *float64
 		FavoriteAuthors []collectorapi.ScoreFavoriteAuthor
 	}
 	measurementOf := func(preview collectorapi.ScorePreview) measurement {
 		return measurement{preview.Candidate.HeldOut, preview.Candidate.SuggestedThresholdTenths, preview.Recent,
-			preview.Pins, preview.Overrides, preview.AuthorBonus, preview.FavoriteAuthors}
+			preview.Pins, preview.AuthorBonus, preview.FavoriteAuthors}
 	}
 	got, want := measurementOf(measured), measurementOf(recalculated)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("measurement %+v, want %+v", got, want)
 	}
-	if got.Pins[0].ModelWeight == nil || got.HeldOut.NeverHidden != 1 || got.FavoriteAuthors[0].Weight == nil {
+	if got.Pins[0].ModelWeight == nil || got.HeldOut.Scores.FirstBucket+len(got.HeldOut.Scores.Counts)-1 != scoreWindowTenths || got.FavoriteAuthors[0].Weight == nil {
 		t.Fatalf("measurement %+v", got)
 	}
 }

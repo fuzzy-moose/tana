@@ -2,13 +2,11 @@ import { request } from '../api'
 import { collectorMessages } from '../collector/api'
 import type { SearchCompletion, TagSuggestion } from '../galleries/api'
 import type { PandaListing } from '../navigation'
-import type { ScoreRule, ScoreSource } from './score'
+import type { ScoreSource } from './score'
 
 /** A tag offered to a card, with its weight in the active Panda score model. */
 export interface PandaSummaryTag extends TagSuggestion {
   weight?: number
-  /** The rule of the tag's score override. */
-  override?: ScoreRule
   source?: ScoreSource
   /** The tag names a favorite author. */
   favorite_author?: boolean
@@ -42,15 +40,14 @@ export interface PandaScoreWeight {
 /** The score among the top quarter, or else the top half, of the held-out favorite scores. */
 export type ScoreGrade = 'top_quarter' | 'top_half'
 
-/** What the score filter knows about a gallery: its score, its strongest weights, its score grade and the rule that decides. */
+/** What the score filter knows about a gallery: its score, its strongest weights, its score grade and whether it is below the threshold. */
 export interface PandaGalleryScore {
   value?: number
   weights?: PandaScoreWeight[]
   /** The held-out favorite scores above this score; absent without any. */
   favorites_above?: number
   grade?: ScoreGrade
-  rule?: 'never_hide' | 'always_hide' | 'below_threshold'
-  override?: string
+  rule?: 'below_threshold'
 }
 
 /** Present while the score filter is in force. */

@@ -18,17 +18,13 @@ const RecentSampleSize = 2000
 // The histograms of a preview count scores from -1000.0 to 1000.0.
 const scoreWindowTenths = 10000
 
-// recent classes the newest RecentSampleSize galleries that pass the
-// predicate, in catalog order, by the first hiding rule that decides them: a
-// "never hide" override, an "always hide" override. The rest
-// are counted by score under the candidate, when candidateID is set, and under
-// the active model, when the filter has one.
+// recent counts the newest RecentSampleSize galleries that pass the
+// predicate, in catalog order, by score under the candidate, when candidateID
+// is set, and under the active model, when the filter has one.
 func (f scoreFilter) recent(ctx context.Context, tx pgx.Tx, predicate string, args pgdb.Args, categories []string, candidateID *int64) (collectorapi.ScoreRecent, error) {
 	var recent collectorapi.ScoreRecent
 	args = slices.Clone(args)
 	sample := catalogPageQuery(predicate, &args, categories, false, RecentSampleSize)
-	never := f.matches(collectorapi.ScoreRuleNeverHide, &args)
-	always := f.matches(collectorapi.ScoreRuleAlwaysHide, &args)
 	candidateTenths, activeTenths := "NULL::integer", "NULL::integer"
 	if candidateID != nil {
 		candidateTenths = windowTenths(f.scoreTenths(args.Add(*candidateID) + "::bigint"))
@@ -36,7 +32,7 @@ func (f scoreFilter) recent(ctx context.Context, tx pgx.Tx, predicate string, ar
 	if f.model != nil {
 		activeTenths = windowTenths(f.scoreTenths(args.Add(f.model.id) + "::bigint"))
 	}
-	rows, err := tx.Query(ctx, `SELECT `+never+`, `+always+`, `+candidateTenths+`, `+activeTenths+`
+	rows, err := tx.Query(ctx, `SELECT `+candidateTenths+`, `+activeTenths+`
 		FROM (`+sample+`) sample
 		JOIN catalog_galleries g ON g.gallery_id = sample.gallery_id`, args...)
 	if err != nil {
@@ -45,24 +41,16 @@ func (f scoreFilter) recent(ctx context.Context, tx pgx.Tx, predicate string, ar
 	defer rows.Close()
 	var candidateScores, activeScores []int
 	for rows.Next() {
-		var isNever, isAlways bool
 		var candidateScore, activeScore *int
-		if err := rows.Scan(&isNever, &isAlways, &candidateScore, &activeScore); err != nil {
+		if err := rows.Scan(&candidateScore, &activeScore); err != nil {
 			return recent, err
 		}
 		recent.Total++
-		switch {
-		case isNever:
-			recent.NeverHidden++
-		case isAlways:
-			recent.AlwaysHidden++
-		default:
-			if candidateScore != nil {
-				candidateScores = append(candidateScores, *candidateScore)
-			}
-			if activeScore != nil {
-				activeScores = append(activeScores, *activeScore)
-			}
+		if candidateScore != nil {
+			candidateScores = append(candidateScores, *candidateScore)
+		}
+		if activeScore != nil {
+			activeScores = append(activeScores, *activeScore)
 		}
 	}
 	if err := rows.Err(); err != nil {

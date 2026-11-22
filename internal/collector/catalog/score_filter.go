@@ -20,10 +20,9 @@ import (
 const scoreItemWeights = 5
 
 // scoreFilter is the state of the score filter read inside one List
-// transaction. It is in force when a model is active or at least one override
-// exists; pins and the author bonus alone never put it in force.
+// transaction. It is in force only while a model is active; pins and the
+// author bonus alone never put it in force.
 type scoreFilter struct {
-	overrides   []scoreOverride
 	pins        []scorePin
 	authorBonus *float64
 	model       *activeScoreModel
@@ -39,15 +38,6 @@ type activeScoreModel struct {
 }
 
 func readScoreFilter(ctx context.Context, tx pgx.Tx) (scoreFilter, error) {
-	overrides, err := scoreOverrides(ctx, tx)
-	if err != nil {
-		return scoreFilter{}, err
-	}
-	// Kind order tag, uploader, category, then label decides which override
-	// an item reports.
-	slices.SortFunc(overrides, func(a, b scoreOverride) int {
-		return cmp.Or(cmp.Compare(scoreKindOrder[a.Kind], scoreKindOrder[b.Kind]), strings.Compare(a.Label, b.Label))
-	})
 	pins, err := scorePins(ctx, tx)
 	if err != nil {
 		return scoreFilter{}, err
@@ -56,7 +46,7 @@ func readScoreFilter(ctx context.Context, tx pgx.Tx) (scoreFilter, error) {
 	if err != nil {
 		return scoreFilter{}, err
 	}
-	filter := scoreFilter{overrides: overrides, pins: pins, authorBonus: bonus}
+	filter := scoreFilter{pins: pins, authorBonus: bonus}
 	var model activeScoreModel
 	err = tx.QueryRow(ctx, `SELECT m.id, m.threshold_tenths, m.calculated_at, CASE WHEN s.model_id = m.id THEN s.scores END
 		FROM panda_score_models m LEFT JOIN panda_favorite_scores s ON s.id = 1
@@ -73,17 +63,13 @@ func readScoreFilter(ctx context.Context, tx pgx.Tx) (scoreFilter, error) {
 var scoreKindOrder = map[string]int{collectorapi.ScoreKindTag: 0, collectorapi.ScoreKindUploader: 1, collectorapi.ScoreKindCategory: 2}
 
 func (f scoreFilter) inForce() bool {
-	return len(f.overrides) > 0 || f.model != nil
+	return f.model != nil
 }
 
-// result describes the filter for a catalog page.
+// result describes the filter in force for a catalog page.
 func (f scoreFilter) result() *collectorapi.CatalogScoreFilter {
-	result := &collectorapi.CatalogScoreFilter{}
-	if f.model != nil {
-		threshold := f.model.thresholdTenths
-		result.ThresholdTenths = &threshold
-	}
-	return result
+	threshold := f.model.thresholdTenths
+	return &collectorapi.CatalogScoreFilter{ThresholdTenths: &threshold}
 }
 
 // scoreTenths returns floor(score * 10) of the gallery on alias g under the
@@ -182,68 +168,16 @@ func pinSQL(kind, key string) string {
 	return "(SELECT p.weight FROM panda_score_pins p WHERE p.kind = '" + kind + "' AND p.value = " + key + ")"
 }
 
-// belowThreshold returns the condition on alias g that the active model's
-// score is below its threshold.
-func (f scoreFilter) belowThreshold(args *pgdb.Args) string {
-	if f.model == nil {
-		return "false"
-	}
+// hidden returns the condition on alias g that the filter in force hides the
+// gallery: the active model's score is below its threshold. It probes the
+// candidate by key, so the ordered catalog scan stops at its limit.
+func (f scoreFilter) hidden(args *pgdb.Args) string {
 	return f.scoreTenths(args.Add(f.model.id)+"::bigint") + " < " + args.Add(f.model.thresholdTenths) + "::integer"
 }
 
-// hidden returns the condition on alias g that the filter hides the gallery,
-// by the first rule that matches: a "never hide" match shows it, an "always
-// hide" match hides it, a score below the threshold hides it. Each part probes
-// the candidate by key, so the ordered catalog scan stops at its limit.
-func (f scoreFilter) hidden(args *pgdb.Args) string {
-	never := f.matches(collectorapi.ScoreRuleNeverHide, args)
-	always := f.matches(collectorapi.ScoreRuleAlwaysHide, args)
-	below := f.belowThreshold(args)
-	return `NOT (` + never + `) AND (` + always + ` OR ` + below + `)`
-}
-
-// matches returns the condition that an override with the rule matches one of
-// the gallery's tags, its uploader or its category. Override values are never
-// empty, so an empty uploader or category matches none.
-func (f scoreFilter) matches(rule string, args *pgdb.Args) string {
-	var tagIDs []int64
-	var uploaders, categories []string
-	for _, override := range f.overrides {
-		if override.Rule != rule {
-			continue
-		}
-		switch override.Kind {
-		case collectorapi.ScoreKindTag:
-			tagIDs = append(tagIDs, override.TagID)
-		case collectorapi.ScoreKindUploader:
-			uploaders = append(uploaders, override.Label)
-		case collectorapi.ScoreKindCategory:
-			categories = append(categories, override.Label)
-		}
-	}
-	conditions := []string{}
-	if len(tagIDs) > 0 {
-		// A scalar probe; as EXISTS, a generic plan hashes every gallery that
-		// carries one of the tags, once for each category branch of a page.
-		conditions = append(conditions, `COALESCE((SELECT true FROM catalog_gallery_tags gt
-			WHERE gt.gallery_id = g.gallery_id AND gt.tag_id = ANY(`+args.Add(tagIDs)+`::bigint[]) LIMIT 1), false)`)
-	}
-	if len(uploaders) > 0 {
-		conditions = append(conditions, "g.uploader = ANY("+args.Add(uploaders)+"::text[])")
-	}
-	if len(categories) > 0 {
-		conditions = append(conditions, "g.category = ANY("+args.Add(categories)+"::text[])")
-	}
-	if len(conditions) == 0 {
-		return "false"
-	}
-	return "(" + strings.Join(conditions, " OR ") + ")"
-}
-
-// markScores sets Score on the page's items, never on every candidate: the
-// first of the "never hide", "always hide" and threshold rules that matches,
-// with the label of the deciding override, and
-// with an active model the item's score and its strongest weights.
+// markScores sets Score on the page's items while the filter is in force,
+// never on every candidate: the item's score, its strongest weights and the
+// threshold rule when the score is below the threshold.
 func (f scoreFilter) markScores(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogItem) error {
 	byID := make(map[int64]*collectorapi.CatalogItem, len(items))
 	ids := make([]int64, 0, len(items))
@@ -252,14 +186,9 @@ func (f scoreFilter) markScores(ctx context.Context, tx pgx.Tx, items []collecto
 		ids = append(ids, items[i].GalleryID)
 	}
 	args := pgdb.Args{ids}
-	value, below := "NULL::float8", "false"
-	if f.model != nil {
-		value = f.scoreSum(args.Add(f.model.id) + "::bigint")
-		below = f.belowThreshold(&args)
-	}
-	rows, err := tx.Query(ctx, `SELECT g.gallery_id, g.uploader, g.category,
-			ARRAY(SELECT gt.tag_id FROM catalog_gallery_tags gt WHERE gt.gallery_id = g.gallery_id),
-			`+value+`, `+below+`
+	value := f.scoreSum(args.Add(f.model.id) + "::bigint")
+	below := f.hidden(&args)
+	rows, err := tx.Query(ctx, `SELECT g.gallery_id, `+value+`, `+below+`
 		FROM catalog_galleries g WHERE g.gallery_id = ANY($1::bigint[])`, args...)
 	if err != nil {
 		return err
@@ -267,28 +196,19 @@ func (f scoreFilter) markScores(ctx context.Context, tx pgx.Tx, items []collecto
 	defer rows.Close()
 	for rows.Next() {
 		var id int64
-		var uploader, category string
-		var tagIDs []int64
-		var score *float64
+		var score float64
 		var isBelow bool
-		if err := rows.Scan(&id, &uploader, &category, &tagIDs, &score, &isBelow); err != nil {
+		if err := rows.Scan(&id, &score, &isBelow); err != nil {
 			return err
 		}
-		itemScore := &collectorapi.CatalogItemScore{Value: score}
-		if override, ok := f.decidingOverride(uploader, category, tagIDs); ok {
-			itemScore.Rule, itemScore.Override = override.Rule, override.Label
-		} else if isBelow {
+		itemScore := &collectorapi.CatalogItemScore{Value: &score}
+		if isBelow {
 			itemScore.Rule = collectorapi.ScoreRuleBelowThreshold
 		}
-		if itemScore.Rule != "" || itemScore.Value != nil {
-			byID[id].Score = itemScore
-		}
+		byID[id].Score = itemScore
 	}
 	if err := rows.Err(); err != nil {
 		return err
-	}
-	if f.model == nil {
-		return nil
 	}
 	return f.markWeights(ctx, tx, byID, ids)
 }
@@ -342,29 +262,6 @@ func (f scoreFilter) markWeights(ctx context.Context, tx pgx.Tx, byID map[int64]
 		item.Score.Weights = item.Score.Weights[:min(len(item.Score.Weights), scoreItemWeights)]
 	}
 	return nil
-}
-
-func (f scoreFilter) decidingOverride(uploader, category string, tagIDs []int64) (scoreOverride, bool) {
-	for _, rule := range []string{collectorapi.ScoreRuleNeverHide, collectorapi.ScoreRuleAlwaysHide} {
-		for _, override := range f.overrides {
-			if override.Rule != rule {
-				continue
-			}
-			var match bool
-			switch override.Kind {
-			case collectorapi.ScoreKindTag:
-				match = slices.Contains(tagIDs, override.TagID)
-			case collectorapi.ScoreKindUploader:
-				match = uploader != "" && override.Label == uploader
-			case collectorapi.ScoreKindCategory:
-				match = category != "" && override.Label == category
-			}
-			if match {
-				return override, true
-			}
-		}
-	}
-	return scoreOverride{}, false
 }
 
 // hasHiddenUnseen reports whether at least one gallery that passes the

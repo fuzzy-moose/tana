@@ -13,13 +13,13 @@ const fetchMock = vi.fn<typeof fetch>()
 const completionsMock = vi.fn<typeof fetch>()
 const completionsPath = '/api/collector/catalog/completions'
 
-function weight(index: number, overrides: Partial<ScoreWeight> = {}): ScoreWeight {
-  return { kind: 'tag', label: `tag:value ${index}`, weight: 0.1, favorites: 3, catalog: 40, active_weight: null, ...overrides }
+function weight(index: number, fields: Partial<ScoreWeight> = {}): ScoreWeight {
+  return { kind: 'tag', label: `tag:value ${index}`, weight: 0.1, favorites: 3, catalog: 40, active_weight: null, ...fields }
 }
 
-function preview(overrides: Partial<ScorePreview> = {}): ScorePreview {
+function preview(fields: Partial<ScorePreview> = {}): ScorePreview {
   const histogram = { first_bucket: 0, counts: [] }
-  const heldOut = { total: 0, always_hidden: 0, never_hidden: 0, scores: histogram }
+  const heldOut = { total: 0, scores: histogram }
   return {
     evidence: { favorites: 1234, favorites_synced_at: null, new_favorites: 12, few_favorites: false },
     candidate: {
@@ -32,13 +32,12 @@ function preview(overrides: Partial<ScorePreview> = {}): ScorePreview {
       held_out: heldOut,
     },
     active: { calculated_at: '2026-10-01T10:00:00Z', threshold_tenths: -5 },
-    overrides: [],
     pins: [],
     author_bonus: null,
     favorite_author_count: 0,
     favorite_authors: [],
-    recent: { total: 0, never_hidden: 0, always_hidden: 0, candidate: histogram, active: histogram },
-    ...overrides,
+    recent: { total: 0, candidate: histogram, active: histogram },
+    ...fields,
   }
 }
 
@@ -56,7 +55,7 @@ const measure7 = '{"candidate_id":7}'
 /** Waits for the first preview, which shows the tabs. */
 const loaded = () => screen.findByRole('tablist')
 
-/** The accessible name of a tab in jsdom: Radix Themes repeats the label in a span that only its CSS hides. */
+/** The text of a tab or a segmented control item in jsdom: Radix Themes repeats the label in a span that only its CSS hides. */
 const tabName = (name: string) => `${name}${name}`
 
 /** Opens a tab that is not open, as the press of a mouse button does, and answers its panel. The open tab keeps the focus where it is. */
@@ -108,7 +107,7 @@ test('calculates on visit and shows the evidence, the active model and the weigh
   expect(calculated.textContent).toBe(`Calculated ${calculated.querySelector('time')?.textContent}, threshold 1.5.`)
   expect(screen.getByText('3 of 3,100 weights, strongest first.')).toBeTruthy()
   expect(within(weightsPanel().getByRole('table')).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(
-    ['Tag, uploader or category', 'Weight', 'Favorites', 'Catalog', 'Active weight', 'Override', 'Pin'])
+    ['Tag, uploader or category', 'Weight', 'Favorites', 'Catalog', 'Active weight', 'Pin'])
   expect(rows()).toEqual([
     ['female:glasses', '+1.42', '31', '1,200', '+1.10'],
     ['Uploader Some uploader', '+0.50', '9', '85', '–'],
@@ -139,7 +138,7 @@ test('opens on the weights tab and lists every weight of the preview', async () 
   render(<App />)
   await loaded()
   expect(screen.getAllByRole('tab').map((item) => [item.textContent, item.getAttribute('aria-selected')])).toEqual(
-    [['Weights', 'true'], ['Pins and overrides', 'false'], ['Favorite authors', 'false'], ['Model', 'false']].map(([name, selected]) => [tabName(name), selected]))
+    [['Weights', 'true'], ['Pins', 'false'], ['Favorite authors', 'false'], ['Model', 'false']].map(([name, selected]) => [tabName(name), selected]))
   expect(screen.getByText('120 of 3,100 weights, strongest first.')).toBeTruthy()
   expect(rows()).toHaveLength(120)
   expect(rows()[119][0]).toBe('tag:value 119')
@@ -157,7 +156,10 @@ async function typeFilter(input: HTMLInputElement, text: string) {
 
 test('the weights filter searches every weight of the preview by its label, ignoring case and spaces around the text', async () => {
   const weights = Array.from({ length: 120 }, (_, index) => weight(index))
-  respond(Response.json(preview({ candidate: { ...preview().candidate!, weights } })), noContent(), Response.json(preview({ candidate: { ...preview().candidate!, weight_count: 3 } })))
+  respond(
+    Response.json(preview({ candidate: { ...preview().candidate!, weights } })),
+    Response.json({ id: 1, kind: 'tag', label: 'tag:value 0', weight: 0 }), Response.json(preview({ candidate: { ...preview().candidate!, weight_count: 3 } })),
+  )
   render(<App />)
   await screen.findByText('120 of 3,100 weights, strongest first.')
   expect(filterWeights().placeholder).toBe('Filter, or type a tag as namespace:value')
@@ -170,7 +172,7 @@ test('the weights filter searches every weight of the preview by its label, igno
   await typeFilter(filterWeights(), '   ')
   expect(screen.getByText('120 of 3,100 weights, strongest first.')).toBeTruthy()
 
-  await userEvent.click(weightRow('tag:value 0').getByRole('button', { name: 'Always hide' }))
+  await userEvent.click(button(weightRow('tag:value 0'), 'Ignore'))
   await screen.findByText('3 of 3 weights, strongest first.')
   await typeFilter(filterWeights(), 'uploader')
   expect(rows().map(([label]) => label)).toEqual(['Uploader Some uploader'])
@@ -179,14 +181,10 @@ test('the weights filter searches every weight of the preview by its label, igno
   expect(screen.getByText('No weights match.')).toBeTruthy()
 })
 
-test('the weights filter stays after a pin change, an override change and a change of tab', async () => {
+test('the weights filter stays after a pin change and a change of tab', async () => {
   const body = preview()
   const pin: ScorePin = { id: 9, kind: 'tag', label: 'female:glasses', weight: 1 }
-  respond(
-    Response.json(body),
-    Response.json(pin), Response.json({ ...body, pins: [pin] }),
-    noContent(), Response.json({ ...body, pins: [pin], overrides: [glassesHidden] }),
-  )
+  respond(Response.json(body), Response.json(pin), Response.json({ ...body, pins: [pin] }))
   render(<App />)
   await loaded()
   await typeFilter(filterWeights(), 'glasses')
@@ -195,13 +193,10 @@ test('the weights filter stays after a pin change, an override change and a chan
   await waitFor(() => expect(previewBodies()).toHaveLength(2))
   await waitFor(() => expect(listedPins()).toEqual(['female:glasses 1']))
   expect(filterWeights().value).toBe('glasses')
-  await userEvent.click(button(weightRow('female:glasses'), 'Always hide'))
-  await overridesSection().findByText('Always hide female:glasses')
-  expect(filterWeights().value).toBe('glasses')
   expect(rows().map(([label]) => label)).toEqual(['female:glasses'])
 })
 
-test('a typed tag that no listed weight has gets a row that pins or overrides it in its saved spelling', async () => {
+test('a typed tag that no listed weight has gets a row that pins it in its saved spelling', async () => {
   const unlisted: ScorePin = { id: 9, kind: 'tag', label: 'artist:some artist', weight: 2 }
   respond(Response.json(preview()), Response.json(unlisted))
   fetchMock.mockReturnValueOnce(new Promise(() => {}))
@@ -210,6 +205,8 @@ test('a typed tag that no listed weight has gets a row that pins or overrides it
   await typeFilter(filterWeights(), ' A:Some_Artist ')
   expect(screen.getByText(/^No listed weight has this tag\./)).toBeTruthy()
   expect(rows()).toEqual([['artist:some artist', '–', '–', '–', '–']])
+  expect(weightRow('artist:some artist').getByRole('button', { name: 'Ignore' })).toBeTruthy()
+  expect(weightRow('artist:some artist').queryByRole('button', { name: 'Remove pin' })).toBeNull()
   await userEvent.type(pinField('artist:some artist'), '2{Enter}')
   await waitFor(() => expect(listedPins()).toEqual(['artist:some artist 2']))
   expect(weightRow('artist:some artist').getByRole('button', { name: 'Remove pin' })).toBeTruthy()
@@ -225,18 +222,6 @@ test('a typed tag that no listed weight has gets a row that pins or overrides it
   expect(changeCalls()).toEqual([['/api/collector/catalog/score/pins', 'POST', '{"kind":"tag","value":"artist:some artist","weight":2}']])
 })
 
-test('the row of a typed tag shows its override and removes it', async () => {
-  const hidden = { id: 6, kind: 'tag', label: 'artist:someone', rule: 'always_hide' } as const
-  respond(Response.json(preview({ overrides: [hidden] })), noContent(), Response.json(preview()))
-  render(<App />)
-  await loaded()
-  await typeFilter(filterWeights(), 'artist:someone')
-  expect(pressed('artist:someone', 'Always hide')).toBe('true')
-  await userEvent.click(weightRow('artist:someone').getByRole('button', { name: 'Always hide' }))
-  await overridesSection().findByText('No overrides.')
-  expect(changeCalls()).toEqual([['/api/collector/catalog/score/overrides/6', 'DELETE', undefined]])
-})
-
 const fewFavorites = 'Fewer than 50 favorites are in scope. Weights and the measurement from so little evidence are unreliable.'
 
 test('warns about few favorites and still shows the table', async () => {
@@ -247,10 +232,10 @@ test('warns about few favorites and still shows the table', async () => {
   expect(weightsPanel().getByRole('table')).toBeTruthy()
 })
 
-test('without a favorite in scope says that no model is possible and keeps the active model, overrides, pins and authors', async () => {
+test('without a favorite in scope says that no model is possible and keeps the active model, pins and authors', async () => {
   respond(Response.json(preview({
     candidate: null, no_model: 'no_favorites', evidence: { ...preview().evidence, favorites: 0, few_favorites: true },
-    overrides: [glassesHidden], pins: [glassesPin], favorite_author_count: 1, favorite_authors: [author(0)],
+    pins: [glassesPin], favorite_author_count: 1, favorite_authors: [author(0)],
   })))
   render(<App />)
   await loaded()
@@ -261,7 +246,6 @@ test('without a favorite in scope says that no model is possible and keeps the a
   expect(screen.queryByText(fewFavorites)).toBeNull()
   expect(activeModel().getByText(/threshold -0\.5/)).toBeTruthy()
   expect(field('Active threshold').value).toBe('-0.5')
-  expect(listedOverrides()).toEqual(['Always hide female:glasses'])
   expect(listedPins()).toEqual(['female:glasses 2'])
   expect(listedAuthors()).toEqual([['artist:author 0', '2 favorites', '–']])
 })
@@ -312,18 +296,18 @@ function histogram(firstBucket: number, counts: Record<number, number>) {
 
 // At -0.8: held-out favorites 10 %, recent 8 %. At -0.5: 15, 18 %. At -0.2: 25, 38 %.
 // The active histogram hides 18 % at -0.8, 33 % at -0.5 and 48 % at -0.2.
-function measured(overrides: Partial<ScorePreview> = {}): ScorePreview {
+function measured(fields: Partial<ScorePreview> = {}): ScorePreview {
   return preview({
     candidate: {
       ...preview().candidate!,
-      held_out: { total: 20, always_hidden: 1, never_hidden: 1, scores: histogram(-9, { [-9]: 1, [-6]: 1, [-3]: 2, 0: 14 }) },
+      held_out: { total: 20, scores: histogram(-9, { [-9]: 2, [-6]: 1, [-3]: 2, 0: 15 }) },
     },
     recent: {
-      total: 200, never_hidden: 1, always_hidden: 6,
-      candidate: histogram(-9, { [-9]: 10, [-6]: 20, [-3]: 40, 0: 120 }),
-      active: histogram(-9, { [-9]: 30, [-6]: 30, [-3]: 30, 0: 100 }),
+      total: 200,
+      candidate: histogram(-9, { [-9]: 16, [-6]: 20, [-3]: 40, 0: 124 }),
+      active: histogram(-9, { [-9]: 36, [-6]: 30, [-3]: 30, 0: 104 }),
     },
-    ...overrides,
+    ...fields,
   })
 }
 
@@ -334,9 +318,9 @@ function recalculated(): ScorePreview {
     ...base,
     candidate: {
       ...base.candidate!, id: 9, suggested_threshold_tenths: -3,
-      held_out: { total: 10, always_hidden: 0, never_hidden: 0, scores: histogram(-4, { [-4]: 1, 0: 9 }) },
+      held_out: { total: 10, scores: histogram(-4, { [-4]: 1, 0: 9 }) },
     },
-    recent: { ...base.recent, candidate: histogram(-4, { [-4]: 50, 0: 150 }) },
+    recent: { ...base.recent, candidate: histogram(-4, { [-4]: 56, 0: 144 }) },
   }
 }
 
@@ -388,7 +372,7 @@ test('with an active model the threshold starts at the active threshold and foll
   expect(fetchMock).toHaveBeenCalledTimes(1)
 })
 
-test('without an active model or overrides nothing is hidden now and the field starts at the suggested threshold', async () => {
+test('without an active model nothing is hidden now and the field starts at the suggested threshold', async () => {
   respond(Response.json(measured({ active: null, recent: { ...measured().recent, active: null } })))
   render(<App />)
   await loaded()
@@ -402,13 +386,13 @@ test('without an active model or overrides nothing is hidden now and the field s
 
 test('the entered threshold stays across a new calculation and applies the candidate on screen', async () => {
   respond(
-    Response.json(measured()), noContent(), Response.json({ ...recalculated(), overrides: [glassesHidden] }),
+    Response.json(measured()), Response.json({ ...glassesPin, weight: 0 }), Response.json(recalculated()),
     noContent(), Response.json(measured({ active: { ...measured().active!, threshold_tenths: -2 } })),
   )
   render(<App />)
   await loaded()
   await enter('Threshold', '-0.2')
-  await userEvent.click(weightRow('female:glasses').getByRole('button', { name: 'Always hide' }))
+  await userEvent.click(button(weightRow('female:glasses'), 'Ignore'))
   await newModel().findByText(suggested('-0.3'))
   expect(field('Threshold').value).toBe('-0.2')
   expectEffect(10, 28, 33)
@@ -436,7 +420,7 @@ test('after a successful change both fields start again from the next preview', 
 
   await userEvent.click(tab('Model').getByRole('button', { name: 'Turn off' }))
   const dialog = await screen.findByRole('alertdialog')
-  expect(dialog.textContent).toContain("Turn off the score model?The model is deleted and can't be restored. Overrides keep working.")
+  expect(dialog.textContent).toContain("Turn off the score model?The model is deleted and can't be restored. The listing then hides nothing by score.")
   expect(changeCalls()).toHaveLength(1)
   await userEvent.click(within(dialog).getByRole('button', { name: 'Turn off' }))
   await activeModel().findByText('No model is active.')
@@ -503,26 +487,26 @@ test('failures to save the threshold or turn off the model show a message and re
 test('a calculation in progress and a change in progress lock each other out', async () => {
   let finishPreview!: (response: Response) => void
   let finishChange!: (response: Response) => void
-  respond(Response.json(measured()), noContent())
+  respond(Response.json(measured()), Response.json({ ...glassesPin, weight: 0 }))
   fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishPreview = resolve }))
   render(<App />)
   await loaded()
-  const hide = () => weightRow('female:glasses').getByRole('button', { name: 'Always hide' }) as HTMLButtonElement
+  const ignore = () => button(weightRow('female:glasses'), 'Ignore')
   const save = () => tab('Model').getByRole('button', { name: 'Save threshold' }) as HTMLButtonElement
   const turnOff = () => tab('Model').getByRole('button', { name: 'Turn off' }) as HTMLButtonElement
 
-  await userEvent.click(hide())
+  await userEvent.click(ignore())
   await waitFor(() => expect(previewBodies()).toHaveLength(2))
   expect(save().disabled).toBe(true)
   expect(turnOff().disabled).toBe(true)
-  finishPreview(Response.json({ ...recalculated(), overrides: [glassesHidden] }))
+  finishPreview(Response.json(recalculated()))
   await newModel().findByText(suggested('-0.3'))
   expect(save().disabled).toBe(false)
 
   fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishChange = resolve }))
-  respond(Response.json({ ...recalculated(), overrides: [glassesHidden] }))
+  respond(Response.json(recalculated()))
   await userEvent.click(save())
-  expect(hide().disabled).toBe(true)
+  expect(ignore().disabled).toBe(true)
   finishChange(noContent())
   await activeModel().findByText('Threshold saved.')
   await waitFor(() => expect(previewBodies()).toEqual(['{}', measure7, '{}']))
@@ -530,10 +514,10 @@ test('a calculation in progress and a change in progress lock each other out', a
 
 test('Retry waits for a change in progress', async () => {
   let finishChange!: (response: Response) => void
-  respond(Response.json(measured()), noContent(), Response.json({ error: 'collector_unavailable' }, { status: 502 }))
+  respond(Response.json(measured()), Response.json({ ...glassesPin, weight: 0 }), Response.json({ error: 'collector_unavailable' }, { status: 502 }))
   render(<App />)
   await loaded()
-  await userEvent.click(weightRow('female:glasses').getByRole('button', { name: 'Always hide' }))
+  await userEvent.click(button(weightRow('female:glasses'), 'Ignore'))
   const retry = within(await screen.findByRole('alert')).getByRole('button', { name: 'Retry' }) as HTMLButtonElement
   expect(retry.disabled).toBe(false)
   fetchMock.mockReturnValueOnce(new Promise((resolve) => { finishChange = resolve }))
@@ -545,124 +529,32 @@ test('Retry waits for a change in progress', async () => {
   await waitFor(() => expect(previewBodies()).toEqual(['{}', measure7, '{}']))
 })
 
-function overridesSection() {
-  return region('Pins and overrides', 'Overrides')
-}
-
-function listedOverrides() {
-  const list = overridesSection().queryByRole('list')
-  return list ? within(list).getAllByRole('listitem').map((item) => item.querySelector('[data-override-label]')?.textContent) : []
-}
-
 function weightRow(label: string) {
   return within(within(weightsPanel().getByRole('table')).getByText(label).closest('tr')!)
 }
 
-function pressed(label: string, rule: 'Always hide' | 'Never hide') {
-  return weightRow(label).getByRole('button', { name: rule }).getAttribute('aria-pressed')
+function pinForm() {
+  return within(screen.getByRole('form', { name: 'Add pin' }))
 }
 
-const glassesHidden = { id: 4, kind: 'tag', label: 'female:glasses', rule: 'always_hide' } as const
+const formTag = () => pinForm().getByRole('combobox', { name: 'Tag' }) as HTMLInputElement
+const formWeight = () => pinForm().getByRole('spinbutton', { name: 'Weight' }) as HTMLInputElement
+const formAdd = () => button(pinForm(), 'Add')
 
-test('lists the overrides also without a candidate or an active model', async () => {
-  respond(Response.json(preview({
-    candidate: null, no_model: 'no_favorites', active: null,
-    overrides: [glassesHidden, { id: 5, kind: 'uploader', label: 'Some uploader', rule: 'never_hide' }, { id: 6, kind: 'category', label: 'Cosplay', rule: 'always_hide' }],
-  })))
-  render(<App />)
-  await loaded()
-  expect(listedOverrides()).toEqual(['Always hide female:glasses', 'Never hide Uploader Some uploader', 'Always hide Category Cosplay'])
-  expect(overridesSection().getAllByRole('button', { name: 'Remove' })).toHaveLength(3)
-})
-
-test('an empty list of overrides says so', async () => {
-  respond(Response.json(preview()))
-  render(<App />)
-  await loaded()
-  expect(overridesSection().getByText('No overrides.')).toBeTruthy()
-  expect(listedOverrides()).toEqual([])
-})
-
-test('a row button saves an override, measures the candidate again and shows it pressed and listed', async () => {
-  respond(Response.json(preview()), noContent(), Response.json(preview({ overrides: [glassesHidden] })))
-  render(<App />)
-  await loaded()
-  expect(pressed('female:glasses', 'Always hide')).toBe('false')
-  await userEvent.click(weightRow('female:glasses').getByRole('button', { name: 'Always hide' }))
-  await overridesSection().findByText('Always hide female:glasses')
-  expect(changeCalls()).toEqual([['/api/collector/catalog/score/overrides', 'POST', '{"kind":"tag","value":"female:glasses","rule":"always_hide"}']])
-  expect(previewBodies()).toEqual(['{}', measure7])
-  expect(pressed('female:glasses', 'Always hide')).toBe('true')
-  expect(pressed('female:glasses', 'Never hide')).toBe('false')
-})
-
-test('an override change keeps the entered threshold and follows a candidate that the measurement replaced', async () => {
-  respond(Response.json(measured()), noContent(), Response.json({ ...recalculated(), overrides: [glassesHidden] }))
-  render(<App />)
-  await loaded()
-  await enter('Threshold', '-0.2')
-  await userEvent.click(weightRow('female:glasses').getByRole('button', { name: 'Always hide' }))
-  await newModel().findByText(suggested('-0.3'))
-  expect(field('Threshold').value).toBe('-0.2')
-  expect(field('Active threshold').value).toBe('-0.5')
-  expectEffect(10, 28, 33)
-  expect(previewBodies()).toEqual(['{}', measure7])
-})
-
-test('a click on a pressed row button removes the override', async () => {
-  respond(Response.json(preview({ overrides: [glassesHidden] })), noContent(), Response.json(preview()))
-  render(<App />)
-  await loaded()
-  await userEvent.click(weightRow('female:glasses').getByRole('button', { name: 'Always hide' }))
-  await overridesSection().findByText('No overrides.')
-  expect(changeCalls()).toEqual([['/api/collector/catalog/score/overrides/4', 'DELETE', undefined]])
-  expect(previewBodies()).toHaveLength(2)
-  expect(pressed('female:glasses', 'Always hide')).toBe('false')
-})
-
-test('the other rule on a row replaces the override without removing it', async () => {
-  respond(Response.json(preview({ overrides: [glassesHidden] })), noContent(), Response.json(preview({ overrides: [{ ...glassesHidden, rule: 'never_hide' }] })))
-  render(<App />)
-  await loaded()
-  await userEvent.click(weightRow('female:glasses').getByRole('button', { name: 'Never hide' }))
-  await overridesSection().findByText('Never hide female:glasses')
-  expect(changeCalls()).toEqual([['/api/collector/catalog/score/overrides', 'POST', '{"kind":"tag","value":"female:glasses","rule":"never_hide"}']])
-  expect(pressed('female:glasses', 'Never hide')).toBe('true')
-  expect(pressed('female:glasses', 'Always hide')).toBe('false')
-})
-
-test('Remove in the list removes that override', async () => {
-  const uploader = { id: 5, kind: 'uploader', label: 'Some uploader', rule: 'never_hide' } as const
-  respond(Response.json(preview({ overrides: [glassesHidden, uploader] })), noContent(), Response.json(preview({ overrides: [glassesHidden] })))
-  render(<App />)
-  await loaded()
-  const item = within(overridesSection().getByText('Never hide Uploader Some uploader').closest('li')!)
-  await userEvent.click(item.getByRole('button', { name: 'Remove' }))
-  await waitFor(() => expect(listedOverrides()).toEqual(['Always hide female:glasses']))
-  expect(changeCalls()).toEqual([['/api/collector/catalog/score/overrides/5', 'DELETE', undefined]])
-  expect(previewBodies()).toEqual(['{}', measure7])
-})
-
-function pinOrOverrideForm() {
-  return within(screen.getByRole('form', { name: 'Add pin or override' }))
-}
-
-const formTag = () => pinOrOverrideForm().getByRole('combobox', { name: 'Tag' }) as HTMLInputElement
-const formWeight = () => pinOrOverrideForm().getByRole('spinbutton', { name: 'Weight' }) as HTMLInputElement
-const formAdd = () => button(pinOrOverrideForm(), 'Add')
-
-test('the pin or override form pins, ignores or overrides a tag, an uploader or a category, also without a candidate or an active model', async () => {
+test('the pin form pins or ignores a tag, an uploader or a category, also without a candidate or an active model', async () => {
   const otherPin: ScorePin = { id: 8, kind: 'tag', label: 'other:tag', weight: 1.5 }
   const someonePin: ScorePin = { id: 9, kind: 'uploader', label: 'Someone', weight: 0 }
+  const cosplayPin: ScorePin = { id: 10, kind: 'category', label: 'Cosplay', weight: -2 }
   const empty = preview({ candidate: null, no_model: 'no_favorites', active: null })
   respond(
     Response.json(empty),
     Response.json(otherPin), Response.json({ ...empty, pins: [otherPin] }),
     Response.json(someonePin), Response.json({ ...empty, pins: [otherPin, someonePin] }),
-    noContent(), Response.json({ ...empty, pins: [otherPin, someonePin] }),
+    Response.json(cosplayPin), Response.json({ ...empty, pins: [otherPin, someonePin, cosplayPin] }),
   )
   render(<App />)
   await loaded()
+  expect(within(pinForm().getByRole('radiogroup', { name: 'Action' })).getAllByRole('radio').map((item) => item.textContent)).toEqual(['Pin', 'Ignore'].map(tabName))
   expect(formWeight().step).toBe('any')
   expect(formAdd().disabled).toBe(true)
   await userEvent.type(formTag(), '   ')
@@ -677,53 +569,55 @@ test('the pin or override form pins, ignores or overrides a tag, an uploader or 
   expect(formTag().value).toBe('')
   expect(formWeight().value).toBe('')
 
-  await userEvent.click(pinOrOverrideForm().getByRole('radio', { name: 'Uploader' }))
-  await userEvent.click(pinOrOverrideForm().getByRole('radio', { name: 'Ignore' }))
-  expect(pinOrOverrideForm().queryByRole('spinbutton', { name: 'Weight' })).toBeNull()
-  await userEvent.type(pinOrOverrideForm().getByRole('textbox', { name: 'Uploader' }), ' Someone ')
+  await userEvent.click(pinForm().getByRole('radio', { name: 'Uploader' }))
+  await userEvent.click(pinForm().getByRole('radio', { name: 'Ignore' }))
+  expect(pinForm().queryByRole('spinbutton', { name: 'Weight' })).toBeNull()
+  await userEvent.type(pinForm().getByRole('textbox', { name: 'Uploader' }), ' Someone ')
   await userEvent.click(formAdd())
   await waitFor(() => expect(listedPins()).toEqual(['other:tag 1.5', 'Uploader Someone 0']))
 
-  await userEvent.click(pinOrOverrideForm().getByRole('radio', { name: 'Category' }))
-  await userEvent.click(pinOrOverrideForm().getByRole('radio', { name: 'Never hide' }))
-  expect(pinOrOverrideForm().queryByRole('textbox')).toBeNull()
-  await userEvent.selectOptions(pinOrOverrideForm().getByRole('combobox', { name: 'Category' }), 'Cosplay')
+  await userEvent.click(pinForm().getByRole('radio', { name: 'Category' }))
+  await userEvent.click(pinForm().getByRole('radio', { name: 'Pin' }))
+  expect(pinForm().queryByRole('textbox')).toBeNull()
+  await userEvent.selectOptions(pinForm().getByRole('combobox', { name: 'Category' }), 'Cosplay')
+  await userEvent.type(formWeight(), '-2')
   await userEvent.click(formAdd())
+  await waitFor(() => expect(listedPins()).toEqual(['other:tag 1.5', 'Uploader Someone 0', 'Category Cosplay -2']))
   await waitFor(() => expect(previewBodies()).toHaveLength(4))
   expect(changeCalls()).toEqual([
     ['/api/collector/catalog/score/pins', 'POST', '{"kind":"tag","value":"other:tag","weight":1.5}'],
     ['/api/collector/catalog/score/pins', 'POST', '{"kind":"uploader","value":"Someone","weight":0}'],
-    ['/api/collector/catalog/score/overrides', 'POST', '{"kind":"category","value":"Cosplay","rule":"never_hide"}'],
+    ['/api/collector/catalog/score/pins', 'POST', '{"kind":"category","value":"Cosplay","weight":-2}'],
   ])
   expect(previewBodies()).toEqual(['{}', '{}', '{}', '{}'])
 })
 
-test('a failed change from the pin or override form shows its message in the form, keeps the fields and calculates nothing', async () => {
+test('a failed change from the pin form shows its message in the form, keeps the fields and calculates nothing', async () => {
   respond(
-    Response.json(preview({ overrides: [glassesHidden] })),
+    Response.json(preview()),
     Response.json({ error: 'tag_not_found' }, { status: 404 }),
     Response.json({ error: 'collector_unavailable' }, { status: 502 }),
   )
   render(<App />)
   await loaded()
-  await userEvent.click(pinOrOverrideForm().getByRole('radio', { name: 'Always hide' }))
   await userEvent.type(formTag(), 'no:such tag')
+  await userEvent.type(formWeight(), '1')
   await userEvent.click(formAdd())
-  expect((await pinOrOverrideForm().findByRole('alert')).textContent).toBe('Could not change the override. No gallery in the Panda catalog has this tag.')
+  expect((await pinForm().findByRole('alert')).textContent).toBe('Could not change the pin. No gallery in the Panda catalog has this tag.')
   expect(formTag().value).toBe('no:such tag')
-  expect(listedOverrides()).toEqual(['Always hide female:glasses'])
+  expect(formWeight().value).toBe('1')
+  expect(listedPins()).toEqual([])
   expect(previewBodies()).toHaveLength(1)
 
-  await userEvent.click(weightRow('Uploader Some uploader').getByRole('button', { name: 'Never hide' }))
-  expect((await weightsPanel().findByRole('alert')).textContent).toMatch(/^Could not change the override\. The request could not be confirmed\./)
-  expect(pinOrOverrideForm().queryByRole('alert')).toBeNull()
-  expect(pressed('Uploader Some uploader', 'Never hide')).toBe('false')
-  expect(listedOverrides()).toEqual(['Always hide female:glasses'])
+  await userEvent.click(button(weightRow('Uploader Some uploader'), 'Ignore'))
+  expect((await weightsPanel().findByRole('alert')).textContent).toMatch(/^Could not change the pin\. The request could not be confirmed\./)
+  expect(pinForm().queryByRole('alert')).toBeNull()
+  expect(listedPins()).toEqual([])
   expect(previewBodies()).toHaveLength(1)
 })
 
 function pinsSection() {
-  return region('Pins and overrides', 'Pinned weights')
+  return region('Pins', 'Pinned weights')
 }
 
 function listedPins() {
@@ -963,10 +857,11 @@ test('a row of the list saves nothing on leaving the field, for the same number,
 })
 
 test('a recalculation keeps the text typed in a pin field until that pin gets another weight', async () => {
+  const doujinshiPin: ScorePin = { id: 6, kind: 'category', label: 'Doujinshi', weight: 0 }
   respond(
     Response.json(preview({ pins: [glassesPin, uploaderPin] })),
-    noContent(), Response.json(preview({ overrides: [glassesHidden], pins: [{ ...glassesPin }, { ...uploaderPin }] })),
-    noContent(), Response.json(preview({ pins: [{ ...glassesPin, weight: 4 }, { ...uploaderPin, weight: 5 }] })),
+    Response.json(doujinshiPin), Response.json(preview({ pins: [{ ...glassesPin }, { ...uploaderPin }, doujinshiPin] })),
+    Response.json(doujinshiPin), Response.json(preview({ pins: [{ ...glassesPin, weight: 4 }, { ...uploaderPin, weight: 5 }, doujinshiPin] })),
   )
   render(<App />)
   await loaded()
@@ -974,13 +869,13 @@ test('a recalculation keeps the text typed in a pin field until that pin gets an
   await userEvent.type(listField('female:glasses'), '7')
   await userEvent.clear(pinField('Uploader Some uploader'))
   await userEvent.type(pinField('Uploader Some uploader'), '9')
-  const hide = () => weightRow('female:glasses').getByRole('button', { name: 'Always hide' })
-  await userEvent.click(hide())
-  await waitFor(() => expect(hide().getAttribute('aria-pressed')).toBe('true'))
+  const ignore = () => button(weightRow('Category Doujinshi'), 'Ignore')
+  await userEvent.click(ignore())
+  await waitFor(() => expect(previewBodies()).toHaveLength(2))
+  await waitFor(() => expect(button(newModel(), 'Apply model and threshold').disabled).toBe(false))
   expect(listField('female:glasses').value).toBe('7')
   expect(pinField('Uploader Some uploader').value).toBe('9')
-  await waitFor(() => expect(hide().hasAttribute('disabled')).toBe(false))
-  await userEvent.click(hide())
+  await userEvent.click(ignore())
   await waitFor(() => expect(listField('female:glasses').value).toBe('4'))
   expect(pinField('Uploader Some uploader').value).toBe('5')
 })
@@ -1051,7 +946,7 @@ const longTags = { start: 0, end: 6, items: [
   { namespace: 'female', value: 'long gloves', term: 'female:"long gloves$"' },
 ] }
 
-test('the tag field of the pin or override form completes Panda tags, Enter chooses the plain tag and the next Enter adds the pin', async () => {
+test('the tag field of the pin form completes Panda tags, Enter chooses the plain tag and the next Enter adds the pin', async () => {
   const longHairPin: ScorePin = { id: 8, kind: 'tag', label: 'female:long hair', weight: 1.5 }
   completionsMock.mockImplementation(async () => Response.json(longTags))
   respond(Response.json(preview()), Response.json(longHairPin), Response.json(preview({ pins: [longHairPin] })))
@@ -1060,13 +955,13 @@ test('the tag field of the pin or override form completes Panda tags, Enter choo
   await loaded()
   await user.type(formWeight(), '1.5')
   await user.type(formTag(), 'f:long')
-  const suggestions = await pinOrOverrideForm().findAllByRole('option')
+  const suggestions = await pinForm().findAllByRole('option')
   expect(suggestions.map((option) => option.textContent)).toEqual(['femalelong hair', 'femalelong gloves'])
   expect(completionsMock.mock.calls.map(([input]) => String(input))).toContain(`${completionsPath}?q=f%3Along&cursor=6`)
 
   await user.keyboard('{Enter}')
   expect(formTag().value).toBe('female:long hair')
-  expect(pinOrOverrideForm().queryByRole('option')).toBeNull()
+  expect(pinForm().queryByRole('option')).toBeNull()
   expect(changeCalls()).toEqual([])
 
   await user.keyboard('{Enter}')
@@ -1083,8 +978,8 @@ function listedAuthors() {
   return list ? within(list).getAllByRole('listitem').map((item) => [...item.querySelectorAll('[data-author-cell]')].map((cell) => cell.textContent)) : []
 }
 
-function author(index: number, overrides: Partial<ScoreFavoriteAuthor> = {}): ScoreFavoriteAuthor {
-  return { label: `artist:author ${index}`, favorites: 2, weight: null, ...overrides }
+function author(index: number, fields: Partial<ScoreFavoriteAuthor> = {}): ScoreFavoriteAuthor {
+  return { label: `artist:author ${index}`, favorites: 2, weight: null, ...fields }
 }
 
 test('lists the favorite authors in the preview order, also without a candidate', async () => {

@@ -9,9 +9,9 @@ import (
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 )
 
-// writeScoreInputs runs a write of a pin, an override or the author bonus,
-// which can change the held-out favorite scores of the active model, and
-// stores them again in its transaction.
+// writeScoreInputs runs a write of a pin or the author bonus, which can change
+// the held-out favorite scores of the active model, and stores them again in
+// its transaction.
 func (s *Service) writeScoreInputs(ctx context.Context, write func(tx pgx.Tx) error) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -81,7 +81,7 @@ func storeFavoriteScores(ctx context.Context, tx pgx.Tx, applying bool) error {
 
 // favoriteScores calculates the held-out favorite scores of the active model
 // in tenths, lowest first: the favorites in the scope, scored with the
-// model's stored counts under the current pins, overrides and author bonus,
+// model's stored counts under the current pins and author bonus,
 // like a measurement of a candidate. Without a scope it returns none.
 func (f scoreFilter) favoriteScores(ctx context.Context, tx pgx.Tx, counted catalogScope) ([]int, error) {
 	scores := []int{}
@@ -104,7 +104,7 @@ func (f scoreFilter) favoriteScores(ctx context.Context, tx pgx.Tx, counted cata
 	if err != nil {
 		return scores, err
 	}
-	scores, _, _ = f.heldOutScores(favorites, calculation, authors)
+	scores = f.heldOutScores(favorites, calculation, authors)
 	slices.Sort(scores)
 	return scores, nil
 }

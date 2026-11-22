@@ -8,8 +8,8 @@ import TagCompletionField from '../galleries/TagCompletionField'
 import { useMutation } from '../collector/useMutation'
 import { completePandaSearch } from './api'
 import { pandaCategories } from './categories'
-import { applyPandaScore, currentHiddenShare, formatWeight, hiddenShare, parseNumber, previewPandaScore, recentHiddenShare, removePandaScoreOverride, removePandaScorePin, savePandaAuthorBonus, savePandaScoreOverride, savePandaScorePin, savePandaScoreThreshold, scoreRuleNames, turnOffPandaScore } from './score'
-import type { ScoreCandidate, ScoreKind, ScoreOverride, ScorePin, ScorePreview, ScoreRule, ScoreWeight } from './score'
+import { applyPandaScore, currentHiddenShare, formatWeight, hiddenShare, parseNumber, previewPandaScore, recentHiddenShare, removePandaScorePin, savePandaAuthorBonus, savePandaScorePin, savePandaScoreThreshold, turnOffPandaScore } from './score'
+import type { ScoreCandidate, ScoreKind, ScorePin, ScorePreview, ScoreWeight } from './score'
 import './PandaCatalog.css'
 import './PandaScorePage.css'
 
@@ -27,22 +27,18 @@ function parseTenths(text: string | null) {
   return Number.isFinite(value) ? Math.round(value * 10) : null
 }
 
-/** The override changes are named after the control that made them, so the message shows beside it. */
-type OverrideChange = 'override-row' | 'override-list' | 'override-form'
+/** The pin changes are named after the control that made them, so the message shows beside it. */
 type PinChange = 'pin-row' | 'pin-list' | 'pin-form' | 'pin-author'
-type Change = 'apply' | 'threshold' | 'off' | 'bonus' | OverrideChange | PinChange
+type Change = 'apply' | 'threshold' | 'off' | 'bonus' | PinChange
 
 /** Changes that measure the candidate again, not a new model: the threshold fields keep their values. */
-const measurementChanges: Change[] = ['override-row', 'override-list', 'override-form', 'bonus']
+const measurementChanges: Change[] = ['bonus']
 
 const changeFailures: Record<Change, string> = {
   apply: 'Could not apply the model.',
   threshold: 'Could not save the threshold.',
   off: 'Could not turn off the model.',
   bonus: 'Could not save the author bonus.',
-  'override-row': 'Could not change the override.',
-  'override-list': 'Could not change the override.',
-  'override-form': 'Could not change the override.',
   'pin-row': 'Could not change the pin.',
   'pin-list': 'Could not change the pin.',
   'pin-form': 'Could not change the pin.',
@@ -69,9 +65,6 @@ const changeNotices: Record<Change, string> = {
   threshold: 'Threshold saved.',
   off: 'Model turned off.',
   bonus: '',
-  'override-row': '',
-  'override-list': '',
-  'override-form': '',
   'pin-row': '',
   'pin-list': '',
   'pin-form': '',
@@ -84,11 +77,6 @@ interface ChangeState {
   notice: string
   action: Change | null
 }
-
-const rules: ScoreRule[] = ['always_hide', 'never_hide']
-
-/** Saves or removes an override; the page calculates again after it. */
-type OverrideRequest = (signal: AbortSignal) => Promise<void>
 
 /** Saves or removes a pin and answers how the pin state changes. */
 type PinRequest = (signal: AbortSignal) => Promise<(pins: ScorePin[]) => ScorePin[]>
@@ -175,7 +163,7 @@ function ActiveThreshold({ preview, value, onChange, disabled, onSave, onTurnOff
     <AlertDialog.Root open={confirming} onOpenChange={setConfirming}>
       <AlertDialog.Content maxWidth="460px">
         <AlertDialog.Title>Turn off the score model?</AlertDialog.Title>
-        <AlertDialog.Description size="2">The model is deleted and can't be restored. Overrides keep working.</AlertDialog.Description>
+        <AlertDialog.Description size="2">The model is deleted and can't be restored. The listing then hides nothing by score.</AlertDialog.Description>
         <Flex gap="3" mt="4" justify="end">
           <AlertDialog.Cancel><Button size="2" variant="soft" color="gray">Cancel</Button></AlertDialog.Cancel>
           <AlertDialog.Action><Button size="2" color="red" onClick={onTurnOff}>Turn off</Button></AlertDialog.Action>
@@ -183,19 +171,6 @@ function ActiveThreshold({ preview, value, onChange, disabled, onSave, onTurnOff
       </AlertDialog.Content>
     </AlertDialog.Root>
   </Flex>
-}
-
-function OverrideButtons({ value, overrides, disabled, onOverride }: {
-  value: ScoreValue, overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
-}) {
-  const current = overrides.find((override) => override.kind === value.kind && override.label === value.label)
-  return <Flex gap="1" justify="end">{rules.map((rule) => {
-    const isPressed = current?.rule === rule
-    return <Button key={rule} size="1" variant={isPressed ? 'solid' : 'soft'} color={isPressed ? undefined : 'gray'} aria-pressed={isPressed} disabled={disabled}
-      onClick={() => onOverride(current && isPressed
-        ? (signal) => removePandaScoreOverride(current.id, signal)
-        : (signal) => savePandaScoreOverride({ kind: value.kind, value: value.label, rule }, signal))}>{scoreRuleNames[rule]}</Button>
-  })}</Flex>
 }
 
 /** The text of a pin's weight field: it follows the pin whenever the pin changes, and keeps the user's text otherwise. */
@@ -256,7 +231,7 @@ function CountLine({ list, carried, all, noun, order, empty, scope }: {
   return <Text as="p" size="2" color="gray">{text}{list.filtering && carried < all && ` ${scope}`}</Text>
 }
 
-// The short namespaces of the search language, which the collector expands when it saves a pin or an override (gallerysearch.NamespaceShortForms).
+// The short namespaces of the search language, which the collector expands when it saves a pin (gallerysearch.NamespaceShortForms).
 const namespaceShortForms: Record<string, string> = {
   a: 'artist', c: 'character', cos: 'cosplayer', f: 'female', g: 'group', l: 'language',
   loc: 'location', m: 'male', x: 'mixed', o: 'other', p: 'parody', r: 'reclass',
@@ -279,30 +254,27 @@ function unlistedTag(filter: string, weights: ScoreWeight[]) {
   return weights.some((weight) => weight.kind === 'tag' && weight.label.toLowerCase() === tag) ? null : tag
 }
 
-function WeightRow({ value, cells, overrides, disabled, onOverride, pins, pinDisabled, onPin }: {
-  value: ScoreValue, cells: string[], overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
-  pins: ScorePin[], pinDisabled: boolean, onPin: (operation: PinRequest) => void,
+function WeightRow({ value, cells, pins, pinDisabled, onPin }: {
+  value: ScoreValue, cells: string[], pins: ScorePin[], pinDisabled: boolean, onPin: (operation: PinRequest) => void,
 }) {
   const label = weightLabel(value)
   return <Table.Row>
     <Table.Cell className="score-label-cell"><span className="score-label" title={label}>{label}</span></Table.Cell>
     {cells.map((cell, index) => <Table.Cell key={index} justify="end">{cell}</Table.Cell>)}
-    <Table.Cell justify="end"><OverrideButtons value={value} overrides={overrides} disabled={disabled} onOverride={onOverride} /></Table.Cell>
     <Table.Cell><PinControls kind={value.kind} label={value.label} pin={findPin(pins, value.kind, value.label)} disabled={pinDisabled} onPin={onPin} /></Table.Cell>
   </Table.Row>
 }
 
-/** The weights of the candidate; a typed tag that no listed weight has gets a row of its own, so that it can be pinned or overridden from here. */
-function Weights({ weights, count, overrides, disabled, onOverride, pins, pinDisabled, onPin }: {
-  weights: ScoreWeight[], count: number, overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
-  pins: ScorePin[], pinDisabled: boolean, onPin: (operation: PinRequest) => void,
+/** The weights of the candidate; a typed tag that no listed weight has gets a row of its own, so that it can be pinned from here. */
+function Weights({ weights, count, pins, pinDisabled, onPin }: {
+  weights: ScoreWeight[], count: number, pins: ScorePin[], pinDisabled: boolean, onPin: (operation: PinRequest) => void,
 }) {
   const list = useFilteredList(weights, weightLabel, (needle) => {
     const tag = savedTag(needle)
     return tag === null ? [needle] : [needle, tag]
   })
   const unlisted = unlistedTag(list.filter, weights)
-  const rowProps = { overrides, disabled, onOverride, pins, pinDisabled, onPin }
+  const rowProps = { pins, pinDisabled, onPin }
   return <Flex direction="column" gap="3">
     <FilterField label="Filter weights" placeholder="Filter, or type a tag as namespace:value" value={list.filter} onChange={list.setFilter} />
     <CountLine list={list} carried={weights.length} all={count} noun="weights" order="strongest first"
@@ -315,7 +287,6 @@ function Weights({ weights, count, overrides, disabled, onOverride, pins, pinDis
         <Table.ColumnHeaderCell justify="end">Favorites</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell justify="end">Catalog</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell justify="end">Active weight</Table.ColumnHeaderCell>
-        <Table.ColumnHeaderCell justify="end">Override</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell>Pin</Table.ColumnHeaderCell>
       </Table.Row></Table.Header>
       <Table.Body>
@@ -329,18 +300,14 @@ function Weights({ weights, count, overrides, disabled, onOverride, pins, pinDis
   </Flex>
 }
 
-/** What the pin or override form does with its value: pin a weight, pin the weight 0, or save a score override. */
-type FormAction = 'pin' | 'ignore' | ScoreRule
+/** What the pin form does with its value: pin a weight, or pin the weight 0. */
+type FormAction = 'pin' | 'ignore'
 
-const formActions: { value: FormAction, name: string }[] = [
-  { value: 'pin', name: 'Pin' }, { value: 'ignore', name: 'Ignore' },
-  ...rules.map((rule) => ({ value: rule, name: scoreRuleNames[rule] })),
-]
+const formActions: { value: FormAction, name: string }[] = [{ value: 'pin', name: 'Pin' }, { value: 'ignore', name: 'Ignore' }]
 
-/** Pins or overrides any tag, uploader or category, also one that no listed weight has. */
-function PinOrOverrideForm({ overrideDisabled, pinDisabled, change, onOverride, onPin }: {
-  overrideDisabled: boolean, pinDisabled: boolean, change: ChangeState,
-  onOverride: (operation: OverrideRequest, onSaved: () => void) => void, onPin: (operation: PinRequest, onSaved: () => void) => void,
+/** Pins any tag, uploader or category, also one that no listed weight has. */
+function PinForm({ pending, change, onPin }: {
+  pending: boolean, change: ChangeState, onPin: (operation: PinRequest, onSaved: () => void) => void,
 }) {
   const [kind, setKind] = useState<ScoreKind>('tag')
   const [text, setText] = useState('')
@@ -349,14 +316,11 @@ function PinOrOverrideForm({ overrideDisabled, pinDisabled, change, onOverride, 
   const [weightText, setWeightText] = useState('')
   const value = kind === 'category' ? category : text.trim()
   const weight = action === 'ignore' ? 0 : parseNumber(weightText)
-  const pinning = action === 'pin' || action === 'ignore'
-  const disabled = value === '' || (pinning ? pinDisabled || weight === null : overrideDisabled)
+  const disabled = value === '' || pending || weight === null
   const clear = () => { setText(''); setWeightText('') }
-  return <Flex asChild direction="column" gap="2"><form aria-label="Add pin or override" onSubmit={(event) => {
+  return <Flex asChild direction="column" gap="2"><form aria-label="Add pin" onSubmit={(event) => {
     event.preventDefault()
-    if (disabled) return
-    if (action !== 'pin' && action !== 'ignore') onOverride((signal) => savePandaScoreOverride({ kind, value, rule: action }, signal), clear)
-    else if (weight !== null) onPin(savePin({ kind, value, weight }), clear)
+    if (!disabled && weight !== null) onPin(savePin({ kind, value, weight }), clear)
   }}>
     <Flex gap="3" align="center" wrap="wrap">
       <SegmentedControl.Root size="1" aria-label="Kind" value={kind} onValueChange={(next) => setKind(next as ScoreKind)}>
@@ -381,24 +345,8 @@ function PinOrOverrideForm({ overrideDisabled, pinDisabled, change, onOverride, 
         value={weightText} onChange={(event) => setWeightText(event.target.value)} />}
       <Button type="submit" disabled={disabled}>Add</Button>
     </Flex>
-    <ChangeResult change={change} actions={['override-form', 'pin-form']} />
+    <ChangeResult change={change} actions={['pin-form']} />
   </form></Flex>
-}
-
-function Overrides({ overrides, disabled, change, onOverride }: {
-  overrides: ScoreOverride[], disabled: boolean, change: ChangeState,
-  onOverride: (action: OverrideChange, operation: OverrideRequest) => void,
-}) {
-  return <Section id="panda-score-overrides" title="Overrides">
-    {overrides.length === 0
-      ? <Text as="p" size="2" color="gray">No overrides.</Text>
-      : <Flex asChild direction="column" gap="2"><ul className="rt-reset">{overrides.map((override) => <Flex asChild key={override.id} align="center" gap="3" wrap="wrap"><li>
-        <Text size="2" data-override-label="">{scoreRuleNames[override.rule]} {weightLabel(override)}</Text>
-        <Button size="1" variant="soft" color="gray" disabled={disabled}
-          onClick={() => onOverride('override-list', (signal) => removePandaScoreOverride(override.id, signal))}>Remove</Button>
-      </li></Flex>)}</ul></Flex>}
-    <ChangeResult change={change} actions={['override-list']} />
-  </Section>
 }
 
 /** A row of the "Pinned weights" table: its field saves another weight for the pin, beside the weight of the value in the new model. */
@@ -534,26 +482,23 @@ function Preview({ preview, loading, thresholds, onThresholds, change, onChange,
     <Callout.Text>Fewer than 50 favorites are in scope. Weights and the measurement from so little evidence are unreliable.</Callout.Text>
   </Callout.Root>
   return <>
-    <PinOrOverrideForm overrideDisabled={change.pending || loading} pinDisabled={change.pending} change={change}
-      onOverride={(operation, onSaved) => onChange('override-form', operation, onSaved)} onPin={(operation, onSaved) => onPin('pin-form', operation, onSaved)} />
+    <PinForm pending={change.pending} change={change} onPin={(operation, onSaved) => onPin('pin-form', operation, onSaved)} />
     <Tabs.Root value={tab} onValueChange={(next) => setTab(next as Tab)}>
       <Tabs.List>
         <Tabs.Trigger value="weights">Weights</Tabs.Trigger>
-        <Tabs.Trigger value="pins">Pins and overrides</Tabs.Trigger>
+        <Tabs.Trigger value="pins">Pins</Tabs.Trigger>
         <Tabs.Trigger value="authors">Favorite authors</Tabs.Trigger>
         <Tabs.Trigger value="model">Model</Tabs.Trigger>
       </Tabs.List>
       <Panel value="weights" tab={tab}>
         {fewFavorites}
-        <ChangeResult change={change} actions={['override-row', 'pin-row']} />
+        <ChangeResult change={change} actions={['pin-row']} />
         {candidate
-          ? <Weights weights={candidate.weights} count={candidate.weight_count} overrides={preview.overrides}
-            disabled={change.pending || loading} onOverride={(operation) => onChange('override-row', operation)}
+          ? <Weights weights={candidate.weights} count={candidate.weight_count}
             pins={pins} pinDisabled={change.pending} onPin={(operation) => onPin('pin-row', operation)} />
           : <NoModel preview={preview} />}
       </Panel>
       <Panel value="pins" tab={tab}>
-        <Overrides overrides={preview.overrides} disabled={change.pending || loading} change={change} onOverride={onChange} />
         <PinnedWeights pins={pins} modelPins={preview.pins} active={active !== null} disabled={change.pending} change={change} onPin={onPin} />
       </Panel>
       <Panel value="authors" tab={tab}>
@@ -599,7 +544,7 @@ export default function PandaScorePage() {
   const [error, setError] = useState('')
   // A new request object starts a preview: it measures the named candidate again, or calculates without one.
   const [request, setRequest] = useState<{ candidateID: number | null }>({ candidateID: null })
-  // The ID of the candidate on screen, which a pin, override or bonus change measures again.
+  // The ID of the candidate on screen, which a pin or bonus change measures again.
   const shownCandidate = useRef<number | null>(null)
   const [thresholds, setThresholds] = useState<Thresholds>({ candidate: null, active: null })
   // Set by a successful change: the next preview restarts both threshold fields.

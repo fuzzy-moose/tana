@@ -26,7 +26,7 @@ const scorePreviewAuthors = 500
 // same filter, and stores it as the one candidate, replacing every other model
 // that is not active. Without a favorite in scope it stores none. With the
 // CandidateID of the stored candidate it calculates nothing and measures that
-// candidate again with the current favorites, pins, overrides and bonus.
+// candidate again with the current favorites, pins and bonus.
 func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.ScorePreviewOptions) (collectorapi.ScorePreview, error) {
 	var preview collectorapi.ScorePreview
 	categories, err := s.useScope(ctx, options.DefaultQuery, options.DefaultCategories)
@@ -71,11 +71,6 @@ func (s *Service) PreviewScoreModel(ctx context.Context, options collectorapi.Sc
 		return preview, err
 	}
 	preview.Evidence.FavoritesSyncedAt = pgdb.UTC(preview.Evidence.FavoritesSyncedAt)
-	preview.Overrides = make([]collectorapi.ScoreOverride, 0, len(filter.overrides))
-	for _, override := range filter.overrides {
-		preview.Overrides = append(preview.Overrides, override.ScoreOverride)
-	}
-	slices.SortFunc(preview.Overrides, func(a, b collectorapi.ScoreOverride) int { return cmp.Compare(a.ID, b.ID) })
 	preview.Pins = make([]collectorapi.ScorePin, 0, len(filter.pins))
 	for _, pin := range filter.pins {
 		preview.Pins = append(preview.Pins, pin.ScorePin)

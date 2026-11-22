@@ -21,10 +21,10 @@ func TestSuggestedThreshold(t *testing.T) {
 		heldOut collectorapi.ScoreHeldOut
 		want    int
 	}{
-		{"no scores", collectorapi.ScoreHeldOut{Total: 2, AlwaysHidden: 2, Scores: collectorapi.ScoreHistogram{Counts: []int{}}}, 0},
+		{"no scores", collectorapi.ScoreHeldOut{Scores: collectorapi.ScoreHistogram{Counts: []int{}}}, 0},
 		{"at most 5 %", collectorapi.ScoreHeldOut{Total: 20, Scores: collectorapi.ScoreHistogram{FirstBucket: 0, Counts: []int{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 18}}}, 5},
-		{"always hidden count", collectorapi.ScoreHeldOut{Total: 20, AlwaysHidden: 1, Scores: collectorapi.ScoreHistogram{FirstBucket: 0, Counts: []int{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 17}}}, 0},
-		{"none hides at most 5 %", collectorapi.ScoreHeldOut{Total: 10, AlwaysHidden: 2, Scores: collectorapi.ScoreHistogram{FirstBucket: 3, Counts: []int{8}}}, 3},
+		{"above 5 %", collectorapi.ScoreHeldOut{Total: 20, Scores: collectorapi.ScoreHistogram{FirstBucket: 0, Counts: []int{1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 17}}}, 5},
+		{"none hides at most 5 %", collectorapi.ScoreHeldOut{Total: 10, Scores: collectorapi.ScoreHistogram{FirstBucket: 3, Counts: []int{2, 8}}}, 3},
 	} {
 		if got := suggestedThreshold(tc.heldOut); got != tc.want {
 			t.Fatalf("%s: %d, want %d", tc.name, got, tc.want)
@@ -74,7 +74,7 @@ func TestPreviewHoldsOutEachFavorite(t *testing.T) {
 		t.Fatalf("held-out counts = %v, want %v", got, want)
 	}
 	heldOut := preview.Candidate.HeldOut
-	if heldOut.Total != 4 || heldOut.AlwaysHidden != 0 || heldOut.NeverHidden != 0 {
+	if heldOut.Total != 4 {
 		t.Fatalf("held out = %+v", heldOut)
 	}
 	if preview.Candidate.SuggestedThresholdTenths != 7 {
@@ -142,7 +142,7 @@ func TestHeldOutScoresGiveTheAuthorBonusOnlyToAuthorsWithThreeFavorites(t *testi
 	}
 }
 
-func TestHeldOutFavoritesDecidedByAnOverride(t *testing.T) {
+func TestHeldOutFavoritesWithExtremePinsCountByScore(t *testing.T) {
 	db, s := openCatalog(t)
 	retain(t, db, panda.Metadata{ID: 1, Posted: 1, Uploader: "Keep", Tags: []string{"other:drop", "other:a"}}, true)
 	retain(t, db, panda.Metadata{ID: 2, Posted: 2, Tags: []string{"other:drop", "other:a"}}, true)
@@ -150,8 +150,8 @@ func TestHeldOutFavoritesDecidedByAnOverride(t *testing.T) {
 	retain(t, db, panda.Metadata{ID: 5, Posted: 5, Expunged: true, Tags: []string{"other:a", "other:b"}}, true)
 	retainRange(t, db, 6, 10, panda.Metadata{})
 	favor(t, db, "42", 0, 1, 2, 3, 4, 5)
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Keep", collectorapi.ScoreRuleNeverHide)
-	setOverride(t, s, collectorapi.ScoreKindTag, "other:drop", collectorapi.ScoreRuleAlwaysHide)
+	setPin(t, s, collectorapi.ScoreKindUploader, "Keep", 1000)
+	setPin(t, s, collectorapi.ScoreKindTag, "other:drop", -100)
 	setPin(t, s, collectorapi.ScoreKindTag, "other:b", 1)
 
 	candidate := previewScore(t, s).Candidate
@@ -160,11 +160,12 @@ func TestHeldOutFavoritesDecidedByAnOverride(t *testing.T) {
 	for _, count := range heldOut.Scores.Counts {
 		scored += count
 	}
-	if heldOut.Total != 5 || heldOut.NeverHidden != 1 || heldOut.AlwaysHidden != 1 || scored != 3 || heldOut.Total != heldOut.AlwaysHidden+heldOut.NeverHidden+scored {
+	last := heldOut.Scores.FirstBucket + len(heldOut.Scores.Counts) - 1
+	if heldOut.Total != 5 || scored != 5 || heldOut.Scores.FirstBucket > -990 || last < 9000 {
 		t.Fatalf("held out = %+v", heldOut)
 	}
-	// The override hides 1 of 5, more than 5 %, so the lowest scored bucket.
-	if candidate.SuggestedThresholdTenths != heldOut.Scores.FirstBucket || heldOut.Scores.FirstBucket+len(heldOut.Scores.Counts)-1 < 10 {
+	// The -100 pin hides 1 of 5, more than 5 %, so the lowest bucket.
+	if candidate.SuggestedThresholdTenths != heldOut.Scores.FirstBucket {
 		t.Fatalf("suggested %d, held out %+v", candidate.SuggestedThresholdTenths, heldOut)
 	}
 }

@@ -100,39 +100,6 @@ func HandleCatalogCatchUp(service *catalog.Service) http.Handler {
 	})
 }
 
-func HandleSetScoreOverride(service *catalog.Service) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var input struct {
-			Kind  string `json:"kind"`
-			Value string `json:"value"`
-			Rule  string `json:"rule"`
-		}
-		if !server.DecodeJSON(w, r, &input) {
-			return
-		}
-		if err := service.SetScoreOverride(r.Context(), input.Kind, input.Value, input.Rule); err != nil {
-			catalogError(w, r, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
-func HandleRemoveScoreOverride(service *catalog.Service) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			catalogError(w, r, catalog.ErrInvalidScoreOverride)
-			return
-		}
-		if err := service.RemoveScoreOverride(r.Context(), id); err != nil {
-			catalogError(w, r, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
 // HandleSetScorePin answers with the stored pin. A body without a weight, or
 // with a null weight, is an invalid pin.
 func HandleSetScorePin(service *catalog.Service) http.Handler {
@@ -276,8 +243,6 @@ func catalogError(w http.ResponseWriter, r *http.Request, err error) {
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_category"})
 	case errors.Is(err, catalog.ErrInvalidGalleryReference):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_gallery_reference"})
-	case errors.Is(err, catalog.ErrInvalidScoreOverride):
-		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_override"})
 	case errors.Is(err, catalog.ErrInvalidScorePin):
 		server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_pin"})
 	case errors.Is(err, catalog.ErrInvalidAuthorBonus):

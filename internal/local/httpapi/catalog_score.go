@@ -9,47 +9,6 @@ import (
 	"github.com/fuzzy-moose/tana/internal/server"
 )
 
-func HandleCollectorSetScoreOverride(client *collectorapi.Client) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !catalogCollectorConfigured(w, client) {
-			return
-		}
-		var input struct {
-			Kind  string `json:"kind"`
-			Value string `json:"value"`
-			Rule  string `json:"rule"`
-		}
-		if !server.DecodeJSON(w, r, &input) {
-			return
-		}
-		if err := client.SetScoreOverride(r.Context(), input.Kind, input.Value, input.Rule); err != nil {
-			writeCatalogCollectorError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
-func HandleCollectorRemoveScoreOverride(client *collectorapi.Client) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !catalogCollectorConfigured(w, client) {
-			return
-		}
-		// An ID that is not a positive integer is an invalid override, not
-		// the 404 of pathID.
-		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil || id <= 0 {
-			server.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_override"})
-			return
-		}
-		if err := client.RemoveScoreOverride(r.Context(), id); err != nil {
-			writeCatalogCollectorError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
 func HandleCollectorSetScorePin(client *collectorapi.Client) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !catalogCollectorConfigured(w, client) {

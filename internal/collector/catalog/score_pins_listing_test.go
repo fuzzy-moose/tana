@@ -92,7 +92,7 @@ func TestPinReplacesTheCalculatedWeightInTheNextPage(t *testing.T) {
 	assertListed(t, scorePage(t, s, "", collectorapi.CatalogOptions{}), 101, 103, 104)
 	hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
 	assertListed(t, hidden, 102)
-	assertScore(t, itemByID(t, hidden, 102), collectorapi.ScoreRuleBelowThreshold, "")
+	assertScore(t, itemByID(t, hidden, 102), collectorapi.ScoreRuleBelowThreshold)
 	assertScoreValue(t, itemByID(t, hidden, 102), -1)
 
 	for _, id := range []int64{pin.ID, hatPin.ID} {
@@ -121,7 +121,7 @@ func TestPinCountsForAValueWithoutACalculatedWeight(t *testing.T) {
 	hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
 	assertListed(t, hidden, 105)
 	item := itemByID(t, hidden, 105)
-	assertScore(t, item, collectorapi.ScoreRuleBelowThreshold, "")
+	assertScore(t, item, collectorapi.ScoreRuleBelowThreshold)
 	assertWeights(t, item, []collectorapi.CatalogScoreWeight{
 		{Kind: collectorapi.ScoreKindTag, Label: "other:rare", Weight: -1, Source: collectorapi.ScoreSourcePin}})
 
@@ -141,46 +141,6 @@ func TestPinCountsForAValueWithoutACalculatedWeight(t *testing.T) {
 	assertWeights(t, item, []collectorapi.CatalogScoreWeight{
 		{Kind: collectorapi.ScoreKindCategory, Label: "doujinshi", Weight: 2, Source: collectorapi.ScoreSourcePin},
 		{Kind: collectorapi.ScoreKindUploader, Label: "Someone", Weight: -1, Source: collectorapi.ScoreSourcePin}})
-}
-
-func TestPinKeepsTheOrderOfTheHidingRules(t *testing.T) {
-	db, s := openCatalog(t)
-	seedScoreGalleries(t, db)
-	seedScoredGalleries(t, db)
-	applyScoreModel(t, db, s, -5, storedScoreWeights()...)
-	retain(t, db, panda.Metadata{ID: 107, Posted: 107, Uploader: "Keeper", Tags: []string{"female:glasses"}}, true)
-	retain(t, db, panda.Metadata{ID: 108, Posted: 108, Category: "Doujinshi", Tags: []string{"male:hat"}}, true)
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Keeper", collectorapi.ScoreRuleNeverHide)
-	setOverride(t, s, collectorapi.ScoreKindCategory, "Doujinshi", collectorapi.ScoreRuleAlwaysHide)
-	setPin(t, s, collectorapi.ScoreKindTag, "female:glasses", -100)
-	setPin(t, s, collectorapi.ScoreKindTag, "male:hat", 100)
-
-	page := scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertListed(t, page, 102, 103, 107)
-	assertScore(t, itemByID(t, page, 107), collectorapi.ScoreRuleNeverHide, "Keeper")
-	hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
-	assertListed(t, hidden, 101, 104, 108)
-	assertScore(t, itemByID(t, hidden, 108), collectorapi.ScoreRuleAlwaysHide, "doujinshi")
-}
-
-func TestSummaryTagsCarryThePinOfAnOverrideTag(t *testing.T) {
-	db, s := openCatalog(t)
-	seedScoreGalleries(t, db)
-	seedScoredGalleries(t, db)
-	applyScoreModel(t, db, s, -5, storedScoreWeights()...)
-	artist := artistWeight
-	setOverride(t, s, collectorapi.ScoreKindTag, "female:glasses", collectorapi.ScoreRuleNeverHide)
-	setPin(t, s, collectorapi.ScoreKindTag, "artist:b", 3)
-	weight := 5.0
-	setPin(t, s, collectorapi.ScoreKindTag, "female:glasses", weight)
-	want := []summaryTag{
-		{label: "female:glasses", weight: &weight, override: collectorapi.ScoreRuleNeverHide, source: collectorapi.ScoreSourcePin},
-		pinnedTag("artist:b", 3),
-	}
-	for _, label := range []string{"artist:a", "artist:c", "artist:d", "artist:e"} {
-		want = append(want, weighted(label, artist))
-	}
-	assertSummaryTags(t, itemByID(t, scorePage(t, s, "", collectorapi.CatalogOptions{}), 104), want)
 }
 
 func TestPinsHaveNoEffectWithoutAnActiveModel(t *testing.T) {

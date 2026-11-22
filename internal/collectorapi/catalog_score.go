@@ -10,17 +10,11 @@ import (
 	"time"
 )
 
-// The kinds of value a score override names.
+// The kinds of value a pin names.
 const (
 	ScoreKindTag      = "tag"
 	ScoreKindUploader = "uploader"
 	ScoreKindCategory = "category"
-)
-
-// The two rules of a score override.
-const (
-	ScoreRuleAlwaysHide = "always_hide"
-	ScoreRuleNeverHide  = "never_hide"
 )
 
 // The sources of an effective weight that the model did not calculate.
@@ -63,14 +57,12 @@ type CatalogScoreFilter struct {
 	HeldOutFavorites int  `json:"held_out_favorites,omitempty"`
 }
 
-// CatalogItemScore names the rule that decides a catalog item and the label of
-// the deciding override. With an active model
-// it also gives the item's score and its strongest weights, and with at
-// least one held-out favorite score the number of those above the item's
-// score and its score grade, empty below the top half.
+// CatalogItemScore gives a catalog item's score under the active model, its
+// strongest weights and ScoreRuleBelowThreshold when the score is below the
+// threshold. With at least one held-out favorite score it also gives the number
+// of those above the item's score and its score grade, empty below the top half.
 type CatalogItemScore struct {
 	Rule           string               `json:"rule,omitempty"`
-	Override       string               `json:"override,omitempty"`
 	Value          *float64             `json:"value,omitempty"`
 	Weights        []CatalogScoreWeight `json:"weights,omitempty"`
 	FavoritesAbove *int                 `json:"favorites_above,omitempty"`
@@ -78,7 +70,7 @@ type CatalogItemScore struct {
 }
 
 // CatalogScoreWeight is the effective weight of one tag, uploader or category
-// of a catalog item under the active model, labelled like an override. Source
+// of a catalog item under the active model, labelled like a pin. Source
 // names where the weight comes from when the model did not calculate it.
 type CatalogScoreWeight struct {
 	Kind   string  `json:"kind"`
@@ -87,18 +79,10 @@ type CatalogScoreWeight struct {
 	Source string  `json:"source,omitempty"`
 }
 
-// ScoreOverride is one stored override. Label is namespace:value for a tag
-// and the stored value for an uploader or category.
-type ScoreOverride struct {
-	ID    int64  `json:"id"`
-	Kind  string `json:"kind"`
-	Label string `json:"label"`
-	Rule  string `json:"rule"`
-}
-
-// ScorePin is one pinned weight, labelled like an override. ModelWeight is set
-// in a preview only: the weight the candidate calculated for the pin's value,
-// nil without one.
+// ScorePin is one pinned weight. Label is namespace:value for a tag and the
+// stored value for an uploader or category. ModelWeight is set in a preview
+// only: the weight the candidate calculated for the pin's value, nil without
+// one.
 type ScorePin struct {
 	ID          int64    `json:"id"`
 	Kind        string   `json:"kind"`
@@ -127,20 +111,18 @@ type ScorePreviewOptions struct {
 }
 
 // ScorePreview is a calculated candidate, or the reason there is none, with
-// the numbers of its evidence, the current overrides and the pins, by ID, the
-// author bonus (nil while it is off), the number of favorite authors and those
-// with the most favorites.
+// the numbers of its evidence, the pins by ID, the author bonus (nil while it
+// is off), the number of favorite authors and those with the most favorites.
 type ScorePreview struct {
 	Evidence  ScoreEvidence   `json:"evidence"`
 	Candidate *ScoreCandidate `json:"candidate"`
 	NoModel   string          `json:"no_model,omitempty"`
 	// CountsProgress is the share of the catalog counted so far, in percent,
 	// while NoModel is ScoreCountsPreparing.
-	CountsProgress *int            `json:"counts_progress,omitempty"`
-	Active         *ScoreActive    `json:"active"`
-	Overrides      []ScoreOverride `json:"overrides"`
-	Pins           []ScorePin      `json:"pins"`
-	Recent         ScoreRecent     `json:"recent"`
+	CountsProgress *int         `json:"counts_progress,omitempty"`
+	Active         *ScoreActive `json:"active"`
+	Pins           []ScorePin   `json:"pins"`
+	Recent         ScoreRecent  `json:"recent"`
 
 	AuthorBonus         *float64              `json:"author_bonus"`
 	FavoriteAuthorCount int                   `json:"favorite_author_count"`
@@ -178,16 +160,13 @@ type ScoreActive struct {
 	ThresholdTenths int       `json:"threshold_tenths"`
 }
 
-// ScoreRecent classes the newest catalog galleries that pass the default
-// filter by the first hiding rule that decides them: a "never hide" override,
-// an "always hide" override, and for the rest their score under the candidate
-// and under the active model. A histogram is nil without its model.
+// ScoreRecent counts the newest catalog galleries that pass the default
+// filter by their score under the candidate and under the active model. A
+// histogram is nil without its model; else its counts add up to Total.
 type ScoreRecent struct {
-	Total        int             `json:"total"`
-	NeverHidden  int             `json:"never_hidden"`
-	AlwaysHidden int             `json:"always_hidden"`
-	Candidate    *ScoreHistogram `json:"candidate"`
-	Active       *ScoreHistogram `json:"active"`
+	Total     int             `json:"total"`
+	Candidate *ScoreHistogram `json:"candidate"`
+	Active    *ScoreHistogram `json:"active"`
 }
 
 // ScoreHistogram counts galleries by score: Counts[i] is the number of
@@ -225,19 +204,16 @@ type ScoreCandidate struct {
 	HeldOut                  ScoreHeldOut `json:"held_out"`
 }
 
-// ScoreHeldOut counts the held-out favorites: those an override always
-// hides or never hides, and the scores of the rest. A threshold of t tenths
-// hides AlwaysHidden plus the buckets below t.
+// ScoreHeldOut counts the held-out favorites by score: Total is the sum of
+// the counts. A threshold of t tenths hides the buckets below t.
 type ScoreHeldOut struct {
-	Total        int            `json:"total"`
-	AlwaysHidden int            `json:"always_hidden"`
-	NeverHidden  int            `json:"never_hidden"`
-	Scores       ScoreHistogram `json:"scores"`
+	Total  int            `json:"total"`
+	Scores ScoreHistogram `json:"scores"`
 }
 
-// ScoreWeight is the weight of one tag, uploader or category, labelled like an
-// override, with the numbers of favorites and of catalog galleries in scope
-// that carry it. ActiveWeight is the value's weight in the active model, nil
+// ScoreWeight is the weight of one tag, uploader or category, labelled like a
+// pin, with the numbers of favorites and of catalog galleries in scope that
+// carry it. ActiveWeight is the value's weight in the active model, nil
 // without one.
 type ScoreWeight struct {
 	Kind         string   `json:"kind"`
@@ -246,25 +222,6 @@ type ScoreWeight struct {
 	Favorites    int      `json:"favorites"`
 	Catalog      int      `json:"catalog"`
 	ActiveWeight *float64 `json:"active_weight"`
-}
-
-// SetScoreOverride gives the tag, uploader or category the rule, replacing
-// its other rule.
-func (c *Client) SetScoreOverride(ctx context.Context, kind, value, rule string) error {
-	body, err := json.Marshal(struct {
-		Kind  string `json:"kind"`
-		Value string `json:"value"`
-		Rule  string `json:"rule"`
-	}{kind, value, rule})
-	if err != nil {
-		return err
-	}
-	return c.scoreRequest(ctx, http.MethodPost, "/api/catalog/score/overrides", bytes.NewReader(body))
-}
-
-// RemoveScoreOverride removes the override with the ID, if it exists.
-func (c *Client) RemoveScoreOverride(ctx context.Context, id int64) error {
-	return c.scoreRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/catalog/score/overrides/%d", id), nil)
 }
 
 // SetScorePin pins the weight of the tag, uploader or category, replacing its

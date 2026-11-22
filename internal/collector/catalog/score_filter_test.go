@@ -5,16 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/fuzzy-moose/tana/internal/collectorapi"
 	"github.com/fuzzy-moose/tana/internal/panda"
 )
-
-func setOverride(t *testing.T, s *Service, kind, value, rule string) {
-	t.Helper()
-	if err := s.SetScoreOverride(t.Context(), kind, value, rule); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func scorePage(t *testing.T, s *Service, filter string, options collectorapi.CatalogOptions) collectorapi.CatalogResult {
 	t.Helper()
@@ -40,24 +35,31 @@ func itemByID(t *testing.T, result collectorapi.CatalogResult, id int64) collect
 	return collectorapi.CatalogItem{}
 }
 
-func assertScore(t *testing.T, item collectorapi.CatalogItem, rule, override string) {
+// assertScore asserts that the filter in force scored the item and gave it the
+// rule, empty for none.
+func assertScore(t *testing.T, item collectorapi.CatalogItem, rule string) {
 	t.Helper()
-	if rule == "" {
-		if item.Score != nil {
-			t.Fatalf("gallery %d score = %+v, want none", item.GalleryID, item.Score)
-		}
-		return
-	}
-	if item.Score == nil || item.Score.Rule != rule || item.Score.Override != override {
-		t.Fatalf("gallery %d score = %+v, want %s %q", item.GalleryID, item.Score, rule, override)
+	if item.Score == nil || item.Score.Value == nil || item.Score.Rule != rule {
+		t.Fatalf("gallery %d score = %+v, want rule %q", item.GalleryID, item.Score, rule)
 	}
 }
 
-func TestScoreFilterIsNotInForceWithoutOverrides(t *testing.T) {
+// hideBy applies a model that weighs the value -1 and nothing else, with the
+// threshold 0: it hides exactly the galleries that carry the value.
+func hideBy(t *testing.T, db *pgxpool.Pool, s *Service, kind, label string) {
+	t.Helper()
+	applyScoreModel(t, db, s, 0, storedWeight{kind, label, -1})
+}
+
+func TestScoreFilterIsNotInForceWithoutAModel(t *testing.T) {
 	db, s := openCatalog(t)
 	for id := int64(1); id <= 3; id++ {
-		retain(t, db, panda.Metadata{ID: id, Posted: id, Tags: []string{"female:big hat"}}, true)
+		retain(t, db, panda.Metadata{ID: id, Posted: id, Uploader: "Some One", Tags: []string{"female:big hat", "artist:a"}}, true)
 	}
+	setPin(t, s, collectorapi.ScoreKindTag, "female:big hat", -100)
+	setPin(t, s, collectorapi.ScoreKindUploader, "Some One", -100)
+	makeFavoriteAuthor(t, db, "artist:a")
+	setBonus(t, s, float(5))
 	for _, filter := range []string{"", collectorapi.ScoreFilterAll} {
 		for _, unseen := range []bool{false, true} {
 			result := scorePage(t, s, filter, collectorapi.CatalogOptions{Unseen: unseen})
@@ -66,14 +68,21 @@ func TestScoreFilterIsNotInForceWithoutOverrides(t *testing.T) {
 				t.Fatalf("score filter = %+v", result.ScoreFilter)
 			}
 			for _, item := range result.Items {
-				assertScore(t, item, "", "")
+				if item.Score != nil {
+					t.Fatalf("gallery %d score = %+v, want none", item.GalleryID, item.Score)
+				}
+				for _, tag := range item.SummaryTags {
+					if tag.Weight != nil || tag.Source != "" || tag.FavoriteAuthor {
+						t.Fatalf("gallery %d tag = %+v, want no weight", item.GalleryID, tag)
+					}
+				}
 			}
 		}
 	}
 	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{}), []int64{})
 }
 
-func TestScoreFilterHidesOverrideMatches(t *testing.T) {
+func TestScoreFilterHidesGalleriesBelowTheThreshold(t *testing.T) {
 	db, s := openCatalog(t)
 	for _, entry := range []panda.Metadata{
 		{ID: 1, Posted: 1, Tags: []string{"female:big hat"}, Uploader: "Other", Category: "Doujinshi"},
@@ -86,20 +95,15 @@ func TestScoreFilterHidesOverrideMatches(t *testing.T) {
 		retain(t, db, entry, true)
 	}
 	for _, tc := range []struct {
-		kind, value, label string
-		hidden             []int64
+		kind, label string
+		hidden      []int64
 	}{
-		{collectorapi.ScoreKindTag, "female:big_hat", "female:big hat", []int64{5, 1}},
-		{collectorapi.ScoreKindUploader, "Some One", "Some One", []int64{5, 2}},
-		{collectorapi.ScoreKindCategory, " Manga ", "manga", []int64{5, 3}},
+		{collectorapi.ScoreKindTag, "female:big hat", []int64{5, 1}},
+		{collectorapi.ScoreKindUploader, "Some One", []int64{5, 2}},
+		{collectorapi.ScoreKindCategory, "manga", []int64{5, 3}},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
-			setOverride(t, s, tc.kind, tc.value, collectorapi.ScoreRuleAlwaysHide)
-			defer func() {
-				if _, err := db.Exec(t.Context(), "DELETE FROM panda_score_overrides"); err != nil {
-					t.Fatal(err)
-				}
-			}()
+			hideBy(t, db, s, tc.kind, tc.label)
 			isHidden := map[int64]bool{}
 			for _, id := range tc.hidden {
 				isHidden[id] = true
@@ -117,14 +121,14 @@ func TestScoreFilterHidesOverrideMatches(t *testing.T) {
 			all := scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{})
 			assertCatalogIDs(t, all, []int64{6, 5, 4, 3, 2, 1})
 			for _, result := range []collectorapi.CatalogResult{on, hidden, all} {
-				if result.ScoreFilter == nil || result.ScoreFilter.HiddenUnseen {
+				if result.ScoreFilter == nil || result.ScoreFilter.ThresholdTenths == nil || result.ScoreFilter.HiddenUnseen {
 					t.Fatalf("score filter = %+v", result.ScoreFilter)
 				}
 				for _, item := range result.Items {
 					if isHidden[item.GalleryID] {
-						assertScore(t, item, collectorapi.ScoreRuleAlwaysHide, tc.label)
+						assertScore(t, item, collectorapi.ScoreRuleBelowThreshold)
 					} else {
-						assertScore(t, item, "", "")
+						assertScore(t, item, "")
 					}
 				}
 			}
@@ -132,32 +136,33 @@ func TestScoreFilterHidesOverrideMatches(t *testing.T) {
 	}
 }
 
-func TestScoreFilterRuleOrder(t *testing.T) {
+func TestScoreFilterAddsOppositePins(t *testing.T) {
 	db, s := openCatalog(t)
 	for _, entry := range []panda.Metadata{
 		{ID: 1, Posted: 1, Tags: []string{"female:glasses"}},
 		{ID: 2, Posted: 2, Tags: []string{"female:big hat", "male:hat"}},
 		{ID: 3, Posted: 3, Tags: []string{"female:big hat", "female:glasses"}, Uploader: "Some One"},
 		{ID: 4, Posted: 4, Tags: []string{"male:hat"}},
+		{ID: 5, Posted: 5, Tags: []string{"female:big hat", "male:hat"}, Uploader: "Some One"},
 	} {
 		retain(t, db, entry, true)
 	}
 	applyScoreModel(t, db, s, 0,
 		storedWeight{collectorapi.ScoreKindTag, "female:glasses", -2}, storedWeight{collectorapi.ScoreKindTag, "male:hat", 2})
-	setOverride(t, s, collectorapi.ScoreKindTag, "female:big hat", collectorapi.ScoreRuleAlwaysHide)
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Some One", collectorapi.ScoreRuleNeverHide)
+	setPin(t, s, collectorapi.ScoreKindTag, "female:big hat", -100)
+	setPin(t, s, collectorapi.ScoreKindUploader, "Some One", 100)
 
 	on := scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, on, []int64{4, 3})
-	assertScore(t, itemByID(t, on, 3), collectorapi.ScoreRuleNeverHide, "Some One")
-	if score := itemByID(t, on, 4).Score; score == nil || score.Rule != "" {
-		t.Fatalf("gallery 4 score = %+v", score)
-	}
+	assertCatalogIDs(t, on, []int64{5, 4})
+	assertScore(t, itemByID(t, on, 5), "")
+	assertScoreValue(t, itemByID(t, on, 5), 2)
 	hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, hidden, []int64{2, 1})
-	assertScore(t, itemByID(t, hidden, 2), collectorapi.ScoreRuleAlwaysHide, "female:big hat")
-	assertScore(t, itemByID(t, hidden, 1), collectorapi.ScoreRuleBelowThreshold, "")
-	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{}), []int64{4, 3, 2, 1})
+	assertCatalogIDs(t, hidden, []int64{3, 2, 1})
+	assertScore(t, itemByID(t, hidden, 3), collectorapi.ScoreRuleBelowThreshold)
+	assertScoreValue(t, itemByID(t, hidden, 3), -2)
+	assertScore(t, itemByID(t, hidden, 2), collectorapi.ScoreRuleBelowThreshold)
+	assertScoreValue(t, itemByID(t, hidden, 2), -98)
+	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{}), []int64{5, 4, 3, 2, 1})
 }
 
 func TestScoreFilterPagesThroughCategoryBranches(t *testing.T) {
@@ -176,7 +181,7 @@ func TestScoreFilterPagesThroughCategoryBranches(t *testing.T) {
 		retain(t, db, entry, true)
 	}
 	retain(t, db, panda.Metadata{ID: 15, Posted: 15, Category: "Cosplay"}, true)
-	setOverride(t, s, collectorapi.ScoreKindTag, "female:big hat", collectorapi.ScoreRuleAlwaysHide)
+	hideBy(t, db, s, collectorapi.ScoreKindTag, "female:big hat")
 	options := collectorapi.CatalogOptions{Categories: []string{"manga", "doujinshi"}, PageSize: 4}
 	first := scorePage(t, s, "", options)
 	assertCatalogIDs(t, first, want[:4])
@@ -212,7 +217,7 @@ func TestScoreFilterAppliesAfterTheDefaultFilter(t *testing.T) {
 	} {
 		retain(t, db, entry, true)
 	}
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Some One", collectorapi.ScoreRuleAlwaysHide)
+	hideBy(t, db, s, collectorapi.ScoreKindUploader, "Some One")
 	options := collectorapi.CatalogOptions{DefaultCategories: []string{"manga"}}
 	assertCatalogIDs(t, scorePage(t, s, "", options), []int64{1})
 	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterHidden, options), []int64{2})
@@ -229,7 +234,7 @@ func TestScoreFilterInTheUnseenView(t *testing.T) {
 	} {
 		retain(t, db, entry, true)
 	}
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Some One", collectorapi.ScoreRuleAlwaysHide)
+	hideBy(t, db, s, collectorapi.ScoreKindUploader, "Some One")
 	page := unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100})
 	assertCatalogIDs(t, page, []int64{4, 2})
 	if page.ScoreFilter == nil || page.ScoreFilter.HiddenUnseen {
@@ -260,7 +265,7 @@ func TestScoreFilterInTheUnseenView(t *testing.T) {
 		}
 	}
 	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{Unseen: true}), []int64{3, 1})
-	if _, err := db.Exec(t.Context(), "DELETE FROM panda_score_overrides"); err != nil {
+	if err := s.RemoveScoreModel(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	assertCatalogIDs(t, unseenPage(t, s, collectorapi.CatalogOptions{PageSize: 100}), []int64{3, 1})
@@ -270,7 +275,7 @@ func TestCatchUpCoversHiddenGalleries(t *testing.T) {
 	db, s := openCatalog(t)
 	retain(t, db, panda.Metadata{ID: 1, Posted: 1, Uploader: "Some One"}, true)
 	retain(t, db, panda.Metadata{ID: 2, Posted: 2}, true)
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Some One", collectorapi.ScoreRuleAlwaysHide)
+	hideBy(t, db, s, collectorapi.ScoreKindUploader, "Some One")
 	catchUp(t, s, 2)
 	for _, filter := range []string{"", collectorapi.ScoreFilterHidden} {
 		assertCatalogIDs(t, scorePage(t, s, filter, collectorapi.CatalogOptions{Unseen: true}), []int64{})
@@ -288,7 +293,7 @@ func TestScoreFilterFollowsProvisionalThenCollectedTags(t *testing.T) {
 	db, s := openCatalog(t)
 	projectFeed(t, db, panda.FeedEntry{GalleryRef: panda.GalleryRef{ID: 1, Token: "token1"}, Title: "Feed", Tags: []string{"female:big hat"}}, time.Now().UTC())
 	retain(t, db, panda.Metadata{ID: 2, Posted: 2}, true)
-	setOverride(t, s, collectorapi.ScoreKindTag, "female:big hat", collectorapi.ScoreRuleAlwaysHide)
+	hideBy(t, db, s, collectorapi.ScoreKindTag, "female:big hat")
 	assertCatalogIDs(t, scorePage(t, s, "", collectorapi.CatalogOptions{}), []int64{2})
 	assertCatalogIDs(t, scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{}), []int64{1})
 	retain(t, db, panda.Metadata{ID: 1, Posted: 1, Tags: []string{"female:glasses"}}, true)

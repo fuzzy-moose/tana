@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { Badge, Flex, Text, VisuallyHidden } from '@radix-ui/themes'
-import { ClockIcon, DrawingPinFilledIcon, ExclamationTriangleIcon, EyeNoneIcon, EyeOpenIcon, StarFilledIcon } from '@radix-ui/react-icons'
+import { ClockIcon, DrawingPinFilledIcon, ExclamationTriangleIcon, StarFilledIcon } from '@radix-ui/react-icons'
 import GalleryBox from '../galleries/GalleryBox'
 import type { GalleryBoxTag } from '../galleries/GalleryBox'
 import type { PandaCatalogScoreFilter, PandaGallery, PandaScoreWeight, PandaSummaryTag, ScoreGrade } from './api'
 import PandaCategoryBadge from './PandaCategoryBadge'
-import { scoreRuleNames } from './score'
 import type { ScoreSource } from './score'
 
 const weightPrefixes: Record<PandaScoreWeight['kind'], string> = { tag: '', uploader: 'Uploader ', category: 'Category ' }
@@ -35,11 +34,8 @@ function weightColor(weight: number | undefined): GalleryBoxTag['color'] {
   return undefined
 }
 
-/** Gives a tag at most one mark: its override rule, else a pin, else a favorite author's star. An override colours by its rule, any other tag by its weight; the order stays the catalog page's. */
-function stripTag({ weight, override, source, favorite_author: favoriteAuthor, ...tag }: PandaSummaryTag): GalleryBoxTag {
-  if (override) return { ...tag, color: override === 'never_hide' ? 'green' : 'red', mark: <>
-    {override === 'never_hide' ? <EyeOpenIcon /> : <EyeNoneIcon />}<VisuallyHidden>{scoreRuleNames[override]}: </VisuallyHidden>
-  </> }
+/** Gives a tag at most one mark: a pin, else a favorite author's star, and colours it by its weight; the order stays the catalog page's. */
+function stripTag({ weight, source, favorite_author: favoriteAuthor, ...tag }: PandaSummaryTag): GalleryBoxTag {
   const color = weightColor(weight)
   const mark = source === 'pin' ? <><DrawingPinFilledIcon /><VisuallyHidden>Pinned: </VisuallyHidden></>
     : favoriteAuthor ? <><StarFilledIcon /><VisuallyHidden>Favorite author: </VisuallyHidden></>
@@ -47,21 +43,11 @@ function stripTag({ weight, override, source, favorite_author: favoriteAuthor, .
   return { ...tag, color, mark }
 }
 
-/** The rule that decides whether the score filter hides the gallery, as the collector names it. */
-function scoreRule({ score }: PandaGallery) {
-  switch (score?.rule) {
-    case 'never_hide': return `Never hidden: ${score.override}.`
-    case 'always_hide': return `Hidden by the override for ${score.override}.`
-    case 'below_threshold': return 'Hidden: the score is below the threshold.'
-    default: return ''
-  }
-}
-
 /** Hover details: everything the compact card leaves out. `scoreFilter` is the page's, present while the filter is in force. */
 export function PandaDetails({ gallery, scoreFilter }: { gallery: PandaGallery, scoreFilter?: PandaCatalogScoreFilter }) {
   const date = gallery.posted_at || gallery.first_seen_at
   const score = gallery.score
-  const rule = scoreFilter ? scoreRule(gallery) : ''
+  const hidden = !!scoreFilter && score?.rule === 'below_threshold'
   const grade = gradeText(gallery, scoreFilter)
   return <Flex direction="column" gap="1">
     <Text weight="medium">{gallery.title}</Text>
@@ -77,7 +63,7 @@ export function PandaDetails({ gallery, scoreFilter }: { gallery: PandaGallery, 
       {grade && <Text>{grade}</Text>}
       {score.weights?.map((weight) => <Text key={`${weight.kind}:${weight.label}`}>{weight.weight > 0 ? '+' : ''}{weight.weight.toFixed(2)} {weightPrefixes[weight.kind]}{weight.label}{weight.source && sourceSuffixes[weight.source]}</Text>)}
     </>}
-    {rule && <Text>{rule}</Text>}
+    {hidden && <Text>Hidden: the score is below the threshold.</Text>}
   </Flex>
 }
 

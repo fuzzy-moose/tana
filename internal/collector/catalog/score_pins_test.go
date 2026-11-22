@@ -158,13 +158,3 @@ func TestRemoveScorePin(t *testing.T) {
 		t.Fatalf("pins = %+v", pins)
 	}
 }
-
-func TestScorePinAndOverrideCoexist(t *testing.T) {
-	db, s := openCatalog(t)
-	retain(t, db, panda.Metadata{ID: 1, Posted: 1, Tags: []string{"female:big hat"}}, true)
-	setOverride(t, s, "tag", "female:big hat", "always_hide")
-	setPin(t, s, "tag", "female:big hat", 1)
-	if overrides, pins := overrideRowCount(t, db), pinRowCount(t, db); overrides != 1 || pins != 1 {
-		t.Fatalf("overrides = %d, pins = %d", overrides, pins)
-	}
-}

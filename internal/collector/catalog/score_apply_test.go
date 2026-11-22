@@ -93,31 +93,25 @@ func TestAppliedModelHidesGalleriesBelowTheThreshold(t *testing.T) {
 		retain(t, db, entry, true)
 	}
 	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Some One", collectorapi.ScoreRuleNeverHide)
 
 	on := scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, on, []int64{109, 107, 105, 103, 102, 10, 9, 8, 7, 6})
+	assertCatalogIDs(t, on, []int64{109, 107, 103, 102, 10, 9, 8, 7, 6})
 	hidden := scorePage(t, s, collectorapi.ScoreFilterHidden, collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, hidden, []int64{108, 106, 104, 101, 5, 4, 3, 2, 1})
+	assertCatalogIDs(t, hidden, []int64{108, 106, 105, 104, 101, 5, 4, 3, 2, 1})
 	all := scorePage(t, s, collectorapi.ScoreFilterAll, collectorapi.CatalogOptions{})
 	assertCatalogIDs(t, all, []int64{109, 108, 107, 106, 105, 104, 103, 102, 101, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1})
 	for _, result := range []collectorapi.CatalogResult{on, hidden, all} {
 		assertThreshold(t, result, 0)
 	}
 	for _, result := range []collectorapi.CatalogResult{hidden, all} {
-		for _, id := range []int64{101, 104, 106, 108} {
-			if score := itemByID(t, result, id).Score; score == nil || score.Rule != collectorapi.ScoreRuleBelowThreshold || score.Override != "" {
-				t.Fatalf("gallery %d score = %+v", id, score)
-			}
+		for _, id := range []int64{101, 104, 105, 106, 108} {
+			assertScore(t, itemByID(t, result, id), collectorapi.ScoreRuleBelowThreshold)
 		}
 	}
 	for _, result := range []collectorapi.CatalogResult{on, all} {
 		if score := itemByID(t, result, 107).Score; score == nil || score.Rule != "" {
 			t.Fatalf("gallery 107 score = %+v", score)
 		}
-	}
-	if score := itemByID(t, on, 105).Score; score == nil || score.Rule != collectorapi.ScoreRuleNeverHide || score.Override != "Some One" {
-		t.Fatalf("gallery 105 score = %+v", score)
 	}
 
 	for _, tc := range []struct {
@@ -342,31 +336,24 @@ func TestSetScoreThresholdChangesWhatIsHidden(t *testing.T) {
 	}
 }
 
-func TestRemoveScoreModelKeepsOverrides(t *testing.T) {
+func TestRemoveScoreModelTurnsTheFilterOff(t *testing.T) {
 	db, s := openCatalog(t)
 	seedScoreGalleries(t, db)
 	seedScoredGalleries(t, db)
-	retain(t, db, panda.Metadata{ID: 105, Posted: 105, Uploader: "Some One"}, true)
 	applyScoreModel(t, db, s, 0, storedScoreWeights()...)
-	setOverride(t, s, collectorapi.ScoreKindUploader, "Some One", collectorapi.ScoreRuleAlwaysHide)
+	setPin(t, s, collectorapi.ScoreKindTag, "male:hat", -100)
 	if err := s.RemoveScoreModel(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	result := scorePage(t, s, "", collectorapi.CatalogOptions{})
 	assertCatalogIDs(t, result, []int64{104, 103, 102, 101, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1})
-	if result.ScoreFilter == nil || result.ScoreFilter.ThresholdTenths != nil {
+	if result.ScoreFilter != nil {
 		t.Fatalf("score filter = %+v", result.ScoreFilter)
 	}
 	for _, item := range result.Items {
-		assertScore(t, item, "", "")
-	}
-	if _, err := db.Exec(t.Context(), "DELETE FROM panda_score_overrides"); err != nil {
-		t.Fatal(err)
-	}
-	result = scorePage(t, s, "", collectorapi.CatalogOptions{})
-	assertCatalogIDs(t, result, []int64{105, 104, 103, 102, 101, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1})
-	if result.ScoreFilter != nil {
-		t.Fatalf("score filter = %+v", result.ScoreFilter)
+		if item.Score != nil {
+			t.Fatalf("gallery %d score = %+v, want none", item.GalleryID, item.Score)
+		}
 	}
 	if err := s.RemoveScoreModel(t.Context()); err != nil {
 		t.Fatal(err)

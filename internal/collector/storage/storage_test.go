@@ -1,8 +1,10 @@
 package storage_test
 
 import (
+	"fmt"
 	"io/fs"
 	"maps"
+	"slices"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -123,37 +125,26 @@ func TestScoreModelsFromFavoritesMigrationDeletesEveryModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	pool = pgtest.Reopen(t, pool, all)
-	var models, weights, pins, overrides int
+	// The override becomes a third pin in a later migration.
+	var models, weights, pins int
 	var bonus float64
 	if err := pool.QueryRow(t.Context(), `SELECT
 		(SELECT count(*) FROM panda_score_models),
 		(SELECT count(*) FROM panda_score_weights),
 		(SELECT count(*) FROM panda_score_pins),
-		(SELECT count(*) FROM panda_score_overrides),
-		(SELECT author_bonus FROM panda_score_settings)`).Scan(&models, &weights, &pins, &overrides, &bonus); err != nil {
+		(SELECT author_bonus FROM panda_score_settings)`).Scan(&models, &weights, &pins, &bonus); err != nil {
 		t.Fatal(err)
 	}
-	if models != 0 || weights != 0 || pins != 2 || overrides != 1 || bonus != 1.5 {
-		t.Fatalf("models=%d weights=%d pins=%d overrides=%d bonus=%g", models, weights, pins, overrides, bonus)
+	if models != 0 || weights != 0 || pins != 3 || bonus != 1.5 {
+		t.Fatalf("models=%d weights=%d pins=%d bonus=%g", models, weights, pins, bonus)
 	}
 
-	service := catalog.New(pool, "https://panda.test")
-	page := func() collectorapi.CatalogResult {
-		t.Helper()
-		result, err := service.List(t.Context(), collectorapi.CatalogOptions{PageSize: 10})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return result
-	}
-	if filter := page().ScoreFilter; filter == nil || filter.ThresholdTenths != nil {
-		t.Fatalf("score filter with an override: %+v", filter)
-	}
-	if _, err := pool.Exec(t.Context(), "DELETE FROM panda_score_overrides"); err != nil {
+	result, err := catalog.New(pool, "https://panda.test").List(t.Context(), collectorapi.CatalogOptions{PageSize: 10})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if filter := page().ScoreFilter; filter != nil {
-		t.Fatalf("score filter without overrides: %+v", filter)
+	if filter := result.ScoreFilter; filter != nil {
+		t.Fatalf("score filter without a model: %+v", filter)
 	}
 }
 
@@ -312,5 +303,135 @@ func TestDropDisplayEvidenceMigrationKeepsDisplays(t *testing.T) {
 	}
 	if unseen := list(true); len(unseen.Items) != 1 || unseen.Items[0].GalleryID != 3 {
 		t.Fatalf("unseen = %+v", unseen.Items)
+	}
+}
+
+// migrationsBefore returns the migrations whose names sort before first.
+func migrationsBefore(t *testing.T, first string) fstest.MapFS {
+	t.Helper()
+	all := storage.Migrations()
+	files, err := fs.Glob(all, "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := fstest.MapFS{}
+	for _, name := range files {
+		if name >= first {
+			continue
+		}
+		data, err := fs.ReadFile(all, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[name] = &fstest.MapFile{Data: data}
+	}
+	return before
+}
+
+func TestScoreOverridesMigrationPinsEveryOverride(t *testing.T) {
+	pool := pgtest.Open(t, migrationsBefore(t, "0020"))
+	// Tag 1, uploader Spam and category Misc are always hidden, tag 2,
+	// uploader Friend and category Doujinshi never; tag 1 and Doujinshi also
+	// have a pin, tag 3 and uploader Other only a pin. Gallery 1 carries tags
+	// 1 and 2, gallery 2 only tag 1, gallery 3 no tag.
+	if _, err := pool.Exec(t.Context(), `
+		INSERT INTO catalog_tags (id, namespace, value, value_lower) VALUES
+			(1, 'artist', 'a', 'a'), (2, 'male', 'hat', 'hat'), (3, 'female', 'glasses', 'glasses');
+		INSERT INTO panda_score_overrides (kind, tag_id, value, rule, created_at) VALUES
+			('tag', 1, '', 'always_hide', now()), ('uploader', NULL, 'Spam', 'always_hide', now()),
+			('category', NULL, 'Misc', 'always_hide', now()), ('tag', 2, '', 'never_hide', now()),
+			('uploader', NULL, 'Friend', 'never_hide', now()), ('category', NULL, 'Doujinshi', 'never_hide', now());
+		INSERT INTO panda_score_pins (kind, tag_id, value, weight, created_at) VALUES
+			('tag', 1, '', 3, now()), ('category', NULL, 'Doujinshi', -4, now()),
+			('tag', 3, '', -1, now()), ('uploader', NULL, 'Other', 2, now());
+		INSERT INTO panda_score_models (id, active, calculated_at, threshold_tenths, favorites_in_scope, catalog_in_scope)
+			OVERRIDING SYSTEM VALUE VALUES (1, true, now(), 0, 0, 0);
+		UPDATE panda_favorite_scores SET model_id = 1, scores = '{-5,7}', query = 'glasses', categories = '{Doujinshi}';
+		INSERT INTO gallery_refs (gallery_id, token) SELECT g, 'token' FROM generate_series(1, 3) g;
+		INSERT INTO catalog_galleries (gallery_id, title, title_lower, title_japanese_lower, thumbnail_url, posted, ordered_at)
+			SELECT g, 'Gallery', 'gallery', '', '', now(), now() + g * interval '1 second' FROM generate_series(1, 3) g;
+		INSERT INTO catalog_gallery_tags (gallery_id, tag_id) VALUES (1, 1), (1, 2), (2, 1);`); err != nil {
+		t.Fatal(err)
+	}
+	pool = pgtest.Reopen(t, pool, storage.Migrations())
+
+	rows, err := pool.Query(t.Context(), "SELECT kind, coalesce(tag_id, 0), value, weight FROM panda_score_pins ORDER BY kind, tag_id, value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pins []string
+	for rows.Next() {
+		var kind, value string
+		var tagID int64
+		var weight float64
+		if err := rows.Scan(&kind, &tagID, &value, &weight); err != nil {
+			t.Fatal(err)
+		}
+		pins = append(pins, fmt.Sprintf("%s %d %q %g", kind, tagID, value, weight))
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`category 0 "Doujinshi" 1000`, `category 0 "Misc" -100`,
+		`tag 1 "" -100`, `tag 2 "" 1000`, `tag 3 "" -1`,
+		`uploader 0 "Friend" 1000`, `uploader 0 "Other" 2`, `uploader 0 "Spam" -100`,
+	}
+	if !slices.Equal(pins, want) {
+		t.Fatalf("pins = %q, want %q", pins, want)
+	}
+	var dropped bool
+	var modelID int64
+	var scores, categories []string
+	var query string
+	if err := pool.QueryRow(t.Context(), `SELECT to_regclass('panda_score_overrides') IS NULL,
+		model_id, scores::text[], query, categories FROM panda_favorite_scores`).Scan(&dropped, &modelID, &scores, &query, &categories); err != nil {
+		t.Fatal(err)
+	}
+	if !dropped || modelID != 1 || len(scores) != 0 || query != "glasses" || !slices.Equal(categories, []string{"Doujinshi"}) {
+		t.Fatalf("dropped=%v favorite scores: model=%d scores=%v query=%q categories=%v", dropped, modelID, scores, query, categories)
+	}
+
+	service := catalog.New(pool, "https://panda.test")
+	listed := func(filter string) []int64 {
+		t.Helper()
+		result, err := service.List(t.Context(), collectorapi.CatalogOptions{PageSize: 10, ScoreFilter: filter})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := []int64{}
+		for _, item := range result.Items {
+			ids = append(ids, item.GalleryID)
+		}
+		slices.Sort(ids)
+		return ids
+	}
+	if got := listed(""); !slices.Equal(got, []int64{1, 3}) {
+		t.Fatalf("listed = %v, want [1 3]", got)
+	}
+	if got := listed(collectorapi.ScoreFilterHidden); !slices.Equal(got, []int64{2}) {
+		t.Fatalf("hidden = %v, want [2]", got)
+	}
+}
+
+func TestScoreOverridesMigrationKeepsFavoriteScoresWithoutOverrides(t *testing.T) {
+	pool := pgtest.Open(t, migrationsBefore(t, "0020"))
+	if _, err := pool.Exec(t.Context(), `
+		INSERT INTO panda_score_pins (kind, value, weight, created_at) VALUES ('uploader', 'Other', 2, now());
+		UPDATE panda_favorite_scores SET model_id = 1, scores = '{-5,7}', query = 'glasses', categories = '{Doujinshi}';`); err != nil {
+		t.Fatal(err)
+	}
+	pool = pgtest.Reopen(t, pool, storage.Migrations())
+	var modelID int64
+	var scores []int32
+	var categories []string
+	var query string
+	var pins int
+	if err := pool.QueryRow(t.Context(), `SELECT model_id, scores, query, categories,
+		(SELECT count(*) FROM panda_score_pins) FROM panda_favorite_scores`).Scan(&modelID, &scores, &query, &categories, &pins); err != nil {
+		t.Fatal(err)
+	}
+	if modelID != 1 || !slices.Equal(scores, []int32{-5, 7}) || query != "glasses" || !slices.Equal(categories, []string{"Doujinshi"}) || pins != 1 {
+		t.Fatalf("favorite scores: model=%d scores=%v query=%q categories=%v pins=%d", modelID, scores, query, categories, pins)
 	}
 }

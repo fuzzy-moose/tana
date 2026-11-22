@@ -23,9 +23,9 @@ type scorePin struct {
 }
 
 // SetScorePin pins the weight of one tag, uploader or category, with the value
-// rules of SetScoreOverride, and replaces the weight of an existing pin of the
-// same value. It returns the stored pin. Pins belong to no model, so it takes
-// no lock on panda_score_models.
+// rules of parseSavedScoreTarget, and replaces the weight of an existing pin of
+// the same value. It returns the stored pin. Pins belong to no model, so it
+// takes no lock on panda_score_models.
 func (s *Service) SetScorePin(ctx context.Context, kind, value string, weight float64) (collectorapi.ScorePin, error) {
 	if math.IsNaN(weight) || math.Abs(weight) > maxScoreWeight {
 		return collectorapi.ScorePin{}, ErrInvalidScorePin

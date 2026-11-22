@@ -130,7 +130,7 @@ func writeCatalogCollectorError(w http.ResponseWriter, err error) {
 			code = "collector_unauthorized"
 		case http.StatusBadRequest:
 			switch upstream.Code {
-			case "invalid_query", "invalid_pagination", "invalid_category", "invalid_override", "invalid_pin", "invalid_author_bonus", "invalid_threshold":
+			case "invalid_query", "invalid_pagination", "invalid_category", "invalid_pin", "invalid_author_bonus", "invalid_threshold":
 				status, code = http.StatusBadRequest, upstream.Code
 			}
 		case http.StatusConflict:

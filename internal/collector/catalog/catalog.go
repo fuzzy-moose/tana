@@ -173,10 +173,8 @@ func (s *Service) List(ctx context.Context, options collectorapi.CatalogOptions)
 		if err := filter.markScores(ctx, tx, result.Items); err != nil {
 			return result, err
 		}
-		if filter.model != nil {
-			result.ScoreFilter.HeldOutFavorites = len(filter.model.favoriteScores)
-			markGrades(result.Items, filter.model.favoriteScores)
-		}
+		result.ScoreFilter.HeldOutFavorites = len(filter.model.favoriteScores)
+		markGrades(result.Items, filter.model.favoriteScores)
 		if options.Unseen && options.ScoreFilter == "" && options.Cursor == "" && len(result.Items) == 0 {
 			result.ScoreFilter.HiddenUnseen, err = filter.hasHiddenUnseen(ctx, tx, unseenPredicate, unseenArgs)
 			if err != nil {
@@ -258,14 +256,12 @@ func catalogPredicate(ctx context.Context, tx pgx.Tx, options collectorapi.Catal
 }
 
 // summarizeTags offers each item at most gallerysearch.SummaryTagLimit of its
-// tags. While the score filter is not in force, these are its first tags in
-// namespace order. While it is in force, all tags of the item are ranked
-// first: the tags with a tag score override, "never hide" before "always
-// hide", then the tags with an effective weight under the active model by the
-// absolute value of their weight, the strongest first, then all other tags;
-// ties keep namespace order. Each tag carries its override rule and its weight
-// with its source, if it has them, and with an active model whether it is a
-// favorite author. Uploader and category weights and overrides play no part.
+// tags. Without an active model, these are its first tags in namespace order.
+// With one, all tags of the item are ranked first: the tags with an effective
+// weight by the absolute value of their weight, the strongest first, then all
+// other tags; ties keep namespace order. Each tag then carries its weight with
+// its source, if it has one, and whether it is a favorite author. Uploader and
+// category weights play no part.
 func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogItem, filter scoreFilter) error {
 	byID := make(map[int64]*collectorapi.CatalogItem, len(items))
 	ids := make([]int64, 0, len(items))
@@ -283,29 +279,22 @@ func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogI
 		source = filter.sourceSQL(modelID, collectorapi.ScoreKindTag, "gt.tag_id")
 		favorite = favoriteAuthorSQL("gt.tag_id")
 	}
-	rules := make(map[int64]string)
-	for _, override := range filter.overrides {
-		if override.Kind == collectorapi.ScoreKindTag {
-			rules[override.TagID] = override.Rule
-		}
-	}
 	// Namespace order comes from the database's collation, so the ranking
 	// below keeps the row order for ties.
-	rows, err := tx.Query(ctx, `SELECT gt.gallery_id, gt.tag_id, t.namespace, t.value, `+weight+`, `+source+`, `+favorite+`
+	rows, err := tx.Query(ctx, `SELECT gt.gallery_id, t.namespace, t.value, `+weight+`, `+source+`, `+favorite+`
 		FROM catalog_gallery_tags gt JOIN catalog_tags t ON t.id = gt.tag_id
 		WHERE gt.gallery_id = ANY($1::bigint[]) ORDER BY t.namespace, t.value_lower`, args...)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	ranked := filter.inForce()
+	ranked := filter.model != nil
 	for rows.Next() {
-		var id, tagID int64
+		var id int64
 		var tag collectorapi.CatalogTag
-		if err := rows.Scan(&id, &tagID, &tag.Namespace, &tag.Value, &tag.Weight, &tag.Source, &tag.FavoriteAuthor); err != nil {
+		if err := rows.Scan(&id, &tag.Namespace, &tag.Value, &tag.Weight, &tag.Source, &tag.FavoriteAuthor); err != nil {
 			return err
 		}
-		tag.Override = rules[tagID]
 		if item := byID[id]; ranked || len(item.SummaryTags) < gallerysearch.SummaryTagLimit {
 			tag.Term = gallerysearch.SuggestionTerm("", tag.Namespace, tag.Value)
 			item.SummaryTags = append(item.SummaryTags, tag)
@@ -319,30 +308,17 @@ func summarizeTags(ctx context.Context, tx pgx.Tx, items []collectorapi.CatalogI
 	}
 	for _, item := range byID {
 		slices.SortStableFunc(item.SummaryTags, func(a, b collectorapi.CatalogTag) int {
-			return cmp.Or(cmp.Compare(overrideRank(b), overrideRank(a)), cmp.Compare(tagRank(b), tagRank(a)))
+			return cmp.Compare(tagRank(b), tagRank(a))
 		})
 		item.SummaryTags = item.SummaryTags[:min(len(item.SummaryTags), gallerysearch.SummaryTagLimit)]
 	}
 	return nil
 }
 
-// overrideRank puts "never hide" tags before "always hide" tags, and both
-// before tags without an override.
-func overrideRank(tag collectorapi.CatalogTag) int {
-	switch tag.Override {
-	case collectorapi.ScoreRuleNeverHide:
-		return 2
-	case collectorapi.ScoreRuleAlwaysHide:
-		return 1
-	}
-	return 0
-}
-
-// tagRank is the absolute weight of a weighted tag without an override, and
-// -1 for a tag without a weight, so a weight of 0 still ranks before it.
-// Override tags are ranked by overrideRank alone.
+// tagRank is the absolute weight of a weighted tag, and -1 for a tag without
+// a weight, so a weight of 0 still ranks before it.
 func tagRank(tag collectorapi.CatalogTag) float64 {
-	if tag.Weight == nil || tag.Override != "" {
+	if tag.Weight == nil {
 		return -1
 	}
 	return math.Abs(*tag.Weight)

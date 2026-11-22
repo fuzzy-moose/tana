@@ -32,8 +32,6 @@ func NewHandler(app *collector.App) http.Handler {
 	mux.Handle("POST /api/catalog/facts", HandleCatalogFacts(app.Catalog))
 	mux.Handle("POST /api/catalog/displays", HandleRecordCatalogDisplays(app.Catalog))
 	mux.Handle("POST /api/catalog/catch-up", HandleCatalogCatchUp(app.Catalog))
-	mux.Handle("POST /api/catalog/score/overrides", HandleSetScoreOverride(app.Catalog))
-	mux.Handle("DELETE /api/catalog/score/overrides/{id}", HandleRemoveScoreOverride(app.Catalog))
 	mux.Handle("POST /api/catalog/score/pins", HandleSetScorePin(app.Catalog))
 	mux.Handle("DELETE /api/catalog/score/pins/{id}", HandleRemoveScorePin(app.Catalog))
 	mux.Handle("PUT /api/catalog/score/author-bonus", HandleSetAuthorBonus(app.Catalog))

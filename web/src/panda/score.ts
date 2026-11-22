@@ -2,13 +2,9 @@ import { request } from '../api'
 import { collectorMessages } from '../collector/api'
 
 export type ScoreKind = 'tag' | 'uploader' | 'category'
-export type ScoreRule = 'always_hide' | 'never_hide'
 /** Where a weight comes from when the model does not calculate it. */
 export type ScoreSource = 'pin' | 'author_bonus'
 export type NoScoreModel = 'no_favorites' | 'counts_preparing'
-
-/** The names of the score override rules, as the user reads them. */
-export const scoreRuleNames: Record<ScoreRule, string> = { always_hide: 'Always hide', never_hide: 'Never hide' }
 
 /** `counts[i]` is the number of galleries with `floor(score * 10) == first_bucket + i`. */
 export interface ScoreHistogram {
@@ -36,11 +32,9 @@ export interface ScoreWeight {
   active_weight: number | null
 }
 
-/** The held-out favorites: those an override always or never hides, and the scores of the rest. */
+/** The held-out favorites by score: `total` is the sum of the counts. */
 export interface HeldOut {
   total: number
-  always_hidden: number
-  never_hidden: number
   scores: ScoreHistogram
 }
 
@@ -56,13 +50,6 @@ export interface ScoreCandidate {
 export interface ActiveScoreModel {
   calculated_at: string
   threshold_tenths: number
-}
-
-export interface ScoreOverride {
-  id: number
-  kind: ScoreKind
-  label: string
-  rule: ScoreRule
 }
 
 /** A pinned weight: it replaces the calculated weight of its value. */
@@ -82,10 +69,9 @@ export interface ScoreFavoriteAuthor {
   weight: number | null
 }
 
+/** The newest catalog galleries by score; each histogram present counts all `total` of them. */
 export interface RecentCatalog {
   total: number
-  never_hidden: number
-  always_hidden: number
   candidate: ScoreHistogram | null
   active: ScoreHistogram | null
 }
@@ -97,7 +83,6 @@ export interface ScorePreview {
   /** The share of the catalog counted so far, in percent, while `no_model` is `counts_preparing`. */
   counts_progress?: number
   active: ActiveScoreModel | null
-  overrides: ScoreOverride[]
   pins: ScorePin[]
   author_bonus: number | null
   favorite_author_count: number
@@ -134,18 +119,6 @@ export const savePandaScoreThreshold = (thresholdTenths: number, signal: AbortSi
 }, changeMessages)
 
 export const turnOffPandaScore = (signal: AbortSignal) => request<void>('/api/collector/catalog/score/model', { method: 'DELETE', signal }, changeMessages)
-
-const overrideMessages = {
-  ...collectorMessages,
-  tag_not_found: 'No gallery in the Panda catalog has this tag.',
-  invalid_override: 'Enter a tag as namespace:value, an uploader name, or a Panda gallery category.',
-}
-
-export const savePandaScoreOverride = (override: { kind: ScoreKind, value: string, rule: ScoreRule }, signal: AbortSignal) => request<void>('/api/collector/catalog/score/overrides', {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: override.kind, value: override.value, rule: override.rule }), signal,
-}, overrideMessages)
-
-export const removePandaScoreOverride = (id: number, signal: AbortSignal) => request<void>(`/api/collector/catalog/score/overrides/${id}`, { method: 'DELETE', signal }, overrideMessages)
 
 const pinMessages = {
   ...collectorMessages,
@@ -197,21 +170,19 @@ function countBelow(histogram: ScoreHistogram | null, thresholdTenths: number) {
 /** The share of the held-out favorites that a threshold hides. */
 export function hiddenShare(heldOut: HeldOut, thresholdTenths: number) {
   if (heldOut.total === 0) return 0
-  return (heldOut.always_hidden + countBelow(heldOut.scores, thresholdTenths)) / heldOut.total
+  return countBelow(heldOut.scores, thresholdTenths) / heldOut.total
 }
 
 /** The share of the recent catalog sample that the listing would hide with a model's histogram and threshold. */
 export function recentHiddenShare(recent: RecentCatalog, histogram: ScoreHistogram | null, thresholdTenths: number) {
   if (recent.total === 0) return 0
-  return (recent.always_hidden + countBelow(histogram, thresholdTenths)) / recent.total
+  return countBelow(histogram, thresholdTenths) / recent.total
 }
 
-/** The share of the recent catalog sample that the listing hides now: nothing while the score filter is not in force. */
+/** The share of the recent catalog sample that the listing hides now: nothing without an active model. */
 export function currentHiddenShare(preview: ScorePreview) {
-  const { active, overrides, recent } = preview
-  if (active) return recentHiddenShare(recent, recent.active, active.threshold_tenths)
-  if (overrides.length === 0) return 0
-  return recentHiddenShare(recent, null, 0)
+  const { active, recent } = preview
+  return active ? recentHiddenShare(recent, recent.active, active.threshold_tenths) : 0
 }
 
 /** A weight with its sign and two decimals, or a dash when there is none. */

@@ -56,9 +56,6 @@ type CatalogTag struct {
 	// FavoriteAuthor says that the tag is a favorite author. It is set only
 	// while a Panda score model is active, like Weight.
 	FavoriteAuthor bool `json:"favorite_author,omitempty"`
-	// Override is the rule of the tag's score override: ScoreRuleAlwaysHide
-	// or ScoreRuleNeverHide.
-	Override string `json:"override,omitempty"`
 }
 
 type CatalogResult struct {
