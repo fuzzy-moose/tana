@@ -13,7 +13,7 @@ You review the commits for one ticket. Your prompt names the ticket file and a c
 1. Read `git log <base>..<head>` and `git diff <base>..<head>`, the ticket, and the feature's `spec.md`.
 2. Check the diff against each source:
    - **Ticket**: every acceptance criterion met by behaviour, with a test that would fail without the change.
-   - **Spec**: decisions in the spec respected; behaviour beyond the ticket flagged as scope creep. Local choices the plan leaves open (private helpers, code shape, test sequences) belong to the implementer, so report one only for a concrete problem.
+   - **Spec**: decisions in the spec respected; behaviour beyond the ticket flagged as scope creep. Local choices the plan leaves open (signatures, private helpers, code shape, test sequences, routes, payloads and schema that only this ticket uses) belong to the implementer, so report one only for a concrete problem.
    - **Prefactor**: for a `Prefactor:` ticket, behaviour unchanged and no existing test changed (`git diff <base>..<head> -- '*_test.go' 'web/src/**/*.test.*'`). Either breach is must-fix.
    - **Conventions**: `AGENTS.md` (testing and documentation rules), the responsibilities table in `README.md` (`httpapi/` owns routes, `cmd/` only wires, presentation in `web/`), glossary terms from `CONTEXT.md` in names, and the decisions in `docs/adr/`. A contradicted ADR is must-fix.
    - **Correctness**: error paths, unavailable library roots, concurrent jobs, transactions that leave partial state, and `dbgen` output matching its `queries.sql`.

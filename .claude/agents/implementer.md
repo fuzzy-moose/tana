@@ -13,7 +13,7 @@ A whole-feature fix names the spec instead of a ticket: apply the findings, run 
 
 1. Read the ticket, the feature's `spec.md` beside its `issues/` folder, and the ticket's `## Handoff` section if it has one. Then read only the code the ticket touches. Done when you can name the seam you will test at and the files you will change.
 2. Set the ticket's status to `claimed`.
-3. Build it test-first: write a failing test at the seam, make it pass, repeat per acceptance criterion. Local choices are yours: private helpers, code shape, exact test sequences. A `Prefactor:` ticket keeps behaviour unchanged and existing tests unedited. Run single packages (`go test ./internal/local/gallery/`) or single files (`npx vitest run src/galleries/Reader.test.tsx` in `web/`) as you go.
+3. Build it test-first: write a failing test at the seam, make it pass, repeat per acceptance criterion. Local choices are yours: signatures, private helpers, code shape, exact test sequences, and any route, payload or schema that only this ticket uses. A `Prefactor:` ticket keeps behaviour unchanged and existing tests unedited. Run single packages (`go test ./internal/local/gallery/`) or single files (`npx vitest run src/galleries/Reader.test.tsx` in `web/`) as you go.
 4. Run the green check. Done when it passes and every acceptance criterion is ticked.
 5. Set the status to `resolved`, add a `## Resolution` line naming what changed, delete any `## Handoff`, and commit code, tests, and ticket together on the current branch.
 
@@ -31,7 +31,7 @@ The `go` and `frontend` jobs of `.github/workflows/ci.yml`, run locally, minus `
 Two cases end your run before the ticket is `resolved`:
 
 - **Oversized ticket.** When the ticket turns out much bigger than one context can finish (most acceptance criteria still open after long work), finish the edit in hand, commit whatever is green (status stays `claimed`), write the `## Handoff` section, commit it, and return `handoff`. A fresh implementer continues from your handoff, so make it complete enough to act on without your conversation.
-- **Undecided question.** When the ticket needs a design decision the spec does not settle (behaviour, a package boundary, an HTTP route or payload), or a `Prefactor:` ticket can't keep existing tests unedited, set the status to `ready-for-human`, state the question under `## Comments`, commit, and return `needs-human`.
+- **Undecided question.** When the ticket needs a contract the spec does not settle (user-visible behaviour, a package boundary, a wire shape or schema another ticket uses), or a `Prefactor:` ticket can't keep existing tests unedited, set the status to `ready-for-human`, state the question under `## Comments`, commit, and return `needs-human`.
 
 ## Return value
 
