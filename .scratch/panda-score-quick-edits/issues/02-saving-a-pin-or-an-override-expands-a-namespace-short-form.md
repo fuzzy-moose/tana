@@ -1,6 +1,6 @@
 # 02: Saving a pin or an override expands a namespace short form
 
-What to build: a tag pin or a tag override whose namespace is typed as a short form is saved for the full tag. `f:big breasts` in "Add pin" pins `female:big breasts`, and the same text in "Add override" overrides it. Everything else about saving stays: the tag has to be in the Panda catalog, the namespace and the value match in any case, and `_` stands for a space.
+What to build: a tag pin or a tag override whose namespace is typed as a short form is saved for the full tag. `f:long hair` in "Add pin" pins `female:long hair`, and the same text in "Add override" overrides it. Everything else about saving stays: the tag has to be in the Panda catalog, the namespace and the value match in any case, and `_` stands for a space.
 
 This is spec behaviours 32 and 33, specified in spec **Design → Collector → Short forms on save** and **Fit** 4.
 

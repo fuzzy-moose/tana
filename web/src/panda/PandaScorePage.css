@@ -22,3 +22,14 @@
 
 /* Keeps the place of "Remove pin" in a row without a pin, so the pin fields of all rows stand in one column. */
 .score-pin-slot { flex: none; width: var(--space-5); }
+
+/* A long list scrolls inside a frame that fits below the pin or override form and the tabs, so both stay in reach. */
+.score-scroll { --score-scroll-height: max(20rem, calc(100dvh - 25rem)); }
+.score-scroll.score-rows { max-height: var(--score-scroll-height); overflow-y: auto; }
+.score-scroll .rt-ScrollAreaViewport { max-height: var(--score-scroll-height); }
+/* The table header stays on top of the frame. The table clips its corners without overflow: hidden, which would make the table the scroll container of the header. */
+.score-scroll .rt-TableRootTable { overflow: clip; }
+.score-scroll .rt-TableHeader .rt-TableColumnHeaderCell { position: sticky; top: 0; z-index: 1; background-color: var(--color-panel-solid); }
+
+.score-form-value { width: 22rem; max-width: 100%; }
+.score-form-value select { width: 100%; }

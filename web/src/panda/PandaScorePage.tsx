@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { AlertDialog, Button, Callout, DataList, Flex, Heading, IconButton, Link, SegmentedControl, Spinner, Table, Text, TextField } from '@radix-ui/themes'
+import { AlertDialog, Button, Callout, DataList, Flex, Heading, IconButton, Link, SegmentedControl, Spinner, Table, Tabs, Text, TextField } from '@radix-ui/themes'
 import { ArrowLeftIcon, CheckIcon, Cross2Icon, DrawingPinIcon, ExclamationTriangleIcon, ValueNoneIcon } from '@radix-ui/react-icons'
 import { APIError } from '../api'
 import { formatDate } from '../collector/formatDate'
@@ -12,8 +12,6 @@ import { applyPandaScore, currentHiddenShare, formatWeight, hiddenShare, parseNu
 import type { ScoreCandidate, ScoreKind, ScoreOverride, ScorePin, ScorePreview, ScoreRule, ScoreWeight } from './score'
 import './PandaCatalog.css'
 import './PandaScorePage.css'
-
-const pageSize = 50
 
 const noFavoritesMessage = 'No model is possible: no Panda favorite is in scope. Sync your Panda favorites, or widen the default filter.'
 // How long the page waits before it asks again while the collector counts the catalog in scope.
@@ -110,7 +108,10 @@ const removePin = (id: number): PinRequest => async (signal) => {
 
 const findPin = (pins: ScorePin[], kind: ScoreKind, label: string) => pins.find((pin) => pin.kind === kind && pin.label === label)
 
-function weightLabel({ kind, label }: { kind: ScoreKind, label: string }) {
+/** A tag, uploader or Panda gallery category. */
+interface ScoreValue { kind: ScoreKind, label: string }
+
+function weightLabel({ kind, label }: ScoreValue) {
   if (kind === 'uploader') return `Uploader ${label}`
   if (kind === 'category') return `Category ${label}`
   return label
@@ -184,16 +185,16 @@ function ActiveThreshold({ preview, value, onChange, disabled, onSave, onTurnOff
   </Flex>
 }
 
-function OverrideButtons({ weight, overrides, disabled, onOverride }: {
-  weight: ScoreWeight, overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
+function OverrideButtons({ value, overrides, disabled, onOverride }: {
+  value: ScoreValue, overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
 }) {
-  const current = overrides.find((override) => override.kind === weight.kind && override.label === weight.label)
+  const current = overrides.find((override) => override.kind === value.kind && override.label === value.label)
   return <Flex gap="1" justify="end">{rules.map((rule) => {
     const isPressed = current?.rule === rule
     return <Button key={rule} size="1" variant={isPressed ? 'solid' : 'soft'} color={isPressed ? undefined : 'gray'} aria-pressed={isPressed} disabled={disabled}
       onClick={() => onOverride(current && isPressed
         ? (signal) => removePandaScoreOverride(current.id, signal)
-        : (signal) => savePandaScoreOverride({ kind: weight.kind, value: weight.label, rule }, signal))}>{scoreRuleNames[rule]}</Button>
+        : (signal) => savePandaScoreOverride({ kind: value.kind, value: value.label, rule }, signal))}>{scoreRuleNames[rule]}</Button>
   })}</Flex>
 }
 
@@ -229,20 +230,16 @@ function PinControls({ kind, label, pin, disabled, onPin }: {
   </Flex>
 }
 
-/**
- * A filter text and the number of shown entries of a list, kept while the list stays mounted.
- * A new filter text shows the first page of its matches again.
- */
-function useFilteredList<T>(entries: T[], label: (entry: T) => string) {
-  const [filter, setFilterText] = useState('')
-  const [shown, setShown] = useState(pageSize)
+/** A filter text of a list and the entries whose label contains one of its spellings. */
+function useFilteredList<T>(entries: T[], label: (entry: T) => string, spellings: (needle: string) => string[] = (needle) => [needle]) {
+  const [filter, setFilter] = useState('')
   const needle = filter.trim().toLowerCase()
-  const matches = needle === '' ? entries : entries.filter((entry) => label(entry).toLowerCase().includes(needle))
-  return {
-    filter, filtering: needle !== '', matches, visible: matches.slice(0, shown), more: shown < matches.length,
-    setFilter: (text: string) => { setFilterText(text); setShown(pageSize) },
-    showMore: () => setShown(shown + pageSize),
-  }
+  const needles = needle === '' ? [] : spellings(needle)
+  const matches = needle === '' ? entries : entries.filter((entry) => {
+    const text = label(entry).toLowerCase()
+    return needles.some((item) => text.includes(item))
+  })
+  return { filter, filtering: needle !== '', matches, setFilter }
 }
 
 function FilterField({ label, placeholder, value, onChange }: { label: string, placeholder: string, value: string, onChange: (text: string) => void }) {
@@ -251,25 +248,67 @@ function FilterField({ label, placeholder, value, onChange }: { label: string, p
 
 /** The count line or the empty message of a list, with the scope of the filter when the preview carries fewer entries than exist. */
 function CountLine({ list, carried, all, noun, order, empty, scope }: {
-  list: { filtering: boolean, matches: unknown[], visible: unknown[] }, carried: number, all: number, noun: string, order: string, empty: string, scope: string,
+  list: { filtering: boolean, matches: unknown[] }, carried: number, all: number, noun: string, order: string, empty: string, scope: string,
 }) {
   const text = !list.filtering
-    ? `${list.visible.length.toLocaleString()} of ${all.toLocaleString()} ${noun}, ${order}.`
-    : list.matches.length === 0 ? empty : `${list.visible.length.toLocaleString()} of ${list.matches.length.toLocaleString()} matching ${noun}, ${order}.`
+    ? `${carried.toLocaleString()} of ${all.toLocaleString()} ${noun}, ${order}.`
+    : list.matches.length === 0 ? empty : `${list.matches.length.toLocaleString()} matching ${noun}, ${order}.`
   return <Text as="p" size="2" color="gray">{text}{list.filtering && carried < all && ` ${scope}`}</Text>
 }
 
+// The short namespaces of the search language, which the collector expands when it saves a pin or an override (gallerysearch.NamespaceShortForms).
+const namespaceShortForms: Record<string, string> = {
+  a: 'artist', c: 'character', cos: 'cosplayer', f: 'female', g: 'group', l: 'language',
+  loc: 'location', m: 'male', x: 'mixed', o: 'other', p: 'parody', r: 'reclass',
+}
+
+/** The tag of a namespace:value text in the spelling the collector saves it in, or null for other text. */
+function savedTag(text: string) {
+  const colon = text.indexOf(':')
+  if (colon < 0) return null
+  const namespace = text.slice(0, colon).trim().toLowerCase()
+  const value = text.slice(colon + 1).replaceAll('_', ' ').trim().toLowerCase()
+  if (namespace === '' || value === '') return null
+  return `${namespaceShortForms[namespace] ?? namespace}:${value}`
+}
+
+/** The typed tag that no listed weight has, so that the table offers a row for it; null for other text. */
+function unlistedTag(filter: string, weights: ScoreWeight[]) {
+  const tag = savedTag(filter)
+  if (tag === null) return null
+  return weights.some((weight) => weight.kind === 'tag' && weight.label.toLowerCase() === tag) ? null : tag
+}
+
+function WeightRow({ value, cells, overrides, disabled, onOverride, pins, pinDisabled, onPin }: {
+  value: ScoreValue, cells: string[], overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
+  pins: ScorePin[], pinDisabled: boolean, onPin: (operation: PinRequest) => void,
+}) {
+  const label = weightLabel(value)
+  return <Table.Row>
+    <Table.Cell className="score-label-cell"><span className="score-label" title={label}>{label}</span></Table.Cell>
+    {cells.map((cell, index) => <Table.Cell key={index} justify="end">{cell}</Table.Cell>)}
+    <Table.Cell justify="end"><OverrideButtons value={value} overrides={overrides} disabled={disabled} onOverride={onOverride} /></Table.Cell>
+    <Table.Cell><PinControls kind={value.kind} label={value.label} pin={findPin(pins, value.kind, value.label)} disabled={pinDisabled} onPin={onPin} /></Table.Cell>
+  </Table.Row>
+}
+
+/** The weights of the candidate; a typed tag that no listed weight has gets a row of its own, so that it can be pinned or overridden from here. */
 function Weights({ weights, count, overrides, disabled, onOverride, pins, pinDisabled, onPin }: {
   weights: ScoreWeight[], count: number, overrides: ScoreOverride[], disabled: boolean, onOverride: (operation: OverrideRequest) => void,
   pins: ScorePin[], pinDisabled: boolean, onPin: (operation: PinRequest) => void,
 }) {
-  const list = useFilteredList(weights, weightLabel)
-  const { visible } = list
+  const list = useFilteredList(weights, weightLabel, (needle) => {
+    const tag = savedTag(needle)
+    return tag === null ? [needle] : [needle, tag]
+  })
+  const unlisted = unlistedTag(list.filter, weights)
+  const rowProps = { overrides, disabled, onOverride, pins, pinDisabled, onPin }
   return <Flex direction="column" gap="3">
-    <FilterField label="Filter weights" placeholder="Filter by tag, uploader or category" value={list.filter} onChange={list.setFilter} />
-    <CountLine list={list} carried={weights.length} all={count} noun="weights" order="strongest first" empty="No weights match."
+    <FilterField label="Filter weights" placeholder="Filter, or type a tag as namespace:value" value={list.filter} onChange={list.setFilter} />
+    <CountLine list={list} carried={weights.length} all={count} noun="weights" order="strongest first"
+      empty={unlisted === null ? 'No weights match.' : 'No listed weight has this tag.'}
       scope={`Only the ${weights.length.toLocaleString()} strongest of ${count.toLocaleString()} weights are searched.`} />
-    {(!list.filtering || visible.length > 0) && <Table.Root size="1" variant="surface" className="score-weights">
+    {(!list.filtering || list.matches.length > 0 || unlisted !== null) && <Table.Root size="1" variant="surface" className="score-weights score-scroll">
       <Table.Header><Table.Row>
         <Table.ColumnHeaderCell>Tag, uploader or category</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell justify="end">Weight</Table.ColumnHeaderCell>
@@ -279,67 +318,76 @@ function Weights({ weights, count, overrides, disabled, onOverride, pins, pinDis
         <Table.ColumnHeaderCell justify="end">Override</Table.ColumnHeaderCell>
         <Table.ColumnHeaderCell>Pin</Table.ColumnHeaderCell>
       </Table.Row></Table.Header>
-      <Table.Body>{visible.map((weight) => <Table.Row key={`${weight.kind}:${weight.label}`}>
-        <Table.Cell className="score-label-cell"><span className="score-label" title={weightLabel(weight)}>{weightLabel(weight)}</span></Table.Cell>
-        <Table.Cell justify="end">{formatWeight(weight.weight)}</Table.Cell>
-        <Table.Cell justify="end">{weight.favorites.toLocaleString()}</Table.Cell>
-        <Table.Cell justify="end">{weight.catalog.toLocaleString()}</Table.Cell>
-        <Table.Cell justify="end">{weight.active_weight === null ? '–' : formatWeight(weight.active_weight)}</Table.Cell>
-        <Table.Cell justify="end"><OverrideButtons weight={weight} overrides={overrides} disabled={disabled} onOverride={onOverride} /></Table.Cell>
-        <Table.Cell><PinControls kind={weight.kind} label={weight.label} pin={findPin(pins, weight.kind, weight.label)} disabled={pinDisabled} onPin={onPin} /></Table.Cell>
-      </Table.Row>)}</Table.Body>
+      <Table.Body>
+        {unlisted !== null && <WeightRow key={`unlisted:${unlisted}`} value={{ kind: 'tag', label: unlisted }} cells={['–', '–', '–', '–']} {...rowProps} />}
+        {list.matches.map((weight) => <WeightRow key={`${weight.kind}:${weight.label}`} value={weight} {...rowProps} cells={[
+          formatWeight(weight.weight), weight.favorites.toLocaleString(), weight.catalog.toLocaleString(),
+          weight.active_weight === null ? '–' : formatWeight(weight.active_weight),
+        ]} />)}
+      </Table.Body>
     </Table.Root>}
-    {list.more && <Button variant="soft" color="gray" onClick={list.showMore}>Show more</Button>}
   </Flex>
 }
 
-function OverrideForm({ disabled, change, onAdd }: {
-  disabled: boolean, change: ChangeState, onAdd: (operation: OverrideRequest, onSaved: () => void) => void,
+/** What the pin or override form does with its value: pin a weight, pin the weight 0, or save a score override. */
+type FormAction = 'pin' | 'ignore' | ScoreRule
+
+const formActions: { value: FormAction, name: string }[] = [
+  { value: 'pin', name: 'Pin' }, { value: 'ignore', name: 'Ignore' },
+  ...rules.map((rule) => ({ value: rule, name: scoreRuleNames[rule] })),
+]
+
+/** Pins or overrides any tag, uploader or category, also one that no listed weight has. */
+function PinOrOverrideForm({ overrideDisabled, pinDisabled, change, onOverride, onPin }: {
+  overrideDisabled: boolean, pinDisabled: boolean, change: ChangeState,
+  onOverride: (operation: OverrideRequest, onSaved: () => void) => void, onPin: (operation: PinRequest, onSaved: () => void) => void,
 }) {
   const [kind, setKind] = useState<ScoreKind>('tag')
   const [text, setText] = useState('')
   const [category, setCategory] = useState(pandaCategories[0])
-  const [rule, setRule] = useState<ScoreRule>('always_hide')
+  const [action, setAction] = useState<FormAction>('pin')
+  const [weightText, setWeightText] = useState('')
   const value = kind === 'category' ? category : text.trim()
-  return <Flex asChild direction="column" gap="3"><form aria-label="Add override" onSubmit={(event) => {
+  const weight = action === 'ignore' ? 0 : parseNumber(weightText)
+  const pinning = action === 'pin' || action === 'ignore'
+  const disabled = value === '' || (pinning ? pinDisabled || weight === null : overrideDisabled)
+  const clear = () => { setText(''); setWeightText('') }
+  return <Flex asChild direction="column" gap="2"><form aria-label="Add pin or override" onSubmit={(event) => {
     event.preventDefault()
-    if (value === '' || disabled) return
-    onAdd((signal) => savePandaScoreOverride({ kind, value, rule }, signal), () => setText(''))
+    if (disabled) return
+    if (action !== 'pin' && action !== 'ignore') onOverride((signal) => savePandaScoreOverride({ kind, value, rule: action }, signal), clear)
+    else if (weight !== null) onPin(savePin({ kind, value, weight }), clear)
   }}>
-    <Heading as="h3" size="3">Add override</Heading>
-    <Flex gap="3" wrap="wrap">
+    <Flex gap="3" align="center" wrap="wrap">
       <SegmentedControl.Root size="1" aria-label="Kind" value={kind} onValueChange={(next) => setKind(next as ScoreKind)}>
         <SegmentedControl.Item value="tag">Tag</SegmentedControl.Item>
         <SegmentedControl.Item value="uploader">Uploader</SegmentedControl.Item>
         <SegmentedControl.Item value="category">Category</SegmentedControl.Item>
       </SegmentedControl.Root>
-      <SegmentedControl.Root size="1" aria-label="Rule" value={rule} onValueChange={(next) => setRule(next as ScoreRule)}>
-        {rules.map((item) => <SegmentedControl.Item key={item} value={item}>{scoreRuleNames[item]}</SegmentedControl.Item>)}
+      <SegmentedControl.Root size="1" aria-label="Action" value={action} onValueChange={(next) => setAction(next as FormAction)}>
+        {formActions.map((item) => <SegmentedControl.Item key={item.value} value={item.value}>{item.name}</SegmentedControl.Item>)}
       </SegmentedControl.Root>
     </Flex>
-    <Flex direction="column" gap="1" maxWidth="360px">
-      {kind === 'category'
-        ? <>
-          <Text as="label" htmlFor="panda-score-override-category" size="2" weight="medium">Category</Text>
-          <select id="panda-score-override-category" value={category} onChange={(event) => setCategory(event.target.value)}>
-            {pandaCategories.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </>
-        : <>
-          <Text as="label" htmlFor="panda-score-override-value" size="2" weight="medium">{kind === 'tag' ? 'Tag (namespace:value)' : 'Uploader (exactly as Panda writes it)'}</Text>
-          {kind === 'tag'
-            ? <TagCompletionField id="panda-score-override-value" value={text} onChange={setText} complete={completePandaSearch} insert="tag" />
-            : <TextField.Root id="panda-score-override-value" value={text} onChange={(event) => setText(event.target.value)} />}
-        </>}
+    <Flex gap="2" align="center" wrap="wrap">
+      <div className="score-form-value">{kind === 'category'
+        ? <select aria-label="Category" value={category} onChange={(event) => setCategory(event.target.value)}>
+          {pandaCategories.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+        : kind === 'tag'
+          ? <TagCompletionField id="panda-score-form-value" aria-label="Tag" placeholder="namespace:value" value={text} onChange={setText} complete={completePandaSearch} insert="tag" />
+          : <TextField.Root aria-label="Uploader" placeholder="Uploader, exactly as Panda writes it" value={text} onChange={(event) => setText(event.target.value)} />}
+      </div>
+      {action === 'pin' && <TextField.Root aria-label="Weight" placeholder="Weight" type="number" step="any" style={{ width: '6rem' }}
+        value={weightText} onChange={(event) => setWeightText(event.target.value)} />}
+      <Button type="submit" disabled={disabled}>Add</Button>
     </Flex>
-    <Flex><Button type="submit" disabled={value === '' || disabled}>Add override</Button></Flex>
-    <ChangeResult change={change} actions={['override-form']} />
+    <ChangeResult change={change} actions={['override-form', 'pin-form']} />
   </form></Flex>
 }
 
 function Overrides({ overrides, disabled, change, onOverride }: {
   overrides: ScoreOverride[], disabled: boolean, change: ChangeState,
-  onOverride: (action: OverrideChange, operation: OverrideRequest, onSaved?: () => void) => void,
+  onOverride: (action: OverrideChange, operation: OverrideRequest) => void,
 }) {
   return <Section id="panda-score-overrides" title="Overrides">
     {overrides.length === 0
@@ -350,52 +398,7 @@ function Overrides({ overrides, disabled, change, onOverride }: {
           onClick={() => onOverride('override-list', (signal) => removePandaScoreOverride(override.id, signal))}>Remove</Button>
       </li></Flex>)}</ul></Flex>}
     <ChangeResult change={change} actions={['override-list']} />
-    <OverrideForm disabled={disabled} change={change} onAdd={(operation, onSaved) => onOverride('override-form', operation, onSaved)} />
   </Section>
-}
-
-function PinForm({ disabled, change, onAdd }: {
-  disabled: boolean, change: ChangeState, onAdd: (operation: PinRequest, onSaved: () => void) => void,
-}) {
-  const [kind, setKind] = useState<ScoreKind>('tag')
-  const [text, setText] = useState('')
-  const [category, setCategory] = useState(pandaCategories[0])
-  const [weightText, setWeightText] = useState('')
-  const value = kind === 'category' ? category : text.trim()
-  const weight = parseNumber(weightText)
-  return <Flex asChild direction="column" gap="3"><form aria-label="Add pin" onSubmit={(event) => {
-    event.preventDefault()
-    if (value === '' || weight === null || disabled) return
-    onAdd(savePin({ kind, value, weight }), () => { setText(''); setWeightText('') })
-  }}>
-    <Heading as="h3" size="3">Add pin</Heading>
-    <Flex><SegmentedControl.Root size="1" aria-label="Kind" value={kind} onValueChange={(next) => setKind(next as ScoreKind)}>
-      <SegmentedControl.Item value="tag">Tag</SegmentedControl.Item>
-      <SegmentedControl.Item value="uploader">Uploader</SegmentedControl.Item>
-      <SegmentedControl.Item value="category">Category</SegmentedControl.Item>
-    </SegmentedControl.Root></Flex>
-    <Flex direction="column" gap="1" maxWidth="360px">
-      {kind === 'category'
-        ? <>
-          <Text as="label" htmlFor="panda-score-pin-category" size="2" weight="medium">Category</Text>
-          <select id="panda-score-pin-category" value={category} onChange={(event) => setCategory(event.target.value)}>
-            {pandaCategories.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </>
-        : <>
-          <Text as="label" htmlFor="panda-score-pin-value" size="2" weight="medium">{kind === 'tag' ? 'Tag (namespace:value)' : 'Uploader (exactly as Panda writes it)'}</Text>
-          {kind === 'tag'
-            ? <TagCompletionField id="panda-score-pin-value" value={text} onChange={setText} complete={completePandaSearch} insert="tag" />
-            : <TextField.Root id="panda-score-pin-value" value={text} onChange={(event) => setText(event.target.value)} />}
-        </>}
-    </Flex>
-    <Flex direction="column" gap="1" maxWidth="160px">
-      <Text as="label" htmlFor="panda-score-pin-weight" size="2" weight="medium">Weight</Text>
-      <TextField.Root id="panda-score-pin-weight" type="number" step="any" value={weightText} onChange={(event) => setWeightText(event.target.value)} />
-    </Flex>
-    <Flex><Button type="submit" disabled={value === '' || weight === null || disabled}>Add pin</Button></Flex>
-    <ChangeResult change={change} actions={['pin-form']} />
-  </form></Flex>
 }
 
 /** A row of the "Pinned weights" table: its field saves another weight for the pin, beside the weight of the value in the new model. */
@@ -424,7 +427,7 @@ function PinnedWeight({ pin, modelWeight, showModel, disabled, onSave, onRemove 
 
 function PinnedWeights({ pins, modelPins, active, disabled, change, onPin }: {
   pins: ScorePin[], modelPins: ScorePin[], active: boolean, disabled: boolean, change: ChangeState,
-  onPin: (action: PinChange, operation: PinRequest, onSaved?: () => void) => void,
+  onPin: (action: PinChange, operation: PinRequest) => void,
 }) {
   const modelWeight = (pin: ScorePin) => findPin(modelPins, pin.kind, pin.label)?.model_weight
   const showModel = pins.some((pin) => modelWeight(pin) !== undefined)
@@ -432,7 +435,7 @@ function PinnedWeights({ pins, modelPins, active, disabled, change, onPin }: {
     {!active && <Text as="p" size="2" color="gray">No score model is active: pinned weights have no effect.</Text>}
     {pins.length === 0
       ? <Text as="p" size="2" color="gray">No pinned weights.</Text>
-      : <Table.Root size="1" variant="surface" className="score-weights">
+      : <Table.Root size="1" variant="surface" className="score-weights score-scroll">
         <Table.Header><Table.Row>
           <Table.ColumnHeaderCell>Tag, uploader or category</Table.ColumnHeaderCell>
           {showModel && <Table.ColumnHeaderCell justify="end">Model weight</Table.ColumnHeaderCell>}
@@ -443,7 +446,6 @@ function PinnedWeights({ pins, modelPins, active, disabled, change, onPin }: {
           onRemove={() => onPin('pin-list', removePin(pin.id))} />)}</Table.Body>
       </Table.Root>}
     <ChangeResult change={change} actions={['pin-list']} />
-    <PinForm disabled={disabled} change={change} onAdd={(operation, onSaved) => onPin('pin-form', operation, onSaved)} />
   </Section>
 }
 
@@ -470,7 +472,7 @@ function FavoriteAuthors({ preview, bonusVersion, pins, disabled, pinDisabled, c
   const authors = preview.favorite_authors
   const list = useFilteredList(authors, (author) => author.label)
   const all = preview.favorite_author_count
-  return <Section id="panda-score-authors" title="Favorite authors">
+  return <Flex direction="column" gap="3">
     <Text as="p" size="2">{preview.favorite_author_count.toLocaleString()} favorite authors: artist tags that at least 2 Panda favorites carry.</Text>
     {!preview.active && <Text as="p" size="2" color="gray">No score model is active: the author bonus has no effect.</Text>}
     <AuthorBonus key={bonusVersion} bonus={preview.author_bonus} disabled={disabled} onSave={onBonus} />
@@ -480,14 +482,13 @@ function FavoriteAuthors({ preview, bonusVersion, pins, disabled, pinDisabled, c
       <CountLine list={list} carried={authors.length} all={all} noun="favorite authors" order="most favorites first" empty="No favorite authors match."
         scope={`Only the ${authors.length.toLocaleString()} authors with the most favorites of ${all.toLocaleString()} are searched.`} />
     </>}
-    {list.visible.length > 0 && <ul className="rt-reset score-rows" style={{ '--score-columns': 3 } as CSSProperties}>{list.visible.map((author) => <li key={author.label}>
+    {list.matches.length > 0 && <ul className="rt-reset score-rows score-scroll" style={{ '--score-columns': 3 } as CSSProperties}>{list.matches.map((author) => <li key={author.label}>
       <Text size="2" className="score-label" title={author.label} data-author-cell="">{author.label}</Text>
       <Text size="2" color="gray" data-author-cell="">{author.favorites.toLocaleString()} favorites</Text>
       <Text size="2" data-author-cell="">{author.weight === null ? '–' : formatWeight(author.weight)}</Text>
       <PinControls kind="tag" label={author.label} pin={findPin(pins, 'tag', author.label)} disabled={pinDisabled} onPin={onPin} />
     </li>)}</ul>}
-    {list.more && <Flex><Button variant="soft" color="gray" onClick={list.showMore}>Show more</Button></Flex>}
-  </Section>
+  </Flex>
 }
 
 interface PreviewProps {
@@ -502,7 +503,25 @@ interface PreviewProps {
   bonusVersion: number
 }
 
+type Tab = 'model' | 'weights' | 'pins' | 'authors'
+
+/** Keeps every panel mounted, so that filter texts and typed weights stay across a change of tab. */
+function Panel({ value, tab, children }: { value: Tab, tab: Tab, children: ReactNode }) {
+  return <Tabs.Content value={value} forceMount hidden={value !== tab}>
+    <Flex direction="column" gap="5" pt="4">{children}</Flex>
+  </Tabs.Content>
+}
+
+function NoModel({ preview }: { preview: ScorePreview }) {
+  if (preview.no_model === 'no_favorites') return <Text as="p" size="2">{noFavoritesMessage}</Text>
+  if (preview.no_model === 'counts_preparing') return <Text as="p" size="2">
+    The collector counts the catalog inside the default filter: {preview.counts_progress ?? 0} % done. The page calculates a model when the counts are complete.
+  </Text>
+  return null
+}
+
 function Preview({ preview, loading, thresholds, onThresholds, change, onChange, pins, onPin, bonusVersion }: PreviewProps) {
+  const [tab, setTab] = useState<Tab>('weights')
   const { evidence, candidate, active } = preview
   const synced = evidence.favorites_synced_at
   const counts: { label: string, value: ReactNode }[] = [
@@ -510,46 +529,65 @@ function Preview({ preview, loading, thresholds, onThresholds, change, onChange,
     { label: 'Last Panda favorite sync', value: synced ? <time dateTime={synced}>{formatDate(synced)}</time> : 'never' },
   ]
   if (active && evidence.new_favorites !== null) counts.push({ label: 'New favorites since the active model was calculated', value: evidence.new_favorites.toLocaleString() })
+  const fewFavorites = candidate && evidence.few_favorites && <Callout.Root color="amber" size="1">
+    <Callout.Icon><ExclamationTriangleIcon /></Callout.Icon>
+    <Callout.Text>Fewer than 50 favorites are in scope. Weights and the measurement from so little evidence are unreliable.</Callout.Text>
+  </Callout.Root>
   return <>
-    <Section id="panda-score-evidence" title="Evidence">
-      <DataList.Root size="2" orientation={{ initial: 'vertical', sm: 'horizontal' }}>{counts.map(({ label, value }) => <DataList.Item key={label}>
-        <DataList.Label minWidth="240px">{label}</DataList.Label>
-        <DataList.Value>{value}</DataList.Value>
-      </DataList.Item>)}</DataList.Root>
-    </Section>
-    <Section id="panda-score-active" title="Active model">
-      <Text as="p" size="2">{active
-        ? <>Calculated <time dateTime={active.calculated_at}>{formatDate(active.calculated_at)}</time>, threshold {formatThreshold(active.threshold_tenths)}.</>
-        : 'No model is active.'}</Text>
-      {active && thresholds.active !== null && <ActiveThreshold
-        preview={preview} value={thresholds.active} onChange={(value) => onThresholds({ ...thresholds, active: value })} disabled={change.pending || loading}
-        onSave={(tenths) => onChange('threshold', (signal) => savePandaScoreThreshold(tenths, signal))}
-        onTurnOff={() => onChange('off', turnOffPandaScore)} />}
-      <ChangeResult change={change} actions={['threshold', 'off']} />
-    </Section>
-    <Section id="panda-score-new" title="New model">
-      {candidate && evidence.few_favorites && <Callout.Root color="amber" size="1">
-        <Callout.Icon><ExclamationTriangleIcon /></Callout.Icon>
-        <Callout.Text>Fewer than 50 favorites are in scope. Weights and the measurement from so little evidence are unreliable.</Callout.Text>
-      </Callout.Root>}
-      {candidate && thresholds.candidate !== null && <CandidateThreshold
-        preview={preview} candidate={candidate} value={thresholds.candidate} onChange={(value) => onThresholds({ ...thresholds, candidate: value })}
-        change={change} disabled={change.pending || loading}
-        onApply={(tenths) => onChange('apply', (signal) => applyPandaScore(candidate.id, tenths, signal))} />}
-      <ChangeResult change={change} actions={['override-row', 'pin-row']} />
-      {candidate
-        ? <Weights weights={candidate.weights} count={candidate.weight_count} overrides={preview.overrides}
-          disabled={change.pending || loading} onOverride={(operation) => onChange('override-row', operation)}
-          pins={pins} pinDisabled={change.pending} onPin={(operation) => onPin('pin-row', operation)} />
-        : preview.no_model === 'no_favorites' ? <Text as="p" size="2">{noFavoritesMessage}</Text>
-          : preview.no_model === 'counts_preparing' && <Text as="p" size="2">
-            The collector counts the catalog inside the default filter: {preview.counts_progress ?? 0} % done. The page calculates a model when the counts are complete.
-          </Text>}
-    </Section>
-    <Overrides overrides={preview.overrides} disabled={change.pending || loading} change={change} onOverride={onChange} />
-    <PinnedWeights pins={pins} modelPins={preview.pins} active={active !== null} disabled={change.pending} change={change} onPin={onPin} />
-    <FavoriteAuthors preview={preview} bonusVersion={bonusVersion} pins={pins} disabled={change.pending || loading} pinDisabled={change.pending} change={change}
-      onBonus={(bonus) => onChange('bonus', (signal) => savePandaAuthorBonus(bonus, signal))} onPin={(operation) => onPin('pin-author', operation)} />
+    <PinOrOverrideForm overrideDisabled={change.pending || loading} pinDisabled={change.pending} change={change}
+      onOverride={(operation, onSaved) => onChange('override-form', operation, onSaved)} onPin={(operation, onSaved) => onPin('pin-form', operation, onSaved)} />
+    <Tabs.Root value={tab} onValueChange={(next) => setTab(next as Tab)}>
+      <Tabs.List>
+        <Tabs.Trigger value="weights">Weights</Tabs.Trigger>
+        <Tabs.Trigger value="pins">Pins and overrides</Tabs.Trigger>
+        <Tabs.Trigger value="authors">Favorite authors</Tabs.Trigger>
+        <Tabs.Trigger value="model">Model</Tabs.Trigger>
+      </Tabs.List>
+      <Panel value="weights" tab={tab}>
+        {fewFavorites}
+        <ChangeResult change={change} actions={['override-row', 'pin-row']} />
+        {candidate
+          ? <Weights weights={candidate.weights} count={candidate.weight_count} overrides={preview.overrides}
+            disabled={change.pending || loading} onOverride={(operation) => onChange('override-row', operation)}
+            pins={pins} pinDisabled={change.pending} onPin={(operation) => onPin('pin-row', operation)} />
+          : <NoModel preview={preview} />}
+      </Panel>
+      <Panel value="pins" tab={tab}>
+        <Overrides overrides={preview.overrides} disabled={change.pending || loading} change={change} onOverride={onChange} />
+        <PinnedWeights pins={pins} modelPins={preview.pins} active={active !== null} disabled={change.pending} change={change} onPin={onPin} />
+      </Panel>
+      <Panel value="authors" tab={tab}>
+        <FavoriteAuthors preview={preview} bonusVersion={bonusVersion} pins={pins} disabled={change.pending || loading} pinDisabled={change.pending} change={change}
+          onBonus={(bonus) => onChange('bonus', (signal) => savePandaAuthorBonus(bonus, signal))} onPin={(operation) => onPin('pin-author', operation)} />
+      </Panel>
+      <Panel value="model" tab={tab}>
+        <Section id="panda-score-evidence" title="Evidence">
+          <DataList.Root size="2" orientation={{ initial: 'vertical', sm: 'horizontal' }}>{counts.map(({ label, value }) => <DataList.Item key={label}>
+            <DataList.Label minWidth="240px">{label}</DataList.Label>
+            <DataList.Value>{value}</DataList.Value>
+          </DataList.Item>)}</DataList.Root>
+        </Section>
+        <Section id="panda-score-active" title="Active model">
+          <Text as="p" size="2">{active
+            ? <>Calculated <time dateTime={active.calculated_at}>{formatDate(active.calculated_at)}</time>, threshold {formatThreshold(active.threshold_tenths)}.</>
+            : 'No model is active.'}</Text>
+          {active && thresholds.active !== null && <ActiveThreshold
+            preview={preview} value={thresholds.active} onChange={(value) => onThresholds({ ...thresholds, active: value })} disabled={change.pending || loading}
+            onSave={(tenths) => onChange('threshold', (signal) => savePandaScoreThreshold(tenths, signal))}
+            onTurnOff={() => onChange('off', turnOffPandaScore)} />}
+          <ChangeResult change={change} actions={['threshold', 'off']} />
+        </Section>
+        <Section id="panda-score-new" title="New model">
+          {fewFavorites}
+          {candidate && thresholds.candidate !== null
+            ? <CandidateThreshold
+              preview={preview} candidate={candidate} value={thresholds.candidate} onChange={(value) => onThresholds({ ...thresholds, candidate: value })}
+              change={change} disabled={change.pending || loading}
+              onApply={(tenths) => onChange('apply', (signal) => applyPandaScore(candidate.id, tenths, signal))} />
+            : <NoModel preview={preview} />}
+        </Section>
+      </Panel>
+    </Tabs.Root>
   </>
 }
 

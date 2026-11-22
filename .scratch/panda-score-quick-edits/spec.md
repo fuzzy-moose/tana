@@ -81,11 +81,11 @@ Filtering:
 Tag completion in "Add pin" and "Add override":
 
 27. The tag field of both forms offers suggestions while the user types, through one shared completion field. The search field of the local gallery listing and of the Panda listing uses the same shared field and behaves as before.
-28. The suggestions are the tags of the Panda catalog, from the request of the Panda listing search (`GET /api/collector/catalog/completions` with the field's text and the cursor), matched as there. A short form works (`f:big` finds `female:big breasts`), as do a quoted value (`f:"big br`) and a value without a namespace (`glasses`).
+28. The suggestions are the tags of the Panda catalog, from the request of the Panda listing search (`GET /api/collector/catalog/completions` with the field's text and the cursor), matched as there. A short form works (`f:long` finds `female:long hair`), as do a quoted value (`f:"long ha`) and a value without a namespace (`glasses`).
 29. The keys are those of the listing search: the arrow keys move through the suggestions, Enter chooses the marked one, Escape closes them, and a click chooses one.
 30. While suggestions are open, Enter chooses one and does not submit the form. The suggestions are closed after that, so the next Enter submits the form when it can be submitted.
 31. Choosing a suggestion replaces the whole text of the field with the plain tag `namespace:value` in the Panda catalog's spelling, without quotes and without `$`.
-32. Saving a pin or an override takes a tag as a plain tag, as today (the namespace and the value in any case, `_` for a space), and now also with a short form for the namespace: `f:big breasts` saves the pin or the override of `female:big breasts`.
+32. Saving a pin or an override takes a tag as a plain tag, as today (the namespace and the value in any case, `_` for a space), and now also with a short form for the namespace: `f:long hair` saves the pin or the override of `female:long hair`.
 33. A tag pin and a tag override still have to name a tag that the Panda catalog has. A tag that it does not have answers "No gallery in the Panda catalog has this tag." in the form, also after a short form is expanded. Search syntax is not accepted on save: a value in quotes or with `$` is no tag of the catalog, and a value without a namespace answers "Enter a tag as namespace:value, an uploader name, or a Panda gallery category.", as today.
 34. A failed completion request never interrupts typing, also while the collector is unreachable: the field shows no message and no suggestions, and works as a plain text field. A save then fails or succeeds as it does today.
 35. The uploader field of both forms is a plain text field without suggestions. The category select stays.
@@ -131,7 +131,7 @@ The answer of the pin route and the pin of a tag weight lookup leave the key out
 
 Unchanged routes, named here because the web calls them:
 
-- `GET /api/collector/catalog/completions?q=<text>&cursor=<UTF-16 offset>` → `{"start","end","items":[{"namespace","value","term"}]}`. The forms use `namespace` and `value` and ignore `term`, which is search syntax (`female:"big breasts$"`).
+- `GET /api/collector/catalog/completions?q=<text>&cursor=<UTF-16 offset>` → `{"start","end","items":[{"namespace","value","term"}]}`. The forms use `namespace` and `value` and ignore `term`, which is search syntax (`female:"long hair$"`).
 - `POST /api/collector/catalog/score/pins` with `{"kind","value","weight"}` → the stored pin `{"id","kind","label","weight"}`. `POST /api/collector/catalog/score/overrides` with `{"kind","value","rule"}` → 204. Both answer 404 `tag_not_found` and 400 `invalid_pin` or `invalid_override` as today.
 - `POST /api/collector/catalog/score/preview` → the preview, whose `pins` entries are `{"id","kind","label","weight","model_weight"?}`.
 
@@ -205,7 +205,7 @@ Test seam for the page: `web/src/panda/PandaScorePage.test.tsx`, which renders `
 ## Assumptions
 
 - **The filter matches the label as shown**, with its "Uploader " or "Category " prefix. Rejected: matching the bare value. What the user reads is what matches, and "uploader" lists the uploader rows without a kind selector.
-- **The filter ignores spaces around its text**, and a text of spaces only is no filter. Rejected: matching the text as typed, where a trailing space while typing "big breasts" would hide rows.
+- **The filter ignores spaces around its text**, and a text of spaces only is no filter. Rejected: matching the text as typed, where a trailing space while typing "long hair" would hide rows.
 - **The filter runs in the browser over the entries of the preview.** Rejected: a filter on the collector over all weights (Fit 2). The scope sentence of behaviour 25 is added so that "No weights match." does not claim more than was searched.
 - **The favorite authors list says "No favorite authors match."** The brief says that an empty result says that no weights match; an entry of this list is an author.
 - **The favorite authors list gets a count line** ("<shown> of <all> favorite authors, most favorites first."), also without a filter text. The brief asks for a count line that says how many entries match, and the list has none today.
@@ -223,7 +223,7 @@ Test seam for the page: `web/src/panda/PandaScorePage.test.tsx`, which renders `
 - **A label is at least 12rem wide** before its list scrolls (`--score-label-min-width`). The brief gives no number.
 - **A short form is always expanded on save**, without checking whether the Panda catalog has a namespace of that very name, and only on the two save paths (Fit 4). Rejected: expanding in `parseScoreTarget` for all three callers, which would make the detail view show and pin `female:x` for a local tag `f:x`.
 - **Save accepts plain tags only.** Rejected: accepting search syntax, which the brief does not ask for.
-- **The completion request is sent unchanged**, so a value of several words without quotes completes by its last word, as in the listing search (`f:big bre` suggests tags with a word that starts with "bre" in any namespace). Choosing still replaces the whole field. Rejected: quoting the value before the request, which is not "the same request".
+- **The completion request is sent unchanged**, so a value of several words without quotes completes by its last word, as in the listing search (`f:long ha` suggests tags with a word that starts with "ha" in any namespace). Choosing still replaces the whole field. Rejected: quoting the value before the request, which is not "the same request".
 - **A pin field of a row loses typed text when the filter hides the row.** The row leaves the page. Rejected: keeping the texts of hidden rows in page state.
 - **The filter text also stays across the favorites switch**, as the number of shown rows does today.
 - **Terms not in `CONTEXT.md`:** *score page*, *new model* (the candidate of earlier specs), *model weight*, *short form* and *plain tag* are used as defined under **Behaviour**. None is a new domain concept.
@@ -248,6 +248,6 @@ Test seam for the page: `web/src/panda/PandaScorePage.test.tsx`, which renders `
 - **Icon buttons.** Good: pin, ignore and remove are easy to tell apart at size 1, each shows its title on hover, and on a touch screen they stay tappable.
 - **Editing pins against the real collector.** Change a weight in the "Pinned weights" list and press Enter, then type in another pin field while the spinner runs. Good: the saved row shows its weight and its model weight at once, the typed text is still there when the calculation answers, and a pin made from the table shows its model weight about one calculation later.
 - **Filter speed.** With 500 weights in the preview, type in "Filter weights". Good: typing stays fluid. The plan picks no delay; a delay before filtering is the fix if it does not.
-- **Completion in the forms.** Against the real collector, type `f:big`, `f:"big br` and `glasses` in the tag field of "Add pin" and of "Add override". Good: the suggestions open below the field, above the content that follows, and are not cut off; they come as fast as in the listing search; Enter chooses, and the next Enter adds the pin once a weight is entered. The delay is the 150 ms that the shared field keeps from the gallery search.
+- **Completion in the forms.** Against the real collector, type `f:long`, `f:"long ha` and `glasses` in the tag field of "Add pin" and of "Add override". Good: the suggestions open below the field, above the content that follows, and are not cut off; they come as fast as in the listing search; Enter chooses, and the next Enter adds the pin once a weight is entered. The delay is the 150 ms that the shared field keeps from the gallery search.
 - **Listing searches.** Search in the local gallery listing and in the Panda listing. Also type a few characters and press Enter at once, before suggestions open. Good: suggestions, keys and submit behave as before the shared field, and no suggestions open after Enter has started the search.
 - **Collector unreachable.** Stop the collector and type in a tag field. Good: no message and no suggestions while typing, and the save reports the collector as it does today.
